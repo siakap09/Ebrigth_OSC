@@ -9,6 +9,15 @@ import UserHeader from "@/app/components/UserHeader";
 
 const SHARED_EMPLOYEES = ["Iqbal", "Ying Chen", "Adam", "Faiq", "Salman"];
 
+// Full branch list for both planning and filtering
+const ALL_BRANCHES = [
+  "Subang Taipan", "Setia Alam", "Shah Alam", "Putrajaya", "Ampang", 
+  "Cyberjaya", "Klang", "Bandar Baru Bangi", "Taman Sri Gombak", "Online", 
+  "Kajang TTDI Groove", "Kota Warisan", "Bandar Tun Hussein Onn", "Danau Kota", 
+  "Denai Alam", "Sri Petaling", "Eco Grandeur", "Kota Damansara", 
+  "Bandar Seri Putra", "Rimbayu",
+].sort();
+
 const COLUMNS = [
   { id: "coach1", label: "Coach 1", type: "coach" as const, employees: SHARED_EMPLOYEES },
   { id: "coach2", label: "Coach 2", type: "coach" as const, employees: SHARED_EMPLOYEES },
@@ -33,33 +42,37 @@ const EMPLOYEE_COLORS: Record<string, string> = {
 type ColumnId = (typeof COLUMNS)[number]["id"];
 
 const DAYS = ["Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
-const WEEKDAY_TIME_SLOTS = ["06:00 PM – 07:15 PM", "07:15 PM – 08:30 PM"] as const;
-const WEEKEND_TIME_SLOTS = [
-  "08:45 AM – 09:15 AM", "09:15 AM – 10:30 AM", "10:30 AM – 11:45 AM",
-  "11:45 AM – 12:00 PM", "12:00 PM – 1:15 PM", "1:15 PM – 2:30 PM",
-  "2:30 PM – 2:45 PM", "2:45 PM – 4:00 PM", "4:00 PM – 5:15 PM",
-  "5:15 PM – 5:30 PM", "5:30 PM – 6:45 PM", "6:45 PM – 7:15 PM",
-] as const;
-
 const WEEKDAY_DAYS = ["Wednesday", "Thursday", "Friday"] as const;
 
-function getTimeSlotsForDay(day: string): readonly string[] {
-  return WEEKDAY_DAYS.includes(day as (typeof WEEKDAY_DAYS)[number])
-    ? WEEKDAY_TIME_SLOTS
-    : WEEKEND_TIME_SLOTS;
+const DEFAULT_WEEKDAY_TIME_SLOTS = ["5:00 PM", "06.00PM - 07.15PM", "07:15PM - 08:30PM", "08.30PM - 09:45PM", "10:00 PM"] as const;
+const DEFAULT_WEEKEND_TIME_SLOTS = ["08:45 AM – 09:15 AM", "09:15 AM – 10:30 AM", "10:30 AM – 11:45 AM", "11:45 AM – 12:00 PM", "12:00 PM – 1:15 PM", "1:15 PM – 2:30 PM", "2:30 PM – 2:45 PM", "2:45 PM – 4:00 PM", "4:00 PM – 5:15 PM", "5:15 PM – 5:30 PM", "5:30 PM – 6:45 PM", "6:45 PM – 7:15 PM"] as const;
+const TAIPAN_WEEKDAY_TIME_SLOTS = ["4:15 PM", "04.30PM - 05.45PM", "06.00PM - 07.15PM", "07:15PM - 08:30PM", "08.30PM - 09:45PM", "10:00 PM"] as const;
+
+const BRANCH_SLOTS_CONFIG: Record<string, { weekday: readonly string[], weekend: readonly string[] }> = {
+  "Subang Taipan": { weekday: TAIPAN_WEEKDAY_TIME_SLOTS, weekend: DEFAULT_WEEKEND_TIME_SLOTS },
+  "default": { weekday: DEFAULT_WEEKDAY_TIME_SLOTS, weekend: DEFAULT_WEEKEND_TIME_SLOTS }
+};
+
+function getTimeSlotsForDay(day: string, branchName: string): readonly string[] {
+  const config = BRANCH_SLOTS_CONFIG[branchName] || BRANCH_SLOTS_CONFIG["default"];
+  return WEEKDAY_DAYS.includes(day as (typeof WEEKDAY_DAYS)[number]) ? config.weekday : config.weekend;
 }
 
 const SELECT_ARROW_WHITE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='white' d='M6 8L1 3h10z'/%3E%3C/svg%3E";
 const SELECT_ARROW_DARK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235f6368' d='M6 8L1 3h10z'/%3E%3C/svg%3E";
 
-function isAdminSlot(slot: string) {
-  return ["08:45 AM – 09:15 AM", "11:45 AM – 12:00 PM", "2:30 PM – 2:45 PM", "5:15 PM – 5:30 PM", "6:45 PM – 7:15 PM"].includes(slot);
+function isAdminSlot(slot: string, branchName: string) {
+  if (branchName === "Subang Taipan") return ["4:15 PM", "10:00 PM"].includes(slot);
+  return ["5:00 PM", "10:00 PM", "08:45 AM – 09:15 AM", "11:45 AM – 12:00 PM", "2:30 PM – 2:45 PM", "5:15 PM – 5:30 PM", "6:45 PM – 7:15 PM"].includes(slot);
 }
 
-function getSlotWeight(day: string, slot: string): number {
-  if (WEEKDAY_DAYS.includes(day as (typeof WEEKDAY_DAYS)[number])) return 1.25;
-  if (["08:45 AM – 09:15 AM", "6:45 PM – 7:15 PM"].includes(slot)) return 0.5;
-  if (["11:45 AM – 12:00 PM", "2:30 PM – 2:45 PM", "5:15 PM – 5:30 PM"].includes(slot)) return 0.25;
+function getSlotWeight(day: string, slot: string, branchName: string): number {
+  if (isAdminSlot(slot, branchName)) {
+    if (branchName === "Subang Taipan") return 0.25;
+    if (slot === "5:00 PM" || slot === "10:00 PM") return 0.25;
+    if (["08:45 AM – 09:15 AM", "6:45 PM – 7:15 PM"].includes(slot)) return 0.5;
+    return 0.25;
+  }
   return 1.25;
 }
 
@@ -69,63 +82,90 @@ export default function Page() {
   const startDateStr = searchParams.get("start");
   const endDateStr = searchParams.get("end");
 
-  // --- HUB STATES ---
+  // --- 1. ALL HOOKS MUST BE HERE (TOP LEVEL) ---
   const [mode, setMode] = useState<"hub" | "new" | "overview">("hub");
   const [selectedBranch, setSelectedBranch] = useState<string>("");
   const [hasConfirmedBranch, setHasConfirmedBranch] = useState(false);
   const [hasConfirmedWeek, setHasConfirmedWeek] = useState(!!startDateStr);
-
-  // --- UI STATES ---
+  const [isLocked, setIsLocked] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [filterBranch, setFilterBranch] = useState("");
+  const [filterMonth, setFilterMonth] = useState("");
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  
   const [editingDays, setEditingDays] = useState<Record<string, boolean>>(
     DAYS.reduce((acc, day) => ({ ...acc, [day]: true }), {})
   );
-  const [showRestRows, setShowRestRows] = useState(false);
+  const [showRestRows, setShowRestRows] = useState<Record<string, boolean>>(
+    DAYS.reduce((acc, day) => ({ ...acc, [day]: false }), {})
+  );
 
-  // Sync week confirmation state with URL params
+  // Load history data at the top
+  const history = useMemo(() => {
+    if (typeof window !== "undefined") {
+      return JSON.parse(localStorage.getItem("manpower_history") || "[]");
+    }
+    return [];
+  }, []);
+
+  // Filter the history list based on dropdowns
+  const filteredHistory = useMemo(() => {
+    return history.filter((record: any) => {
+      const matchesBranch = filterBranch === "" || record.branch === filterBranch;
+      const matchesMonth = filterMonth === "" || format(parseISO(record.startDate), "yyyy-MM") === filterMonth;
+      return matchesBranch && matchesMonth;
+    });
+  }, [history, filterBranch, filterMonth]);
+
+  // --- 2. EFFECTS & LOGIC ---
+
   useEffect(() => {
     setHasConfirmedWeek(!!startDateStr);
   }, [startDateStr]);
 
-  // Load persistence data
   useEffect(() => {
-    if (hasConfirmedBranch && selectedBranch) {
-      const savedSelections = localStorage.getItem(`manpower_selections_${selectedBranch}`);
-      const savedNotes = localStorage.getItem(`manpower_notes_${selectedBranch}`);
-      setSelections(savedSelections ? JSON.parse(savedSelections) : {});
-      setNotes(savedNotes ? JSON.parse(savedNotes) : {});
-      
-      // If we are in 'overview' mode, start with editing disabled
-      if (mode === "overview") {
+    if (startDateStr) {
+      const archivedRecord = history.find((h: any) => h.startDate === startDateStr && (mode === "overview" || h.branch === selectedBranch));
+      if (archivedRecord) {
+        setSelections(archivedRecord.selections);
+        setNotes(archivedRecord.notes);
+        setSelectedBranch(archivedRecord.branch);
+        setIsLocked(true);
         setEditingDays(DAYS.reduce((acc, day) => ({ ...acc, [day]: false }), {}));
+      } else if (mode === "new") {
+        const savedDraft = localStorage.getItem(`manpower_draft_${selectedBranch}_${startDateStr}`);
+        setSelections(savedDraft ? JSON.parse(savedDraft) : {});
+        setIsLocked(false);
       }
     }
-  }, [hasConfirmedBranch, selectedBranch, mode]);
+  }, [startDateStr, mode, selectedBranch, history]);
 
-  // Save persistence data
   useEffect(() => {
-    if (hasConfirmedBranch && selectedBranch) {
-      localStorage.setItem(`manpower_selections_${selectedBranch}`, JSON.stringify(selections));
-      localStorage.setItem(`manpower_notes_${selectedBranch}`, JSON.stringify(notes));
+    if (startDateStr && mode === "new" && !isLocked) {
+      localStorage.setItem(`manpower_draft_${selectedBranch}_${startDateStr}`, JSON.stringify(selections));
     }
-  }, [selections, notes, selectedBranch, hasConfirmedBranch]);
+  }, [selections, startDateStr, selectedBranch, mode, isLocked]);
 
   const weekLabel = useMemo(() => {
     if (!startDateStr || !endDateStr) return "";
     return `${format(parseISO(startDateStr), "MMM d")} – ${format(parseISO(endDateStr), "MMM d, yyyy")}`;
   }, [startDateStr, endDateStr]);
 
+  // --- 3. HANDLERS ---
+
   const handleNameSelect = (day: string, time: string, columnId: ColumnId, name: string) => {
+    if (isLocked) return;
     setSelections((prev) => ({ ...prev, [`${day}-${time}-${columnId}`]: name }));
   };
 
   const handleNoteChange = (day: string, time: string, value: string) => {
+    if (isLocked) return;
     setNotes((prev) => ({ ...prev, [`${day}-${time}-notes`]: value }));
   };
 
   const clearAllForDay = (day: string) => {
+    if (isLocked) return;
     if (window.confirm(`Are you sure you want to clear all selections for ${day}?`)) {
       setSelections((prev) => {
         const next = { ...prev };
@@ -141,24 +181,51 @@ export default function Page() {
   };
 
   const clearColumnForDay = (day: string, columnId: string) => {
+    if (isLocked) return;
     setSelections((prev) => {
       const next = { ...prev };
-      getTimeSlotsForDay(day).forEach(slot => { delete next[`${day}-${slot}-${columnId}`]; });
+      getTimeSlotsForDay(day, selectedBranch).forEach(slot => { delete next[`${day}-${slot}-${columnId}`]; });
       return next;
     });
   };
 
-  const handleSaveDay = async (day: string) => {
-    window.alert(`Successfully saved ${day} schedule!`);
-    setEditingDays((prev) => ({ ...prev, [day]: false }));
-  };
+  const handleFinalSubmit = () => {
+  const isUpdate = isLocked; // If it's already locked, we are in "Edit Mode"
+  const confirmMsg = isUpdate 
+    ? "Save changes to this archived schedule?" 
+    : "Final Submit? This will lock the schedule and save it to the Archive Overview.";
 
-  const calculateStaffHours = (daysFilter: readonly string[] = DAYS) => {
+  if (window.confirm(confirmMsg)) {
+    const scheduleId = `${selectedBranch}_${startDateStr}`;
+    const snapshot = {
+      id: scheduleId,
+      branch: selectedBranch,
+      startDate: startDateStr,
+      endDate: endDateStr,
+      selections: selections,
+      notes: notes,
+      submittedAt: new Date().toISOString(),
+      lastUpdated: isUpdate ? new Date().toISOString() : null,
+    };
+
+    const history = JSON.parse(localStorage.getItem("manpower_history") || "[]");
+    // This filter + spread ensures we replace the old version with the new one
+    const updatedHistory = [snapshot, ...history.filter((h: any) => h.id !== scheduleId)];
+    
+    localStorage.setItem("manpower_history", JSON.stringify(updatedHistory));
+    
+    setIsLocked(true);
+    setEditingDays(DAYS.reduce((acc, day) => ({ ...acc, [day]: false }), {}));
+    alert(isUpdate ? "Schedule Updated!" : "Schedule Submitted and Archived!");
+  }
+};
+
+  const calculateStaffHours = () => {
     const staffStats: Record<string, { coachHrs: number; execHrs: number; total: number; assignedSlots: number }> = {};
     SHARED_EMPLOYEES.forEach(emp => { staffStats[emp] = { coachHrs: 0, execHrs: 0, total: 0, assignedSlots: 0 }; });
-    daysFilter.forEach((day) => {
-      getTimeSlotsForDay(day).forEach((slot) => {
-        const weight = getSlotWeight(day, slot);
+    DAYS.forEach((day) => {
+      getTimeSlotsForDay(day, selectedBranch).forEach((slot) => {
+        const weight = getSlotWeight(day, slot, selectedBranch);
         COLUMNS.forEach((col) => {
           const selectedName = selections[`${day}-${slot}-${col.id}`];
           if (selectedName && staffStats[selectedName]) {
@@ -173,6 +240,8 @@ export default function Page() {
     return Object.entries(staffStats).map(([name, stats]) => ({ name, ...stats }));
   };
 
+  // --- 4. SUB-COMPONENTS (DISPLAY) ---
+
   const SummaryTable = ({ title, data }: { title: string, data: any[] }) => {
     const formatTime = (d: number) => {
       const h = Math.floor(d);
@@ -180,7 +249,7 @@ export default function Page() {
       return { h: h.toString(), m: m.toString().padStart(2, '0') };
     };
     return (
-      <div className="mx-auto mt-12 w-full max-w-[95%] overflow-hidden rounded-[15px] border border-[#e0e2e6]/70 bg-white shadow-lg">
+      <div className="mx-auto mt-12 w-full max-w-[95%] overflow-hidden rounded-[15px] border border-[#e0e2e6]/70 bg-white shadow-lg text-slate-800">
         <header className="border-b border-[#e8eaed] bg-white px-8 py-6 text-center">
           <h2 className="m-0 text-[1.4rem] font-semibold text-[#1a1d23]">{title}</h2>
         </header>
@@ -208,11 +277,11 @@ export default function Page() {
                       <td key={i} className={`border border-[#e0e2e6] px-2 py-4 ${i === 2 ? 'bg-slate-50/50' : ''}`}>
                         <div className="flex flex-row gap-4 items-center justify-center">
                           <div className="flex items-center gap-1">
-                            <div className={`w-10 h-8 flex items-center justify-center border rounded bg-white text-sm shadow-sm ${i === 2 ? 'font-bold border-slate-400' : 'font-medium border-slate-300'}`}>{time.h}</div>
+                            <div className={`w-10 h-8 flex items-center justify-center border rounded bg-white text-sm shadow-sm font-medium border-slate-300`}>{time.h}</div>
                             <span className="text-[10px] uppercase font-bold text-slate-400">hrs</span>
                           </div>
                           <div className="flex items-center gap-1">
-                            <div className={`w-10 h-8 flex items-center justify-center border rounded bg-white text-sm shadow-sm ${i === 2 ? 'font-bold border-slate-400' : 'font-medium border-slate-300'}`}>{time.m}</div>
+                            <div className={`w-10 h-8 flex items-center justify-center border rounded bg-white text-sm shadow-sm font-medium border-slate-300`}>{time.m}</div>
                             <span className="text-[10px] uppercase font-bold text-slate-400">min</span>
                           </div>
                         </div>
@@ -228,87 +297,132 @@ export default function Page() {
     );
   };
 
-  // --- STEP 1: HUB CHOICE ---
+  // --- 5. PAGE VIEWS ---
+
   if (mode === "hub") {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div 
-            onClick={() => setMode("overview")}
-            className="bg-white p-10 rounded-3xl shadow-xl border-4 border-transparent hover:border-blue-500 cursor-pointer transition-all flex flex-col items-center text-center group"
-          >
+        <div className="w-full max-w-2xl grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in duration-500 text-slate-800">
+          <div onClick={() => setMode("overview")} className="bg-white p-10 rounded-3xl shadow-xl border-4 border-transparent hover:border-blue-500 cursor-pointer transition-all flex flex-col items-center text-center group">
             <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-6 text-3xl group-hover:bg-blue-600 group-hover:text-white transition-all">📊</div>
-            <h2 className="text-2xl font-bold text-gray-800">Overview</h2>
-            <p className="text-gray-500 mt-3">View existing schedules and previous planning data.</p>
+            <h2 className="text-2xl font-bold tracking-tight">ARCHIVE OVERVIEW</h2>
+            <p className="text-gray-500 mt-3 text-sm">View and track your previous submitted schedules.</p>
           </div>
-          <div 
-            onClick={() => setMode("new")}
-            className="bg-white p-10 rounded-3xl shadow-xl border-4 border-transparent hover:border-green-500 cursor-pointer transition-all flex flex-col items-center text-center group"
-          >
+          <div onClick={() => setMode("new")} className="bg-white p-10 rounded-3xl shadow-xl border-4 border-transparent hover:border-green-500 cursor-pointer transition-all flex flex-col items-center text-center group">
             <div className="w-20 h-20 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center mb-6 text-3xl group-hover:bg-green-600 group-hover:text-white transition-all">✍️</div>
-            <h2 className="text-2xl font-bold text-gray-800">Plan New</h2>
-            <p className="text-gray-500 mt-3">Start a new manpower schedule for your branch.</p>
+            <h2 className="text-2xl font-bold tracking-tight">PLAN NEW WEEK</h2>
+            <p className="text-gray-500 mt-3 text-sm">Start a fresh manpower schedule for your branch.</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // --- STEP 2: BRANCH SELECTOR ---
-  if (!hasConfirmedBranch) {
-    const branches = ["Subang Taipan", "Setia Alam", "Putrajaya", "Ampang", "Cyberjaya", "Klang", "Bandar Baru Bangi", "Shah Alam", "Bandar Rimbayu", "Kajang TTDI Groove", "Online", "Sri Petaling", "Kota Damansara", "Denai Alam", "Danau Kota", "Bandar Tun Hussein Onn", "Eco Grandeur", "Bandar Seri Putra", "Taman Sri Gombak", "Kota Warisan"];
+  if (mode === "new" && !hasConfirmedBranch) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6 relative">
         <button onClick={() => setMode("hub")} className="absolute top-8 left-8 text-blue-600 font-bold hover:underline">← Back</button>
-        <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-gray-100 text-center">
-          <h1 className="text-3xl font-extrabold text-gray-900 mb-8">Branch Selector</h1>
-          <select
-            value={selectedBranch}
-            onChange={(e) => setSelectedBranch(e.target.value)}
-            className="w-full p-4 border border-gray-200 rounded-xl bg-gray-50 outline-none font-medium mb-6"
-          >
-            <option value="">-- Select a Branch --</option>
-            {branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}
+        <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-gray-100 text-center text-slate-800">
+          <h1 className="text-3xl font-extrabold text-gray-900 mb-8 tracking-tighter uppercase">Select Branch</h1>
+          <select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)} className="w-full p-4 border border-gray-200 rounded-xl bg-gray-50 outline-none mb-6 font-bold text-slate-700">
+            <option value="">-- Choose Branch --</option>
+            {ALL_BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
-          <button
-            disabled={!selectedBranch}
-            onClick={() => setHasConfirmedBranch(true)}
-            className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 disabled:bg-gray-300 transition-all"
-          >
-            Continue
-          </button>
+          <button disabled={!selectedBranch} onClick={() => setHasConfirmedBranch(true)} className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 disabled:bg-gray-300">Start Planning</button>
         </div>
       </div>
     );
   }
 
-  // --- STEP 3: WEEK SELECTOR ---
   if (!hasConfirmedWeek) {
+    if (mode === "overview") {
+      return (
+        <div className="min-h-screen bg-gray-50 p-12 text-slate-800">
+          <button onClick={() => setMode("hub")} className="mb-10 text-blue-600 font-bold hover:underline">← Back to Hub</button>
+          
+          <div className="max-w-5xl mx-auto">
+            <div className="flex flex-col md:flex-row justify-between items-end mb-10 gap-4">
+              <div>
+                <h1 className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter">Archive Records</h1>
+                <p className="text-slate-500 font-medium">Search and filter through previous manpower schedules.</p>
+              </div>
+
+              <div className="flex gap-3 bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
+                <div className="flex flex-col">
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 mb-1">Branch</label>
+                  <select 
+                    value={filterBranch} 
+                    onChange={(e) => setFilterBranch(e.target.value)}
+                    className="bg-slate-50 border-none rounded-lg text-sm font-bold p-2 outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">All Branches</option>
+                    {ALL_BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+
+                <div className="flex flex-col">
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 mb-1">Month</label>
+                  <input 
+                    type="month" 
+                    value={filterMonth}
+                    onChange={(e) => setFilterMonth(e.target.value)}
+                    className="bg-slate-50 border-none rounded-lg text-sm font-bold p-2 outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <button onClick={() => {setFilterBranch(""); setFilterMonth("");}} className="self-end p-2 px-4 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-black uppercase transition-colors">Reset</button>
+              </div>
+            </div>
+
+            {filteredHistory.length === 0 ? (
+              <div className="bg-white p-20 rounded-3xl border-2 border-dashed border-slate-200 text-center text-slate-400 font-bold uppercase tracking-widest text-xl">
+                {history.length === 0 ? "No historical records found." : `No records added yet for ${filterBranch || 'this selection'}.`}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {filteredHistory.map((record: any) => (
+                  <div key={record.id} onClick={() => router.push(`/manpower-schedule?start=${record.startDate}&end=${record.endDate}`)} className="bg-white p-6 rounded-[25px] shadow-sm border-2 border-transparent hover:border-blue-500 hover:shadow-xl cursor-pointer transition-all flex justify-between items-center group">
+                    <div className="flex items-center gap-5">
+                      <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-[18px] flex items-center justify-center text-xl group-hover:bg-blue-600 group-hover:text-white transition-all">📋</div>
+                      <div>
+                        <h3 className="font-black text-slate-800 text-lg uppercase tracking-tighter leading-tight">{record.branch}</h3>
+                        <p className="text-xs text-slate-500 font-bold">Week: {format(parseISO(record.startDate), "MMM do")} - {format(parseISO(record.endDate), "MMM do, yyyy")}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                       <span className="text-blue-600 font-black text-[10px] uppercase tracking-widest group-hover:translate-x-1 transition-transform inline-block">View →</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="min-h-screen bg-gray-50 relative pt-20">
-        <button onClick={() => setHasConfirmedBranch(false)} className="absolute top-8 left-8 text-blue-600 font-bold hover:underline">← Change Branch</button>
+      <div className="min-h-screen bg-gray-50 relative pt-20 text-slate-800">
+        <button onClick={() => setHasConfirmedBranch(false)} className="absolute top-8 left-8 text-blue-600 font-bold hover:underline">← Back</button>
         <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-gray-800 italic">Branch: {selectedBranch}</h1>
-            <p className="text-gray-500">Choose the week to {mode === "overview" ? "view" : "plan"}</p>
+            <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Select Planning Week</h1>
         </div>
         <WeekSelector onConfirm={(wd) => router.push(`/manpower-schedule?${wd}`)} />
       </div>
     );
   }
 
-  // --- STEP 4: MAIN TABLE ---
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-100 text-slate-800">
       <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
         <div className="flex justify-between items-center px-4 py-6">
           <div className="flex items-center gap-4">
-            <button onClick={() => setMode("hub")} className="text-2xl hover:scale-110 transition-transform">🏠</button>
+            <button onClick={() => { setMode("hub"); router.push('/manpower-schedule'); }} className="text-2xl hover:scale-110 transition-transform">🏠</button>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold tracking-tight">{mode === "overview" ? "Overview" : "Manpower Planning"}</h1>
-                <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold uppercase border border-white/30">{selectedBranch}</span>
+                <h1 className="text-3xl font-bold tracking-tight uppercase">{mode === "overview" ? "Historical Data" : "Manpower Planning"}</h1>
+                <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold uppercase border border-white/30 tracking-widest">{selectedBranch}</span>
               </div>
-              <p className="text-blue-100 mt-1">{weekLabel ? `Schedule for ${weekLabel}` : ""}</p>
+              <p className="text-blue-100 mt-1 italic font-medium">{weekLabel ? `Schedule for ${weekLabel}` : ""}</p>
             </div>
           </div>
           <UserHeader userName="Admin User" userRole="SUPER_ADMIN" userEmail="admin@ebright.com" />
@@ -319,75 +433,79 @@ export default function Page() {
         <Sidebar sidebarOpen={sidebarOpen} onCollapse={() => setSidebarOpen(false)} />
         <main className="flex-1 overflow-y-auto px-8 py-8 bg-gradient-to-br from-[#f0f4f8] to-[#d2dce9]">
           
-          {mode === "overview" && (
-            <div className="mb-6 bg-blue-50 border-l-4 border-blue-400 p-4 text-blue-700 font-medium rounded shadow-sm italic">
-                You are currently in Overview Mode. Use the Edit buttons below to modify existing data.
+          {isLocked && (
+            <div className="mb-8 bg-slate-800 text-white p-4 rounded-xl flex justify-between items-center shadow-xl border-2 border-white/10 animate-in slide-in-from-top duration-500">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🔒</span>
+                <span className="font-bold uppercase tracking-widest text-sm">Archived Record (Read-Only)</span>
+              </div>
+              <button 
+                onClick={() => setIsLocked(false)} 
+                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-black text-xs uppercase tracking-tighter transition-all"
+              >
+                Edit / Make Adjustments
+              </button>
             </div>
           )}
 
           {DAYS.map((day) => {
-            const isEditing = !!editingDays[day];
+            const isEditing = !!editingDays[day] && !isLocked;
             let currentDayDate = "";
             if (startDateStr) {
               const dayMap: Record<string, number> = { "Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6 };
               const date = addDays(parseISO(startDateStr), dayMap[day]);
               currentDayDate = format(date, "EEEE, MMMM do");
             }
-
             return (
-              <div key={day} className="mx-auto mb-8 w-full max-w-[95%] overflow-hidden rounded-[15px] border border-gray-200 bg-white shadow-xl">
-                <header className="border-b border-gray-100 bg-white px-8 py-6 flex justify-between items-center">
+              <div key={day} className="mx-auto mb-10 w-full max-w-[95%] overflow-hidden rounded-[20px] border border-gray-200 bg-white shadow-xl">
+                <header className="border-b bg-white px-8 py-6 flex justify-between items-center">
                   <div>
-                    <h1 className="text-[1.5rem] font-semibold text-[#1a1d23]">{day}</h1>
-                    <p className="text-[0.9rem] text-[#5f6368]">{currentDayDate}</p>
+                    <h1 className="text-[1.5rem] font-black text-slate-800 uppercase tracking-tighter">{day}</h1>
+                    <p className="text-[0.9rem] text-slate-500 font-bold italic">{currentDayDate}</p>
                   </div>
-                  <div className="flex items-center gap-6 text-blue-600 text-xs font-bold uppercase tracking-widest">
-                    <button onClick={() => clearAllForDay(day)} disabled={!isEditing} className="text-red-500 hover:text-red-700 disabled:opacity-30">Clear All</button>
-                    <button onClick={() => setShowRestRows(!showRestRows)}>{showRestRows ? 'Hide Rest' : 'Show Rest'}</button>
+                  <div className="flex items-center gap-6 text-blue-600 text-xs font-black uppercase tracking-widest">
+                    <button onClick={() => clearAllForDay(day)} disabled={!isEditing || isLocked} className="text-red-600 hover:text-red-700 disabled:opacity-0 transition-opacity font-bold">Clear All</button>
+                    <button onClick={() => setShowRestRows(prev => ({ ...prev, [day]: !prev[day] }))} className="hover:underline">{showRestRows[day] ? 'Hide Rest' : 'Show Rest'}</button>
                   </div>
                 </header>
-
-                <div className="w-full overflow-x-auto overflow-y-auto max-h-[70vh]">
+                <div className="w-full overflow-x-auto max-h-[70vh]">
                   <table className="border-separate border-spacing-0 table-fixed" style={{ width: '2350px' }}>
-                    <thead className="sticky top-0 z-40 bg-white shadow-sm">
+                    <thead className="sticky top-0 z-40 bg-white shadow-md">
                       <tr>
-                        <th className="sticky left-0 top-0 z-50 w-[250px] bg-[#2c3e50] text-white p-4 text-left border border-slate-600">Time Slot</th>
+                        <th className="sticky left-0 top-0 z-50 w-[250px] bg-[#2c3e50] text-white p-4 text-left border border-slate-600 uppercase font-black text-sm">Time Slot</th>
                         {COLUMNS.map((col) => (
-                          <th key={col.id} className="w-[180px] bg-[#34495e] text-white p-3 border border-slate-600 text-center uppercase text-sm font-bold">
-                            {col.label}
+                          <th key={col.id} className="w-[180px] bg-[#34495e] text-white p-3 border border-slate-600 text-center uppercase text-xs font-black">
+                            <div className="flex flex-col gap-2 items-center">
+                                {col.label}
+                                {isEditing && <button onClick={() => clearColumnForDay(day, col.id)} className="text-[9px] text-red-300 font-bold hover:text-red-500 uppercase tracking-widest mt-1 bg-black/20 px-2 py-0.5 rounded-full">[Clear]</button>}
+                            </div>
                           </th>
                         ))}
-                        <th className="w-[300px] bg-[#34495e] text-white p-4 border border-slate-600">Notes</th>
+                        <th className="w-[300px] bg-[#34495e] text-white p-4 uppercase font-black text-sm">Notes</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {getTimeSlotsForDay(day).filter(slot => !isAdminSlot(slot) || showRestRows).map((slot) => {
+                      {getTimeSlotsForDay(day, selectedBranch)
+                      .filter(slot => !isAdminSlot(slot, selectedBranch) || showRestRows[day])
+                      .map((slot) => {
                         const selectedInRow = COLUMNS.map(col => selections[`${day}-${slot}-${col.id}`]).filter(Boolean);
                         return (
-                          <tr key={slot} className={`hover:bg-blue-50/50 ${isAdminSlot(slot) ? 'bg-gray-100' : ''}`}>
-                            <td className="sticky left-0 z-20 w-[250px] bg-white border border-gray-200 p-4 font-semibold text-slate-700">{slot}</td>
+                          <tr key={slot} className={`hover:bg-blue-50/50 ${isAdminSlot(slot, selectedBranch) ? 'bg-gray-100' : ''}`}>
+                            <td className="sticky left-0 z-20 w-[250px] bg-white border p-4 font-black text-slate-700 shadow-sm">{slot}</td>
                             {COLUMNS.map((col) => {
                               const selectedName = selections[`${day}-${slot}-${col.id}`] || "";
-                              const selectStyles = selectedName ? (EMPLOYEE_COLORS[selectedName] || "bg-blue-400 text-white shadow-sm") : "bg-gray-50 text-gray-400 border-gray-200";
+                              const selectStyles = selectedName ? (EMPLOYEE_COLORS[selectedName] || "bg-blue-400 text-white shadow-sm") : "bg-gray-50 text-gray-400";
                               return (
-                                <td key={col.id} className="p-3 border border-gray-200 w-[180px]">
-                                  <select
-                                    disabled={!isEditing}
-                                    value={selectedName}
-                                    onChange={(e) => handleNameSelect(day, slot, col.id, e.target.value)}
-                                    className={`w-full appearance-none rounded-md border py-2.5 text-sm text-center outline-none ${selectStyles}`}
-                                    style={{ backgroundImage: `url("${selectedName ? SELECT_ARROW_WHITE : SELECT_ARROW_DARK}")`, backgroundPosition: "right 0.6rem center", backgroundRepeat: "no-repeat", textAlignLast: "center" }}
-                                  >
+                                <td key={col.id} className="p-3 border w-[180px]">
+                                  <select disabled={!isEditing} value={selectedName} onChange={(e) => handleNameSelect(day, slot, col.id, e.target.value)} className={`w-full appearance-none rounded-md border py-2.5 text-sm text-center outline-none ${selectStyles} font-bold shadow-sm transition-all`} style={{ backgroundImage: `url("${selectedName ? SELECT_ARROW_WHITE : SELECT_ARROW_DARK}")`, backgroundPosition: "right 0.6rem center", backgroundRepeat: "no-repeat", textAlignLast: "center" }}>
                                     <option value="">None</option>
-                                    {SHARED_EMPLOYEES.map(name => (
-                                      <option key={name} value={name} disabled={selectedInRow.includes(name) && selectedName !== name}>{name}</option>
-                                    ))}
+                                    {SHARED_EMPLOYEES.map(name => <option key={name} value={name} disabled={selectedInRow.includes(name) && selectedName !== name}>{name}</option>)}
                                   </select>
                                 </td>
                               );
                             })}
-                            <td className="p-3 border border-gray-200 w-[300px]">
-                              <textarea disabled={!isEditing} className="w-full text-sm text-center outline-none bg-transparent resize-none" rows={2} placeholder="..." value={notes[`${day}-${slot}-notes`] || ""} onChange={(e) => handleNoteChange(day, slot, e.target.value)} />
+                            <td className="p-3 border w-[300px]">
+                              <textarea disabled={!isEditing} className="w-full text-sm outline-none bg-transparent resize-none font-medium italic text-slate-600" rows={2} value={notes[`${day}-${slot}-notes`] || ""} onChange={(e) => handleNoteChange(day, slot, e.target.value)} />
                             </td>
                           </tr>
                         );
@@ -395,15 +513,38 @@ export default function Page() {
                     </tbody>
                   </table>
                 </div>
-                <div className="p-6 flex justify-end bg-gray-50 border-t border-gray-100">
-                  {isEditing ? <button onClick={() => handleSaveDay(day)} className="bg-blue-600 text-white px-8 py-2.5 rounded-lg font-bold">Update & Save</button> : <button onClick={() => setEditingDays(p => ({...p, [day]: true}))} className="text-blue-600 font-bold border-2 border-blue-600 px-8 py-2.5 rounded-lg">Edit Schedule</button>}
+                <div className="p-6 flex justify-end bg-gray-50 border-t">
+                  {!isLocked && (isEditing ? <button onClick={() => setEditingDays(p => ({...p, [day]: false}))} className="bg-blue-600 text-white px-8 py-2 rounded-lg font-black uppercase tracking-widest shadow-lg">Save Day</button> : <button onClick={() => setEditingDays(p => ({...p, [day]: true}))} className="text-blue-600 font-black border-2 border-blue-600 px-8 py-2 rounded-lg uppercase tracking-widest hover:bg-blue-50 transition-all">Edit Day</button>)}
                 </div>
               </div>
             );
           })}
-          <SummaryTable title={`Overall Weekly Summary (${weekLabel})`} data={calculateStaffHours()} />
-          <SummaryTable title="Weekday Summary (Wed–Fri)" data={calculateStaffHours(WEEKDAY_DAYS)} />
-          <SummaryTable title="Weekend Summary (Sat–Sun)" data={calculateStaffHours(["Saturday", "Sunday"])} />
+          
+          <SummaryTable title="Staff Assignments Summary" data={calculateStaffHours()} />
+          
+          {/* This will now show up for NEW plans AND when you unlock an ARCHIVE */}
+          {!isLocked && (
+            <div className="mt-16 mb-24 flex flex-col items-center gap-6 animate-in slide-in-from-bottom duration-700">
+              <div className="h-[2px] w-full bg-slate-300 max-w-4xl"></div>
+              <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">
+                {mode === "overview" ? "Update Archived Schedule" : "Submit Final Schedule"}
+              </h2>
+              <button 
+                onClick={handleFinalSubmit} 
+                className="bg-green-600 hover:bg-green-700 text-white px-24 py-5 rounded-2xl text-2xl font-black shadow-2xl transition-all transform hover:scale-105 active:scale-95 border-4 border-green-900/20"
+              >
+                {mode === "overview" ? "💾 SAVE ADJUSTMENTS" : "🚀 FINAL SUBMIT & ARCHIVE"}
+              </button>
+              {mode === "overview" && (
+                <button 
+                  onClick={() => setIsLocked(true)} 
+                  className="text-slate-500 font-bold hover:underline"
+                >
+                  Cancel and Discard Changes
+                </button>
+              )}
+            </div>
+          )}
         </main>
       </div>
     </div>
