@@ -1,14 +1,14 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import ManpowerTable from "@/app/components/ManpowerTable";
 
-export default function TablePage() {
+function TableContent() {
   const searchParams = useSearchParams();
   const start = searchParams.get("start") || "";
   const end = searchParams.get("end") || "";
 
-  // you could parse or validate the dates if needed
   const weekString = start && end ? `start=${start}&end=${end}` : "";
 
   return (
@@ -20,5 +20,13 @@ export default function TablePage() {
         <p className="p-8">No week selected. Please go back and pick a week.</p>
       )}
     </div>
+  );
+}
+
+export default function TablePage() {
+  return (
+    <Suspense fallback={<div className="p-8">Loading...</div>}>
+      <TableContent />
+    </Suspense>
   );
 }

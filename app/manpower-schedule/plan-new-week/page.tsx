@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { format, parseISO, addDays } from "date-fns";
 import { useSession } from "next-auth/react"; // <-- IMPORT SESSION
@@ -73,7 +73,7 @@ const SummaryTable = ({ title, data }: { title: string, data: any[] }) => {
   );
 };
 
-export default function PlanNewWeekPage() {
+function PlanNewWeekPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession(); // <-- GET LOGGED IN USER
@@ -557,5 +557,13 @@ export default function PlanNewWeekPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function PlanNewWeekPageWrapper() {
+  return (
+    <Suspense fallback={<div className="p-8">Loading...</div>}>
+      <PlanNewWeekPage />
+    </Suspense>
   );
 }
