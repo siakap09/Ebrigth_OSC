@@ -97,7 +97,7 @@ export default function DashboardHome({ userRole }: { userRole?: string }) {
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-8">
           <h1 className="text-4xl font-bold text-center text-red-600 mb-2">
-            Welcome to Ebright Dashboard
+            Welcome
           </h1>
           <p className="text-center text-gray-600">{dashboards.length} accessible dashboards</p>
         </div>

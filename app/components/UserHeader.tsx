@@ -6,13 +6,11 @@ import { signOut } from "next-auth/react"; // <-- 1. IMPORT THIS
 
 interface UserHeaderProps {
   userName?: string;
-  userRole?: string;
   userEmail?: string;
 }
 
-export default function UserHeader({ 
-  userName = "Admin User", 
-  userRole = "Super Admin",
+export default function UserHeader({
+  userName = "Admin User",
   userEmail = "admin@ebright.com"
 }: UserHeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -49,7 +47,6 @@ export default function UserHeader({
         </div>
         <div className="text-left hidden sm:block">
           <p className="text-sm font-semibold text-white">{userName}</p>
-          <p className="text-xs text-blue-100">{userRole}</p>
         </div>
       </button>
 
@@ -59,7 +56,6 @@ export default function UserHeader({
           {/* User Info */}
           <div className="px-4 py-4 border-b border-gray-200">
             <p className="text-sm font-semibold text-gray-900">{userName}</p>
-            <p className="text-xs text-gray-600 mt-1">{userRole}</p>
             <p className="text-xs text-gray-500 mt-1">{userEmail}</p>
           </div>
 
@@ -80,16 +76,6 @@ export default function UserHeader({
               👤 My Profile
             </Link>
             
-            {/* Updated check to match your database role name */}
-            {userRole === "SUPER_ADMIN" && (
-              <Link
-                href="/user-management"
-                className="block px-4 py-2 text-sm hover:bg-gray-100 transition-colors border-t border-gray-200 mt-2 pt-2"
-                onClick={() => setDropdownOpen(false)}
-              >
-                👥 User Management
-              </Link>
-            )}
           </div>
 
           {/* Logout */}

@@ -123,13 +123,13 @@ export default function EmployeeTable({
           placeholder="Search by name, email, or ID..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
         />
 
         <select
           value={branchFilter}
           onChange={(e) => setBranchFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
         >
           <option value="all">All Branches</option>
           {BRANCH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -138,7 +138,7 @@ export default function EmployeeTable({
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
         >
           <option value="all">All Roles</option>
           {ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -147,11 +147,12 @@ export default function EmployeeTable({
         <select
           value={accessFilter}
           onChange={(e) => setAccessFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
         >
           <option value="all">All Access Status</option>
           <option value="AUTHORIZED">Authorized</option>
           <option value="UNAUTHORIZED">Unauthorized</option>
+          <option value="ARCHIVED">Archived (Resigned)</option>
         </select>
       </div>
 
@@ -271,6 +272,10 @@ export default function EmployeeTable({
           | Unauthorized:{" "}
           <span className="font-bold text-red-600">
             {employees.filter((e) => e.accessStatus === "UNAUTHORIZED").length}
+          </span>{" "}
+          | Archived:{" "}
+          <span className="font-bold text-yellow-600">
+            {employees.filter((e) => e.accessStatus === "ARCHIVED").length}
           </span>
         </p>
       </div>

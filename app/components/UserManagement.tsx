@@ -79,6 +79,28 @@ export default function UserManagement({ userRole = "SUPER_ADMIN" }: UserManagem
     fetchUsers();
   }, [isAuthorized]);
 
+  const handleArchive = async (id: string) => {
+    if (!confirm("Archive this employee? They will be marked as resigned.")) return;
+    try {
+      const response = await fetch("/api/employees", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, accessStatus: "ARCHIVED" }),
+      });
+      if (response.ok) {
+        const updated = users.map((u) =>
+          u.id === id ? { ...u, accessStatus: "ARCHIVED" } : u
+        );
+        setUsers(updated);
+        setSelectedUser((prev) => prev?.id === id ? { ...prev, accessStatus: "ARCHIVED" } : prev);
+      } else {
+        setError("Failed to archive employee");
+      }
+    } catch {
+      setError("Failed to archive employee");
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this employee? This action cannot be undone.")) return;
     try {
@@ -140,7 +162,7 @@ export default function UserManagement({ userRole = "SUPER_ADMIN" }: UserManagem
         name={name}
         value={(editData?.[name] as string) || ""}
         onChange={handleInputChange}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
     </div>
   );
@@ -182,7 +204,7 @@ export default function UserManagement({ userRole = "SUPER_ADMIN" }: UserManagem
             placeholder="Search by name, email, or employee ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
             🔍 Search
@@ -266,12 +288,12 @@ export default function UserManagement({ userRole = "SUPER_ADMIN" }: UserManagem
                         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Full Name</label>
                         <input type="text" name="fullName" value={editData ? getDisplayName(editData) : ""}
                           onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Gender</label>
                         <select name="gender" value={editData?.gender || "MALE"} onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
                           {GENDER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
@@ -290,38 +312,46 @@ export default function UserManagement({ userRole = "SUPER_ADMIN" }: UserManagem
                     <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide border-b pb-2 mb-4">Employment</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Branch</label>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Branch/Dept</label>
                         <select name="branch" value={editData?.branch || "HQ"} onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
                           {BRANCH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Role</label>
                         <select name="role" value={editData?.role || ""} onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
                           {ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Contract</label>
-                        <select name="contract" value={editData?.contract || "12 MONTH"} onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <select name="contract" value={editData?.contract ?? ""} onChange={handleInputChange}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
                           {CONTRACT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
-                      {inp("Rate", "rate", "number")}
                       {inp("Start Date", "startDate", "date")}
-                      {inp("End Date", "endDate", "date")}
                       {inp("Probation", "probation", "date")}
+                      {inp("End Date", "endDate", "date")}
+                      {inp("Rate", "rate", "number")}
                       {inp("Hire Date", "Emp_Hire_Date", "date")}
                       {inp("Signed Date", "Signed_Date", "date")}
                       {inp("Employee Type", "Emp_Type")}
-                      {inp("Employee Status", "Emp_Status")}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Employee Status</label>
+                        <select name="Emp_Status" value={editData?.Emp_Status || ""} onChange={handleInputChange}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                          <option value="">-- Select Status --</option>
+                          <option value="Active">Active</option>
+                          <option value="Inactive">Inactive</option>
+                        </select>
+                      </div>
                       <div>
                         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Access Status</label>
                         <select name="accessStatus" value={editData?.accessStatus || "AUTHORIZED"} onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
                           <option value="AUTHORIZED">AUTHORIZED</option>
                           <option value="UNAUTHORIZED">UNAUTHORIZED</option>
                         </select>
@@ -384,13 +414,13 @@ export default function UserManagement({ userRole = "SUPER_ADMIN" }: UserManagem
                   <section>
                     <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide border-b pb-2 mb-4">Employment</h4>
                     <div className="grid grid-cols-2 gap-3">
-                      {field("Branch", selectedUser.branch)}
+                      {field("Branch/Dept", selectedUser.branch)}
                       {field("Role", selectedUser.role)}
                       {field("Contract", selectedUser.contract)}
-                      {field("Rate", selectedUser.rate)}
                       {field("Start Date", selectedUser.startDate)}
-                      {field("End Date", selectedUser.endDate)}
                       {field("Probation", selectedUser.probation)}
+                      {field("End Date", selectedUser.endDate)}
+                      {field("Rate", selectedUser.rate)}
                       {field("Hire Date", selectedUser.Emp_Hire_Date)}
                       {field("Signed Date", selectedUser.Signed_Date)}
                       {field("Employee Type", selectedUser.Emp_Type)}

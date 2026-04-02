@@ -34,7 +34,7 @@ export default function HomePage() {
       <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
         <div className="flex justify-between items-center px-4 py-6">
           <div>
-            <h1 className="text-3xl font-bold">Ebright HR System</h1>
+            <h1 className="text-3xl font-bold">Ebright Portal</h1>
             <p className="text-blue-100 mt-1">Dashboard Home</p>
           </div>
           

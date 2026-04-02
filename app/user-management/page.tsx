@@ -20,6 +20,7 @@ export default function UserManagementPage() {
   const [showExportFilter, setShowExportFilter] = useState(false);
   const [exportFrom, setExportFrom] = useState("");
   const [exportTo, setExportTo] = useState("");
+  const [exportAccess, setExportAccess] = useState("");
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -34,6 +35,7 @@ export default function UserManagementPage() {
       const date = emp.startDate || emp.registeredAt?.substring(0, 10) || "";
       if (exportFrom && date < exportFrom) return false;
       if (exportTo && date > exportTo) return false;
+      if (exportAccess && emp.accessStatus !== exportAccess) return false;
       return true;
     });
     if (filtered.length === 0) {
@@ -159,12 +161,22 @@ export default function UserManagementPage() {
                 <input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Access Status</label>
+                <select value={exportAccess} onChange={(e) => setExportAccess(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                  <option value="">All</option>
+                  <option value="AUTHORIZED">Authorized</option>
+                  <option value="UNAUTHORIZED">Unauthorized</option>
+                  <option value="ARCHIVED">Archived (Resigned)</option>
+                </select>
+              </div>
               <div className="flex gap-2">
                 <button onClick={handleExport}
                   className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors">
                   Download
                 </button>
-                <button onClick={() => { setShowExportFilter(false); setExportFrom(""); setExportTo(""); }}
+                <button onClick={() => { setShowExportFilter(false); setExportFrom(""); setExportTo(""); setExportAccess(""); }}
                   className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-sm font-medium rounded-lg transition-colors">
                   Cancel
                 </button>
