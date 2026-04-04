@@ -197,7 +197,7 @@ export default function UserManagement({ userRole = "SUPER_ADMIN" }: UserManagem
     <div className="space-y-6">
       {/* Search */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">👥 User Management</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">👥 User</h2>
         <div className="flex gap-2">
           <input
             type="text"

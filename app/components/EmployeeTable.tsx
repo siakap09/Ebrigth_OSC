@@ -114,7 +114,7 @@ export default function EmployeeTable({
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">Employee Management</h2>
+      <h2 className="text-2xl font-bold mb-6 text-gray-800">Employee</h2>
 
       {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">

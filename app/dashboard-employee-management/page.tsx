@@ -27,7 +27,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-4">
             <div className="flex flex-col items-end gap-2">
-              <UserHeader userName="Admin User" userRole="SUPER_ADMIN" userEmail="admin@ebright.com" />
+              <UserHeader userName="Admin User" userEmail="admin@ebright.com" />
               <a
                 href="/user-management"
                 className="bg-white text-blue-600 hover:bg-blue-50 font-medium py-2 px-4 rounded-lg transition-colors shadow text-sm"

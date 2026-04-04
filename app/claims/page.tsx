@@ -143,7 +143,7 @@ export default function ClaimsPage() {
             <h1 className="text-4xl font-black tracking-tight uppercase">Claims <span className="text-blue-500">Hub</span></h1>
             <p className="text-slate-400 font-medium text-sm tracking-widest mt-1">EBRIGHT FINANCE PORTAL</p>
           </div>
-          <UserHeader userName="Admin User" userRole="SUPER_ADMIN" userEmail="admin@ebright.com" />
+          <UserHeader userName="Admin User" userEmail="admin@ebright.com" />
         </div>
       </header>
 
