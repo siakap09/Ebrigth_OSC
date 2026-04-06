@@ -229,9 +229,12 @@ export default function UpdateSchedulePage() {
     }
   };
 
+  const sanitizeSelections = (selections: Record<string, any>) =>
+    Object.fromEntries(Object.entries(selections || {}).filter(([, v]) => v && v !== "None"));
+
   const handleSelectRecord = (record: any) => {
     setSelectedRecord(record);
-    setUpdatedSelections({ ...record.selections });
+    setUpdatedSelections(sanitizeSelections(record.selections));
     setUpdatedNotes({ ...record.notes });
     const days = getWorkingDaysForBranch(record.branch);
     if (days.length > 0) setSelectedDay(days[0]);
@@ -291,8 +294,9 @@ export default function UpdateSchedulePage() {
 
   const calculateHoursForData = (selections: Record<string, string>, isOriginalData = false) => {
     if (!selectedRecord) return [];
-    const dataToCalculate = isOriginalData ? (selectedRecord.originalSelections || selectedRecord.selections) : selections;
-    if (!dataToCalculate) return [];
+    const rawData = isOriginalData ? (selectedRecord.originalSelections || selectedRecord.selections) : selections;
+    if (!rawData) return [];
+    const dataToCalculate = sanitizeSelections(rawData);
 
     const managerNames = new Set(Object.values(branchManagerData).flat());
     const allBranchStaff = (branchStaffData[selectedRecord.branch] || []).filter(n => !managerNames.has(n));
@@ -336,7 +340,7 @@ export default function UpdateSchedulePage() {
     
     const updatedRecord = {
       ...selectedRecord,
-      selections: updatedSelections,
+      selections: sanitizeSelections(updatedSelections),
       notes: updatedNotes,
       status: "Updated",
     };
@@ -515,9 +519,10 @@ export default function UpdateSchedulePage() {
                                       <>
                                         {COLUMNS.map(col => {
                                           const name = originalData[`${day}-${slot}-${col.id}`];
+                                          const validName = name && name !== "None" ? name : "";
                                           return (
-                                            <td key={col.id} className={`p-1 border text-center font-bold h-[32px] ${name ? getStaffColorByIndex(name, activeStaffList) : 'bg-white'}`}>
-                                              {getShortName(name) || "-"}
+                                            <td key={col.id} className={`p-1 border text-center font-bold h-[32px] ${validName ? getStaffColorByIndex(validName, activeStaffList) : 'bg-white'}`}>
+                                              {getShortName(validName) || "-"}
                                             </td>
                                           );
                                         })}
@@ -594,10 +599,11 @@ export default function UpdateSchedulePage() {
                                 const isOpenClose = isOpeningClosingSlot(slot, selectedRecord.branch);
                                 // --- KEY FIX: per-slot manager logic for Actual side ---
                                 const showManagerActual = isManagerOnDutySlot(slot, selectedRecord.branch, day);
-                                const actualManagerVal =
-                                  updatedSelections[`${day}-${slot}-MANAGER`] ||   // new format
-                                  updatedNotes[`${day}-MANAGER`] ||                 // legacy format
+                                const rawManagerVal =
+                                  updatedSelections[`${day}-${slot}-MANAGER`] ||
+                                  updatedNotes[`${day}-MANAGER`] ||
                                   "";
+                                const actualManagerVal = rawManagerVal === "None" ? "" : rawManagerVal;
 
                                 return (
                                   <tr key={slot} className={`group h-[32px] ${isOpenClose ? 'bg-blue-50' : ''}`}>
@@ -643,7 +649,8 @@ export default function UpdateSchedulePage() {
                                     ) : (
                                       <>
                                         {COLUMNS.map(col => {
-                                          const val = updatedSelections[`${day}-${slot}-${col.id}`] || "";
+                                          const rawVal = updatedSelections[`${day}-${slot}-${col.id}`] || "";
+                                          const val = rawVal === "None" ? "" : rawVal;
                                           const replacementBranch = columnReplacementBranch[`${day}-${col.id}`];
                                           const colStaffList = replacementBranch
                                             ? (branchStaffData[replacementBranch] || [])
@@ -661,7 +668,7 @@ export default function UpdateSchedulePage() {
                                           return (
                                             <td key={col.id} className={`p-0 border h-[32px] ${col.type==='exec' ? 'bg-slate-50' : 'bg-white'}`}>
                                               <select value={val} onChange={(e) => handleActualNameSelect(day, slot, col.id, e.target.value)}
-                                                className={`w-full h-full p-1 outline-none font-bold text-center appearance-none block ${val ? getStaffColorByIndex(val, activeStaffList) : 'bg-transparent text-slate-300'}`}>
+                                                className={`w-full h-full p-1 outline-none font-bold text-center appearance-none block ${val && val !== "None" ? getStaffColorByIndex(val, activeStaffList) : 'bg-transparent text-slate-300'}`}>
                                                 <option value="">None</option>
                                                 {colStaffList.map(e => {
                                                   const conflictBranch = replacementBranch
