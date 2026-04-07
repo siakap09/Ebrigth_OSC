@@ -175,8 +175,8 @@ export default function UpdateSchedulePage() {
     return history.filter((record: any) => {
       if (userRole === "BRANCH_MANAGER" && record.branch !== userBranch) return false;
       if (filterBranch && record.branch !== filterBranch) return false;
-      if (filterYear && format(parseISO(record.startDate), "yyyy") !== filterYear) return false;
-      if (filterMonth && format(parseISO(record.startDate), "yyyy-MM") !== `${filterYear || format(today, "yyyy")}-${filterMonth}`) return false;
+      if (!filterQuick && filterYear && format(parseISO(record.startDate), "yyyy") !== filterYear) return false;
+      if (!filterQuick && filterMonth && format(parseISO(record.startDate), "yyyy-MM") !== `${filterYear || format(today, "yyyy")}-${filterMonth}`) return false;
       if (filterQuick === "this-week" && record.startDate !== thisMonday) return false;
       if (filterQuick === "last-week" && record.startDate !== lastMonday) return false;
       return true;
@@ -842,7 +842,7 @@ export default function UpdateSchedulePage() {
                 <div className="flex flex-wrap gap-2 items-center">
                   <span className="text-[10px] font-black uppercase text-slate-400">Quick:</span>
                   {["this-week","last-week"].map(q => (
-                    <button key={q} onClick={() => { setFilterQuick(filterQuick === q ? "" : q); setFilterYear(""); setFilterMonth(""); }}
+                    <button key={q} onClick={() => setFilterQuick(filterQuick === q ? "" : q)}
                       className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wide transition-colors ${filterQuick === q ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
                       {q === "this-week" ? "This Week" : "Last Week"}
                     </button>
