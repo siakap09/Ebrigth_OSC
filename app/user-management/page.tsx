@@ -199,7 +199,7 @@ export default function UserManagementPage() {
           )}
 
           {/* User Management Table */}
-          <UserManagement key={refreshKey} userRole="SUPER_ADMIN" />
+          <UserManagement key={refreshKey} />
         </main>
       </div>
     </div>
