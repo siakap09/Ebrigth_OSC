@@ -310,11 +310,11 @@ async function main() {
   //     TikTok / Wix into one table-shaped result.
   const leadsRes = await leadsClient.query<UnifiedLeadRow>(`
     SELECT source_table, source_id, lead_source, full_name, phone, email,
-           clean_branch, region, submitted_at, children_details
+           clean_branch, region, submitted_at, children_details, sibling_index
       FROM public.master_leads_unified
      WHERE submitted_at IS NOT NULL
        AND (full_name IS NOT NULL OR phone IS NOT NULL OR email IS NOT NULL)
-     ORDER BY submitted_at ASC
+     ORDER BY submitted_at ASC, sibling_index ASC NULLS FIRST
   `)
   console.log(`→ Found ${leadsRes.rows.length.toLocaleString()} importable leads`)
 

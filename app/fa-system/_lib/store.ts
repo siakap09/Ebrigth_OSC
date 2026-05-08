@@ -1,7 +1,12 @@
-﻿// ============================================================================
+// ============================================================================
 // FA System — Zustand Store
-// In-memory "database" with persistence to localStorage.
-// Swap out later for real API calls when backend is ready.
+//
+// Events, sessions, quotas, and invitations are server-backed (DB on
+// ebrightleads_db). Mutators call API routes; local state mirrors what the
+// server returns so all logged-in users see the same data.
+//
+// Sessions display order, inventory packing checklist, and walk-in buffer
+// remain local-only (UI preferences) and persist to localStorage.
 // ============================================================================
 
 import { create } from "zustand";
@@ -16,13 +21,7 @@ import {
   User,
   BranchCode,
 } from "@fa/_types";
-import {
-  MOCK_EVENTS,
-  MOCK_INVITATIONS,
-  MOCK_QUOTAS,
-  MOCK_SESSIONS,
-  MOCK_USERS,
-} from "./mockData";
+import { MOCK_USERS } from "./mockData";
 
 interface FAStore {
   // ------- Data -------
@@ -44,28 +43,30 @@ interface FAStore {
   studentsError: string | null;
   loadStudents: () => Promise<void>;
 
+  // ------- Event data loading (real DB) -------
+  eventsLoaded: boolean;
+  eventsLoading: boolean;
+  eventsError: string | null;
+  loadEvents: () => Promise<void>;
+
   // ------- Event CRUD -------
-  createEvent: (ev: Omit<FAEvent, "id" | "createdAt">) => FAEvent;
-  updateEvent: (id: string, patch: Partial<FAEvent>) => void;
-  deleteEvent: (id: string) => void;
+  createEvent: (ev: Omit<FAEvent, "id" | "createdAt">) => Promise<FAEvent>;
+  updateEvent: (id: string, patch: Partial<FAEvent>) => Promise<void>;
+  deleteEvent: (id: string) => Promise<void>;
 
   // ------- Session CRUD -------
-  createSession: (s: Omit<Session, "id">) => Session;
-  updateSession: (id: string, patch: Partial<Session>) => void;
-  deleteSession: (id: string) => void;
+  createSession: (s: Omit<Session, "id">) => Promise<Session>;
+  updateSession: (id: string, patch: Partial<Session>) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
 
   // ------- Quota CRUD -------
-  setQuota: (sessionId: string, branch: BranchCode, quota: number) => void;
-  removeQuota: (sessionId: string, branch: BranchCode) => void;
+  setQuota: (sessionId: string, branch: BranchCode, quota: number) => Promise<void>;
+  removeQuota: (sessionId: string, branch: BranchCode) => Promise<void>;
 
   // ------- Invitation CRUD -------
-  /** Create an invitation. Returns null if the student is already invited to
-   *  the event, or (unless `allowOverQuota`) if the session has no quota for
-   *  the branch or the quota is already full.
-   *
-   *  - `initialStatus` defaults to "invited"; pass "confirmed" for walk-ins.
-   *  - `allowOverQuota` defaults to false; walk-ins set it to true so the
-   *    quota check is skipped (still subject to the duplicate check). */
+  /** Create an invitation. Returns null if rejected (already invited / quota
+   *  full / event closed). The server enforces all three rules; the result
+   *  shape mirrors the original local-only behaviour. */
   inviteStudent: (args: {
     eventId: string;
     sessionId: string;
@@ -74,30 +75,18 @@ interface FAStore {
     invitedBy: string;
     initialStatus?: InvitationStatus;
     allowOverQuota?: boolean;
-  }) => Invitation | null;
-  updateInvitationStatus: (id: string, status: InvitationStatus, by?: string) => void;
-  removeInvitation: (id: string) => void;
-  /** Move an invitation to a different session. Updates the invitation's
-   *  sessionId and rewrites sessionOrder for both source and target. */
-  moveInvitationToSession: (invitationId: string, targetSessionId: string) => void;
+  }) => Promise<Invitation | null>;
+  updateInvitationStatus: (id: string, status: InvitationStatus, by?: string) => Promise<void>;
+  removeInvitation: (id: string) => Promise<void>;
+  moveInvitationToSession: (invitationId: string, targetSessionId: string) => Promise<void>;
 
-  // ------- Display order (per session) -------
-  /** Persisted display order for the attendance roster. Keyed by sessionId,
-   *  value is an array of invitation IDs in the desired display order. */
+  // ------- Display order (per session) — local-only -------
   sessionOrder: Record<string, string[]>;
   setSessionOrder: (sessionId: string, invitationIds: string[]) => void;
 
-  // ------- Inventory packing checklist -------
-  /** Per-event set of packed inventory item keys. The page builds opaque
-   *  keys like `medals:sess-apr-d1-1`, `mics:G3`, `sashes:ST`,
-   *  `certs:sess-apr-d1-1`, plus `<section>:buffer` for the walk-in buffer
-   *  rows. Stored as a string[] (not a Set) so it round-trips through JSON
-   *  for the persist middleware. */
+  // ------- Inventory packing checklist — local-only -------
   packedItems: Record<string, string[]>;
   togglePackedItem: (eventId: string, itemKey: string) => void;
-  /** Per-event walk-in buffer — extras to pack per grade (G1–G8) in case
-   *  unannounced students show up. Stored as { [grade]: count }. Missing
-   *  entries / events default to 0. */
   walkInBuffer: Record<string, Record<number, number>>;
   setWalkInBufferForGrade: (eventId: string, grade: number, n: number) => void;
 
@@ -105,17 +94,42 @@ interface FAStore {
   resetToSeed: () => void;
 }
 
-const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+// ----------------------------------------------------------------------------
+// API helpers
+// ----------------------------------------------------------------------------
+
+async function apiJson<T>(
+  url: string,
+  init: RequestInit = {}
+): Promise<{ ok: true; data: T } | { ok: false; status: number; body: unknown }> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {}
+    return { ok: false, status: res.status, body };
+  }
+  const data = (await res.json()) as T;
+  return { ok: true, data };
+}
 
 export const useFAStore = create<FAStore>()(
   persist(
     (set, get) => ({
       users: MOCK_USERS,
       students: [],
-      events: MOCK_EVENTS,
-      sessions: MOCK_SESSIONS,
-      quotas: MOCK_QUOTAS,
-      invitations: MOCK_INVITATIONS,
+      events: [],
+      sessions: [],
+      quotas: [],
+      invitations: [],
       sessionOrder: {},
       packedItems: {},
       walkInBuffer: {},
@@ -123,10 +137,14 @@ export const useFAStore = create<FAStore>()(
       studentsLoaded: false,
       studentsLoading: false,
       studentsError: null,
+      eventsLoaded: false,
+      eventsLoading: false,
+      eventsError: null,
 
       login: (userId) => set({ currentUserId: userId }),
       logout: () => set({ currentUserId: null }),
 
+      // ------- Student data loading -------
       loadStudents: async () => {
         if (get().studentsLoading) return;
         set({ studentsLoading: true, studentsError: null });
@@ -147,158 +165,221 @@ export const useFAStore = create<FAStore>()(
         }
       },
 
+      // ------- Event data loading (events + sessions + quotas + invitations) -------
+      loadEvents: async () => {
+        if (get().eventsLoading) return;
+        set({ eventsLoading: true, eventsError: null });
+        try {
+          const res = await fetch("/api/fa/data", { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = (await res.json()) as {
+            events: FAEvent[];
+            sessions: Session[];
+            quotas: SessionQuota[];
+            invitations: Invitation[];
+          };
+          set({
+            events: data.events,
+            sessions: data.sessions,
+            quotas: data.quotas,
+            invitations: data.invitations,
+            eventsLoaded: true,
+            eventsLoading: false,
+          });
+        } catch (err) {
+          set({
+            eventsError: err instanceof Error ? err.message : "Unknown error",
+            eventsLoading: false,
+          });
+        }
+      },
+
       // ------- Events -------
-      createEvent: (ev) => {
-        const newEvent: FAEvent = {
-          ...ev,
-          id: id("e"),
-          createdAt: new Date().toISOString(),
-        };
-        set(s => ({ events: [...s.events, newEvent] }));
+      createEvent: async (ev) => {
+        const r = await apiJson<FAEvent>("/api/fa/events", {
+          method: "POST",
+          body: JSON.stringify(ev),
+        });
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error;
+          throw new Error(
+            `Create event failed (HTTP ${r.status})${detail ? ": " + detail : ""}`
+          );
+        }
+        const newEvent = r.data;
+        set((s) => ({ events: [...s.events, newEvent] }));
         return newEvent;
       },
-      updateEvent: (id, patch) => {
-        set(s => ({
-          events: s.events.map(e => (e.id === id ? { ...e, ...patch } : e)),
+
+      updateEvent: async (id, patch) => {
+        const r = await apiJson<FAEvent>(`/api/fa/events/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        });
+        if (!r.ok) throw new Error(`Update event failed (HTTP ${r.status})`);
+        const updated = r.data;
+        set((s) => ({
+          events: s.events.map((e) => (e.id === id ? updated : e)),
         }));
       },
-      deleteEvent: (id) => {
-        // Cascade: delete event → its sessions → their quotas → invitations
-        const sessionIds = get().sessions.filter(s => s.eventId === id).map(s => s.id);
-        set(s => ({
-          events: s.events.filter(e => e.id !== id),
-          sessions: s.sessions.filter(ss => ss.eventId !== id),
-          quotas: s.quotas.filter(q => !sessionIds.includes(q.sessionId)),
-          invitations: s.invitations.filter(i => i.eventId !== id),
+
+      deleteEvent: async (id) => {
+        const r = await apiJson<{ ok: true }>(`/api/fa/events/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!r.ok) throw new Error(`Delete event failed (HTTP ${r.status})`);
+        // Server cascades; mirror locally.
+        const sessionIds = get().sessions.filter((s) => s.eventId === id).map((s) => s.id);
+        set((s) => ({
+          events: s.events.filter((e) => e.id !== id),
+          sessions: s.sessions.filter((ss) => ss.eventId !== id),
+          quotas: s.quotas.filter((q) => !sessionIds.includes(q.sessionId)),
+          invitations: s.invitations.filter((i) => i.eventId !== id),
         }));
       },
 
       // ------- Sessions -------
-      createSession: (sess) => {
-        const newSession: Session = { ...sess, id: id("sess") };
-        set(s => ({ sessions: [...s.sessions, newSession] }));
+      createSession: async (sess) => {
+        const r = await apiJson<Session>("/api/fa/sessions", {
+          method: "POST",
+          body: JSON.stringify(sess),
+        });
+        if (!r.ok) throw new Error(`Create session failed (HTTP ${r.status})`);
+        const newSession = r.data;
+        set((s) => ({ sessions: [...s.sessions, newSession] }));
         return newSession;
       },
-      updateSession: (id, patch) => {
-        set(s => ({
-          sessions: s.sessions.map(ss => (ss.id === id ? { ...ss, ...patch } : ss)),
+
+      updateSession: async (id, patch) => {
+        const r = await apiJson<Session>(`/api/fa/sessions/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        });
+        if (!r.ok) throw new Error(`Update session failed (HTTP ${r.status})`);
+        const updated = r.data;
+        set((s) => ({
+          sessions: s.sessions.map((ss) => (ss.id === id ? updated : ss)),
         }));
       },
-      deleteSession: (id) => {
-        set(s => ({
-          sessions: s.sessions.filter(ss => ss.id !== id),
-          quotas: s.quotas.filter(q => q.sessionId !== id),
-          invitations: s.invitations.filter(i => i.sessionId !== id),
+
+      deleteSession: async (id) => {
+        const r = await apiJson<{ ok: true }>(`/api/fa/sessions/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!r.ok) throw new Error(`Delete session failed (HTTP ${r.status})`);
+        set((s) => ({
+          sessions: s.sessions.filter((ss) => ss.id !== id),
+          quotas: s.quotas.filter((q) => q.sessionId !== id),
+          invitations: s.invitations.filter((i) => i.sessionId !== id),
         }));
       },
 
       // ------- Quotas -------
-      setQuota: (sessionId, branch, quota) => {
-        const existing = get().quotas.find(q => q.sessionId === sessionId && q.branch === branch);
-        if (existing) {
-          if (quota <= 0) {
-            set(s => ({ quotas: s.quotas.filter(q => q.id !== existing.id) }));
-          } else {
-            set(s => ({
-              quotas: s.quotas.map(q => (q.id === existing.id ? { ...q, quota } : q)),
-            }));
-          }
-        } else if (quota > 0) {
-          const newQuota: SessionQuota = { id: id("q"), sessionId, branch, quota };
-          set(s => ({ quotas: [...s.quotas, newQuota] }));
-        }
+      setQuota: async (sessionId, branch, quota) => {
+        const r = await apiJson<{ quota: SessionQuota | null }>("/api/fa/quotas", {
+          method: "PUT",
+          body: JSON.stringify({ sessionId, branch, quota }),
+        });
+        if (!r.ok) throw new Error(`Set quota failed (HTTP ${r.status})`);
+        const result = r.data.quota;
+        set((s) => {
+          const without = s.quotas.filter(
+            (q) => !(q.sessionId === sessionId && q.branch === branch)
+          );
+          return { quotas: result ? [...without, result] : without };
+        });
       },
-      removeQuota: (sessionId, branch) => {
-        set(s => ({
-          quotas: s.quotas.filter(q => !(q.sessionId === sessionId && q.branch === branch)),
-        }));
+
+      removeQuota: async (sessionId, branch) => {
+        await get().setQuota(sessionId, branch, 0);
       },
 
       // ------- Invitations -------
-      inviteStudent: ({ eventId, sessionId, studentId, branch, invitedBy, initialStatus, allowOverQuota }) => {
-        // Lock once Marketing has confirmed/closed the event. Walk-ins
-        // (allowOverQuota) bypass this — they're added during the event itself
-        // by Marketing/MKT and represent real attendees.
-        const event = get().events.find(e => e.id === eventId);
-        if (!event) return null;
-        if (!allowOverQuota && (event.status === "closed" || event.status === "completed")) {
-          return null;
-        }
-
-        // Prevent duplicate invites for the same student in the same event
-        // (always — walk-ins included).
-        const already = get().invitations.find(
-          i => i.eventId === eventId && i.studentId === studentId
+      inviteStudent: async ({
+        eventId,
+        sessionId,
+        studentId,
+        branch,
+        invitedBy,
+        initialStatus,
+        allowOverQuota,
+      }) => {
+        const r = await apiJson<{ invitation: Invitation | null; reason?: string }>(
+          "/api/fa/invitations",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              eventId,
+              sessionId,
+              studentId,
+              branch,
+              invitedBy,
+              initialStatus,
+              allowOverQuota,
+            }),
+          }
         );
-        if (already) return null;
-
-        // Enforce quota unless this is a walk-in (allowOverQuota === true).
-        if (!allowOverQuota) {
-          const quota = get().quotas.find(q => q.sessionId === sessionId && q.branch === branch);
-          if (!quota) return null;
-          const currentCount = get().invitations.filter(
-            i => i.sessionId === sessionId && i.branch === branch
-          ).length;
-          if (currentCount >= quota.quota) return null;
-        }
-
-        const status: InvitationStatus = initialStatus ?? "invited";
-        const now = new Date().toISOString();
-        const newInv: Invitation = {
-          id: id("inv"),
-          eventId,
-          sessionId,
-          studentId,
-          branch,
-          status,
-          invitedBy,
-          invitedAt: now,
-          // Walk-ins arrive in "confirmed" state — record confirmedAt so the
-          // attendance UI surfaces the parent-confirmation indicator.
-          ...(status === "confirmed" ? { confirmedAt: now } : {}),
-        };
-        set(s => ({ invitations: [...s.invitations, newInv] }));
-        return newInv;
+        // 409 = business rule rejection; surface as `null` like the old store
+        // so existing call sites that check `if (!created)` keep working.
+        if (!r.ok && r.status === 409) return null;
+        if (!r.ok && r.status === 404) return null;
+        if (!r.ok) throw new Error(`Invite failed (HTTP ${r.status})`);
+        const inv = r.data.invitation;
+        if (!inv) return null;
+        set((s) => ({ invitations: [...s.invitations, inv] }));
+        return inv;
       },
-      updateInvitationStatus: (id, status, by) => {
-        set(s => ({
-          invitations: s.invitations.map(i => {
-            if (i.id !== id) return i;
-            const patch: Partial<Invitation> = { status };
-            if (status === "confirmed") patch.confirmedAt = new Date().toISOString();
-            if (status === "attended" || status === "no_show") {
-              patch.attendanceMarkedAt = new Date().toISOString();
-              patch.attendanceMarkedBy = by;
-            }
-            return { ...i, ...patch };
-          }),
+
+      updateInvitationStatus: async (id, status, by) => {
+        const r = await apiJson<Invitation>(`/api/fa/invitations/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status, markedBy: by }),
+        });
+        if (!r.ok) throw new Error(`Update invitation failed (HTTP ${r.status})`);
+        const updated = r.data;
+        set((s) => ({
+          invitations: s.invitations.map((i) => (i.id === id ? updated : i)),
         }));
       },
-      removeInvitation: (id) => {
-        set(s => ({
-          invitations: s.invitations.filter(i => i.id !== id),
+
+      removeInvitation: async (id) => {
+        const r = await apiJson<{ ok: true }>(`/api/fa/invitations/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!r.ok) throw new Error(`Remove invitation failed (HTTP ${r.status})`);
+        set((s) => ({
+          invitations: s.invitations.filter((i) => i.id !== id),
           sessionOrder: Object.fromEntries(
-            Object.entries(s.sessionOrder).map(([sid, ids]) => [sid, ids.filter(x => x !== id)])
+            Object.entries(s.sessionOrder).map(([sid, ids]) => [sid, ids.filter((x) => x !== id)])
           ),
         }));
       },
-      moveInvitationToSession: (invitationId, targetSessionId) => {
-        set(s => {
-          const inv = s.invitations.find(i => i.id === invitationId);
-          if (!inv) return s;
-          const sourceSessionId = inv.sessionId;
-          if (sourceSessionId === targetSessionId) return s;
 
-          const newInvitations = s.invitations.map(i =>
-            i.id === invitationId ? { ...i, sessionId: targetSessionId } : i
+      moveInvitationToSession: async (invitationId, targetSessionId) => {
+        const inv = get().invitations.find((i) => i.id === invitationId);
+        if (!inv) return;
+        const sourceSessionId = inv.sessionId;
+        if (sourceSessionId === targetSessionId) return;
+
+        const r = await apiJson<Invitation>(
+          `/api/fa/invitations/${encodeURIComponent(invitationId)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ sessionId: targetSessionId }),
+          }
+        );
+        if (!r.ok) throw new Error(`Move invitation failed (HTTP ${r.status})`);
+        const updated = r.data;
+
+        set((s) => {
+          const newInvitations = s.invitations.map((i) => (i.id === invitationId ? updated : i));
+          const sourceOrder = (s.sessionOrder[sourceSessionId] ?? []).filter(
+            (x) => x !== invitationId
           );
-
-          const sourceOrder = (s.sessionOrder[sourceSessionId] ?? []).filter(x => x !== invitationId);
           const existingTarget = s.sessionOrder[targetSessionId] ?? [];
           const targetOrder = existingTarget.includes(invitationId)
             ? existingTarget
             : [...existingTarget, invitationId];
-
           return {
             invitations: newInvitations,
             sessionOrder: {
@@ -312,23 +393,23 @@ export const useFAStore = create<FAStore>()(
 
       // ------- Display order -------
       setSessionOrder: (sessionId, invitationIds) => {
-        set(s => ({
+        set((s) => ({
           sessionOrder: { ...s.sessionOrder, [sessionId]: invitationIds },
         }));
       },
 
       // ------- Inventory packing checklist -------
       togglePackedItem: (eventId, itemKey) => {
-        set(s => {
+        set((s) => {
           const current = s.packedItems[eventId] ?? [];
           const next = current.includes(itemKey)
-            ? current.filter(k => k !== itemKey)
+            ? current.filter((k) => k !== itemKey)
             : [...current, itemKey];
           return { packedItems: { ...s.packedItems, [eventId]: next } };
         });
       },
       setWalkInBufferForGrade: (eventId, grade, n) => {
-        set(s => {
+        set((s) => {
           const current = s.walkInBuffer[eventId] ?? {};
           const value = Math.max(0, Math.floor(n));
           const next = { ...current };
@@ -343,35 +424,35 @@ export const useFAStore = create<FAStore>()(
 
       // ------- Utilities -------
       resetToSeed: () => {
+        // Clear everything that comes from the server so the next load
+        // re-hydrates fresh from the DB.
         set({
           users: MOCK_USERS,
-          // Students come from the real DB now — clear and re-fetch.
           students: [],
           studentsLoaded: false,
           studentsError: null,
-          events: MOCK_EVENTS,
-          sessions: MOCK_SESSIONS,
-          quotas: MOCK_QUOTAS,
-          invitations: MOCK_INVITATIONS,
+          events: [],
+          sessions: [],
+          quotas: [],
+          invitations: [],
+          eventsLoaded: false,
+          eventsError: null,
           sessionOrder: {},
           packedItems: {},
           walkInBuffer: {},
           currentUserId: null,
         });
         void get().loadStudents();
+        void get().loadEvents();
       },
     }),
     {
-      // Bumped from "fa-system-storage" — old key referenced mock student IDs
-      // that no longer exist now that students come from the real DB.
-      name: "fa-system-storage-v2",
-      // Don't persist students — they come from the academy department.
-      // Keep event/session/invitation data local for the demo.
+      // Bumped from v2 → v3: events/sessions/quotas/invitations are no longer
+      // persisted (server is source of truth). The key change forces existing
+      // browsers to drop their stale local data on first load.
+      name: "fa-system-storage-v3",
       partialize: (s) => ({
-        events: s.events,
-        sessions: s.sessions,
-        quotas: s.quotas,
-        invitations: s.invitations,
+        // Only persist UI-only state. Domain data lives on the server.
         sessionOrder: s.sessionOrder,
         packedItems: s.packedItems,
         walkInBuffer: s.walkInBuffer,
@@ -383,21 +464,21 @@ export const useFAStore = create<FAStore>()(
 
 // ------- Selectors -------
 export const selectEventById = (id: string) => (state: FAStore) =>
-  state.events.find(e => e.id === id);
+  state.events.find((e) => e.id === id);
 
 export const selectSessionsForEvent = (eventId: string) => (state: FAStore) =>
   state.sessions
-    .filter(s => s.eventId === eventId)
+    .filter((s) => s.eventId === eventId)
     .sort((a, b) => a.dayNumber - b.dayNumber || a.sessionNumber - b.sessionNumber);
 
 export const selectQuotasForSession = (sessionId: string) => (state: FAStore) =>
-  state.quotas.filter(q => q.sessionId === sessionId);
+  state.quotas.filter((q) => q.sessionId === sessionId);
 
 export const selectInvitationsForSession = (sessionId: string) => (state: FAStore) =>
-  state.invitations.filter(i => i.sessionId === sessionId);
+  state.invitations.filter((i) => i.sessionId === sessionId);
 
 export const selectInvitationsForEvent = (eventId: string) => (state: FAStore) =>
-  state.invitations.filter(i => i.eventId === eventId);
+  state.invitations.filter((i) => i.eventId === eventId);
 
 export const selectStudentsForBranch = (branch: BranchCode) => (state: FAStore) =>
-  state.students.filter(s => s.branch === branch);
+  state.students.filter((s) => s.branch === branch);

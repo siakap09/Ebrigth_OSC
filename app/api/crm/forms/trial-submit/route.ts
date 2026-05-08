@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { prisma } from '@/lib/crm/db'
 import { logAudit } from '@/lib/crm/audit'
@@ -48,9 +49,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
-    // Resolve default tenant
-    const tenant = await prisma.crm_tenant.findUnique({
-      where: { slug: 'ebright-demo' },
+    // Resolve default tenant. Production seed uses slug 'ebright'; the legacy
+    // demo seed used 'ebright-demo'. Try both so this works in either env.
+    const tenant = await prisma.crm_tenant.findFirst({
+      where: { slug: { in: ['ebright', 'ebright-demo'] } },
       select: { id: true },
     })
     if (!tenant) {
@@ -75,15 +77,6 @@ export async function POST(req: NextRequest) {
     }
     const newLeadStage = pipeline.stages[0]
 
-    const { firstName, lastName } = splitName(parsed.data.parentName)
-
-    // Build child data (firstName..4)
-    const childData: Record<string, string> = {}
-    parsed.data.children.forEach((c, idx) => {
-      childData[`childName${idx + 1}`] = c.name
-      childData[`childAge${idx + 1}`] = c.age
-    })
-
     // Optional: lookup "Website" lead source, create if missing
     let leadSource = await prisma.crm_lead_source.findFirst({
       where: { tenantId: tenant.id, name: 'Website' },
@@ -94,58 +87,83 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const contact = await prisma.$transaction(async (tx) => {
-      const c = await tx.crm_contact.create({
-        data: {
-          tenantId: tenant.id,
-          branchId,
-          firstName,
-          lastName,
-          email: parsed.data.parentEmail,
-          phone: parsed.data.parentPhone,
-          leadSourceId: leadSource!.id,
-          preferredBranchId: branchId,
-          ...childData,
-        },
-      })
+    // One contact + opportunity PER child, mirroring the master_leads_base
+    // sibling-explosion path. Each contact's firstName/lastName holds the
+    // child's name; parentFullName carries the parent. externalSourceId uses
+    // a single submission UUID + sibling index so the lead-detail page can
+    // resolve siblings via the same `<uuid>#<idx>` scheme used for Wix.
+    const submissionId = randomUUID()
 
-      await tx.crm_opportunity.create({
-        data: {
-          tenantId: tenant.id,
-          branchId,
-          contactId: c.id,
-          pipelineId: pipeline.id,
-          stageId: newLeadStage.id,
-          value: 0,
-        },
-      })
+    const contacts = await prisma.$transaction(async (tx) => {
+      const created = []
+      for (let i = 0; i < parsed.data.children.length; i++) {
+        const child = parsed.data.children[i]
+        const { firstName, lastName } = splitName(child.name)
 
-      if (parsed.data.remarks?.trim()) {
-        await tx.crm_note.create({
+        const c = await tx.crm_contact.create({
           data: {
-            tenantId: tenant.id,
-            contactId: c.id,
-            body: parsed.data.remarks.trim(),
+            tenantId:            tenant.id,
+            branchId,
+            firstName,
+            lastName,
+            email:               parsed.data.parentEmail,
+            phone:               parsed.data.parentPhone,
+            leadSourceId:        leadSource!.id,
+            preferredBranchId:   branchId,
+            parentFullName:      parsed.data.parentName,
+            childAge1:           child.age,
+            externalSourceTable: 'trial_form',
+            externalSourceId:    `${submissionId}#${i + 1}`,
           },
         })
-      }
 
-      return c
+        await tx.crm_opportunity.create({
+          data: {
+            tenantId:   tenant.id,
+            branchId,
+            contactId:  c.id,
+            pipelineId: pipeline.id,
+            stageId:    newLeadStage.id,
+            value:      0,
+          },
+        })
+
+        // Attach remarks once on the first sibling to avoid duplicating the
+        // same note across every card.
+        if (i === 0 && parsed.data.remarks?.trim()) {
+          await tx.crm_note.create({
+            data: {
+              tenantId:  tenant.id,
+              contactId: c.id,
+              body:      parsed.data.remarks.trim(),
+            },
+          })
+        }
+
+        created.push(c)
+      }
+      return created
     })
 
     void logAudit({
       tenantId: tenant.id,
       action: 'CREATE',
       entity: 'crm_contact',
-      entityId: contact.id,
+      entityId: contacts[0].id,
       meta: {
-        source: 'trial-form',
-        numChildren: parsed.data.numChildren,
-        preferredBranch: parsed.data.preferredBranch,
+        source:           'trial-form',
+        numChildren:      parsed.data.numChildren,
+        preferredBranch:  parsed.data.preferredBranch,
+        submissionId,
+        contactIds:       contacts.map((c) => c.id),
       },
     })
 
-    return NextResponse.json({ success: true, contactId: contact.id })
+    return NextResponse.json({
+      success:    true,
+      contactId:  contacts[0].id,
+      contactIds: contacts.map((c) => c.id),
+    })
   } catch (e) {
     console.error('[POST /api/crm/forms/trial-submit]', e)
     return NextResponse.json({ error: (e as Error).message ?? 'Internal error' }, { status: 500 })

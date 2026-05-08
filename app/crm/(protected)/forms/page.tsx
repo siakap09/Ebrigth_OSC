@@ -3,9 +3,11 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { toast } from 'sonner'
 
-// Public trial form shows the 21 English-speaking branches (no HR).
+// Public trial form shows the 21 English-speaking branches plus Ebright OD
+// (the stress-test / training branch). HR is excluded — it has no pipeline.
 // Display uses the prefixed DB name, but value is still the short location.
 const BRANCHES = [
+  '00 Ebright OD',
   '01 Ebright Public Speaking (Rimbayu)',
   '02 Ebright Public Speaking (Klang)',
   '03 Ebright Public Speaking (Shah Alam)',

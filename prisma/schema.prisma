@@ -406,6 +406,11 @@ model crm_contact {
   preferredBranchId String?
   preferredTrialDay TrialDay?
   enrolledPackage   String?
+  // For sibling-exploded imports (children in master_leads_base.children_details),
+  // contact.firstName/lastName holds the CHILD's name and parentFullName holds
+  // the parent's. Single-child / no-children imports leave parentFullName null
+  // so the card and the modal both show the same name.
+  parentFullName    String?
   childName1        String?
   childAge1         String?
   childName2        String?

@@ -64,7 +64,7 @@ export default function NewEventPage() {
     });
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
@@ -88,22 +88,26 @@ export default function NewEventPage() {
 
     if (!user) return;
 
-    const created = createEvent({
-      name: form.name.trim(),
-      month,
-      year,
-      venue: form.venue.trim(),
-      startDate: form.startDate,
-      endDate: form.endDate,
-      numberOfDays: form.numberOfDays,
-      invitationOpenDate: form.invitationOpenDate,
-      invitationCloseDate: form.invitationCloseDate,
-      status: "draft",
-      createdBy: user.id,
-      notes: form.notes.trim() || undefined,
-    });
-
-    router.push(`/fa-system/marketing/events/${created.id}`);
+    try {
+      const created = await createEvent({
+        name: form.name.trim(),
+        month,
+        year,
+        venue: form.venue.trim(),
+        startDate: form.startDate,
+        endDate: form.endDate,
+        numberOfDays: form.numberOfDays,
+        invitationOpenDate: form.invitationOpenDate,
+        invitationCloseDate: form.invitationCloseDate,
+        status: "draft",
+        createdBy: user.id,
+        notes: form.notes.trim() || undefined,
+      });
+      router.push(`/fa-system/marketing/events/${created.id}`);
+    } catch (err) {
+      console.error("[new event] failed:", err);
+      setError("Could not create event. Try again.");
+    }
   }
 
   return (

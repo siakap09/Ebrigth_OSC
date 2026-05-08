@@ -27,9 +27,11 @@ export async function GET(request: NextRequest) {
       { expiresIn: "60s" } 
     );
 
-    // 🟢 UPDATED URL: Changed '/api/auth/sso' to '/api/sso'
-    // This must match the folder you just created in the Inventory project
-    const targetUrl = `https://inventory.ebright.my/api/sso?token=${token}`;
+    // Inventory app URL — defaults to prod, override per-environment via INVENTORY_URL
+    // (e.g. staging OSC sets this to https://staging-inventory.ebright.my so SSO
+    // hands off to staging inventory instead of prod).
+    const inventoryUrl = process.env.INVENTORY_URL || "https://inventory.ebright.my";
+    const targetUrl = `${inventoryUrl}/api/sso?token=${token}`;
     
     return NextResponse.redirect(targetUrl);
   } catch (error) {

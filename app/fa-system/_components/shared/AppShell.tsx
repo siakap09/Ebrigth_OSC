@@ -41,6 +41,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const logout = useFAStore(s => s.logout);
   const loadStudents = useFAStore(s => s.loadStudents);
   const studentsLoaded = useFAStore(s => s.studentsLoaded);
+  const loadEvents = useFAStore(s => s.loadEvents);
+  const eventsLoaded = useFAStore(s => s.eventsLoaded);
 
   useEffect(() => {
     if (!currentUser && pathname !== "/fa-system/login") {
@@ -51,6 +53,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (currentUser && !studentsLoaded) loadStudents();
   }, [currentUser, studentsLoaded, loadStudents]);
+
+  useEffect(() => {
+    if (currentUser && !eventsLoaded) loadEvents();
+  }, [currentUser, eventsLoaded, loadEvents]);
 
   if (!currentUser) return null;
 

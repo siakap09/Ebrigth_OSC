@@ -165,7 +165,14 @@ export function KanbanCard({
 }: KanbanCardProps) {
   const { contact } = opportunity
 
-  const primaryChildName = contact.childName1
+  // With master_leads_base as the source of truth, the contact's first/last
+  // name IS the child when parentFullName is set (sibling-exploded row), or
+  // the parent themself otherwise. childAge1 still holds the child's age in
+  // both flows (legacy childName1 is unused for new ingest).
+  const isChild = !!contact.parentFullName
+  const primaryChildName = isChild
+    ? `${contact.firstName}${contact.lastName ? ' ' + contact.lastName : ''}`
+    : contact.childName1
   const primaryChildAge = contact.childAge1
 
   const ageColor = getAgeColor(
@@ -276,10 +283,12 @@ export function KanbanCard({
             </Link>
           )}
 
-          {/* Parent name */}
+          {/* Parent name — shown below child name when this contact represents a child */}
           {primaryChildName && (
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-              {contact.firstName} {contact.lastName ?? ''}
+              {isChild
+                ? contact.parentFullName
+                : `${contact.firstName} ${contact.lastName ?? ''}`}
             </p>
           )}
 

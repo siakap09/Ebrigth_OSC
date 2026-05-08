@@ -144,6 +144,12 @@ function pickContactName(row: UnifiedLeadRow): {
   firstName: string
   lastName: string | null
   childAge: string | null
+  /**
+   * Parent's full name when the contact represents a CHILD (i.e. children_details
+   * had a usable entry at sibling_index). Null when the contact already IS the
+   * parent (single-row import or null/empty children_details).
+   */
+  parentFullName: string | null
 } {
   const idx = row.sibling_index
   if (idx && idx > 0 && row.children_details) {
@@ -154,15 +160,22 @@ function pickContactName(row: UnifiedLeadRow): {
         const childName = (child?.name ?? '').trim()
         if (childName) {
           const { firstName, lastName } = splitName(childName)
-          return { firstName, lastName, childAge: child?.age ?? null }
+          return {
+            firstName,
+            lastName,
+            childAge: child?.age ?? null,
+            parentFullName: row.full_name ?? null,
+          }
         }
       }
     } catch {
       // children_details was malformed JSON — fall through to parent name.
     }
   }
+  // No children in this row → contact IS the parent. Parent column stays null
+  // so the card + modal both render firstName + lastName the normal way.
   const { firstName, lastName } = splitName(row.full_name)
-  return { firstName, lastName, childAge: null }
+  return { firstName, lastName, childAge: null, parentFullName: null }
 }
 
 /**
@@ -326,7 +339,7 @@ export async function importLead(
   }
 
   const leadSourceId = await resolveLeadSourceId(prisma, ctx.tenantId, row.lead_source, caches)
-  const { firstName, lastName, childAge } = pickContactName(row)
+  const { firstName, lastName, childAge, parentFullName } = pickContactName(row)
   const phone = row.phone ? normalizePhone(row.phone) : null
   const submittedAt = row.submitted_at ?? new Date()
 
@@ -345,6 +358,10 @@ export async function importLead(
           // so the lead detail modal can show it. The contact itself IS the
           // child, so we don't fill childName1 (that would be redundant).
           childAge1:           childAge,
+          // Parent's full_name when this contact represents a child (sibling-
+          // exploded row). Null when the contact already IS the parent — in
+          // that case firstName/lastName already hold the parent's name.
+          parentFullName,
           externalSourceTable: row.source_table,
           externalSourceId:    row.source_id,
           createdAt:           submittedAt,

@@ -18,13 +18,17 @@ jobs:
           host: 103.209.156.225
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
-          command_timeout: 45m
+          # 45m wasn't enough when deploy.sh runs the aggressive Docker
+          # cleanup — npm ci has to redownload all deps from scratch.
+          command_timeout: 90m
           script: |
             export NEXTAUTH_SECRET='${{ secrets.NEXTAUTH_SECRET }}'
             export BETTER_AUTH_SECRET='${{ secrets.BETTER_AUTH_SECRET }}'
             export ENCRYPTION_KEY='${{ secrets.ENCRYPTION_KEY }}'
             export DATABASE_URL='${{ secrets.DATABASE_URL }}'
             export CRM_PREVIEW_MODE='${{ secrets.CRM_PREVIEW_MODE }}'
+            export SHARED_SSO_SECRET='${{ secrets.SHARED_SSO_SECRET }}'
+            export INVENTORY_URL='${{ secrets.INVENTORY_URL }}'
             /home/deploy/deploy.sh osc
 
   smoke-tests:
@@ -61,10 +65,11 @@ jobs:
       - name: Run Playwright smoke (unauth boundary only)
         run: npx playwright test --grep "API auth boundary"
         env:
-          # The staging container exposes the app on port 3000. Without
-          # the explicit port, requests hit port 80 (nothing there) and
-          # every route returns 404 instead of the expected 401.
-          BASE_URL: http://103.209.156.225:3000
+          # The container's port 3003 is firewalled from outside the host —
+          # external traffic goes through nginx on the staging-portal
+          # domain (443 → 3003 internal). Hit the domain directly so the
+          # GitHub runner doesn't get tripped by the firewall.
+          BASE_URL: https://staging-portal.ebright.my
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

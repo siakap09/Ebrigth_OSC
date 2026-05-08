@@ -100,20 +100,30 @@ async function resolveTenantId(): Promise<string | null> {
 
 // ─── Single-row import path ───────────────────────────────────────────────────
 
-async function fetchUnifiedRow(
+/**
+ * Fetch all unified-view rows that came from one source row. For
+ * master_leads_base submissions with N children, the view emits N rows
+ * (source_id = "<base_id>#1", "<base_id>#2", …) — we want every one of them
+ * so each child becomes its own contact.
+ *
+ * The trigger emits "<table>:<base_id>" without the "#idx" suffix, so we
+ * match the view's source_id with a LIKE prefix.
+ */
+async function fetchUnifiedRows(
   pg: PgClient,
   sourceTable: string,
   sourceId: string,
-): Promise<UnifiedLeadRow | null> {
+): Promise<UnifiedLeadRow[]> {
   const res = await pg.query<UnifiedLeadRow>(
     `SELECT source_table, source_id, lead_source, full_name, phone, email,
-            clean_branch, region, submitted_at, children_details
+            clean_branch, region, submitted_at, children_details, sibling_index
        FROM public.master_leads_unified
-      WHERE source_table = $1 AND source_id = $2
-      LIMIT 1`,
+      WHERE source_table = $1
+        AND (source_id = $2 OR source_id LIKE $2 || '#%')
+      ORDER BY sibling_index ASC NULLS FIRST`,
     [sourceTable, sourceId],
   )
-  return res.rows[0] ?? null
+  return res.rows
 }
 
 async function processNotification(payload: string, pg: PgClient): Promise<void> {
@@ -127,25 +137,27 @@ async function processNotification(payload: string, pg: PgClient): Promise<void>
   const tid = await resolveTenantId()
   if (!tid) return
 
-  const row = await fetchUnifiedRow(pg, sourceTable, sourceId)
-  if (!row) {
+  const rows = await fetchUnifiedRows(pg, sourceTable, sourceId)
+  if (rows.length === 0) {
     // Row exists in source table but not in unified view (e.g. wrong platform
     // filter on social_posts, or the WHERE clauses excluded it). Not an error.
     console.log(`[leadIngest] No unified row for ${payload} — skipping`)
     return
   }
 
-  let result: ImportResult
-  try {
-    result = await importLead(prisma, { tenantId: tid }, row, caches, {
-      enqueueAutomation: enqueueAutomation ?? undefined,
-    })
-  } catch (e) {
-    console.error(`[leadIngest] importLead threw for ${payload}:`, (e as Error).message)
-    return
+  for (const row of rows) {
+    const label = `${row.source_table}:${row.source_id}`
+    let result: ImportResult
+    try {
+      result = await importLead(prisma, { tenantId: tid }, row, caches, {
+        enqueueAutomation: enqueueAutomation ?? undefined,
+      })
+    } catch (e) {
+      console.error(`[leadIngest] importLead threw for ${label}:`, (e as Error).message)
+      continue
+    }
+    logResult(label, result)
   }
-
-  logResult(payload, result)
 }
 
 function logResult(label: string, result: ImportResult): void {
@@ -188,10 +200,10 @@ async function runBackstop(pg: PgClient): Promise<void> {
 
   const res = await pg.query<UnifiedLeadRow>(
     `SELECT source_table, source_id, lead_source, full_name, phone, email,
-            clean_branch, region, submitted_at, children_details
+            clean_branch, region, submitted_at, children_details, sibling_index
        FROM public.master_leads_unified
       WHERE submitted_at > $1
-      ORDER BY submitted_at ASC`,
+      ORDER BY submitted_at ASC, sibling_index ASC NULLS FIRST`,
     [watermark],
   )
 

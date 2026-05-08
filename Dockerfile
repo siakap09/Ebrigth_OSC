@@ -30,8 +30,13 @@ COPY --chown=nodejs:nodejs . .
 # The previous ARG plumbing (declared before FROM, referenced as ${...} in
 # this RUN) was a no-op — ARGs above FROM aren't visible inside the build
 # stage, so values were always empty. Removed to avoid confusion.
+# NODE_OPTIONS gives Node 4 GB of heap. Default is ~1.4 GB on 64-bit Linux,
+# which `next build` can blow past once Recharts + the rest of the app are
+# in the bundle. Without this the build OOM-loops with webpack "Retrying 1/3"
+# messages and either takes 40+ minutes or never finishes.
 RUN SKIP_ENV_VALIDATION=1 \
     DATABASE_URL=postgres://buildtime:buildtime@127.0.0.1:5432/buildtime \
+    NODE_OPTIONS=--max-old-space-size=4096 \
     npm run build
 
 EXPOSE 3000

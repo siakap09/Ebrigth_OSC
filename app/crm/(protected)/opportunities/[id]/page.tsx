@@ -40,29 +40,30 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
   })
 
   const contact = opp.contact
-  const fullName = `${contact.firstName} ${contact.lastName ?? ''}`.trim() || '(No name)'
+  const childOwnName = `${contact.firstName} ${contact.lastName ?? ''}`.trim() || '(No name)'
 
-  // Resolve "Student" presentation. For Wix sibling-exploded imports the contact
-  // IS the child — its firstName/lastName is the student name, childAge1 holds
-  // the age. For Meta/TikTok or pre-explosion imports the contact is the parent
-  // and childName1/childAge1 carry the first-child info.
-  type CWithChildren = typeof contact & {
-    childName1: string | null
-    childAge1:  string | null
-  }
-  const cExt = contact as CWithChildren
-  const studentName = cExt.childName1?.trim() || fullName
-  const studentAge  = cExt.childAge1?.trim() || null
-  const studentLevel: AgeCategory | null = getAgeCategory(studentAge)
-
-  // Siblings — only meaningful for Wix sibling-exploded imports, where every
-  // sibling shares the same parent UUID prefix in externalSourceId. The pattern
-  // we wrote in the importer is "<parent_uuid>#<sibling_index>".
-  type ContactExt = typeof contact & {
+  // With master_leads_base as source of truth, the contact's first/last name
+  // IS the child when parentFullName is set (sibling-exploded row), or IS the
+  // parent themself otherwise. childAge1 holds the child's age in both flows.
+  type CExt = typeof contact & {
+    parentFullName:     string | null
+    childName1:         string | null
+    childAge1:          string | null
     externalSourceTable: string | null
     externalSourceId:    string | null
   }
-  const cWithSrc = contact as ContactExt
+  const cExt = contact as CExt
+  const isChild = !!cExt.parentFullName
+  const parentDisplay = isChild ? (cExt.parentFullName ?? '—') : childOwnName
+  const studentName = isChild
+    ? childOwnName
+    : (cExt.childName1?.trim() || childOwnName)
+  const studentAge  = cExt.childAge1?.trim() || null
+  const studentLevel: AgeCategory | null = getAgeCategory(studentAge)
+
+  // Siblings — for sibling-exploded imports (raw_wix_leads OR master_leads_base),
+  // every sibling shares the same parent UUID prefix in externalSourceId. The
+  // pattern is "<parent_uuid>#<sibling_index>".
   let siblings: Array<{
     id: string
     name: string
@@ -73,14 +74,16 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
   }> = []
 
   if (
-    cWithSrc.externalSourceTable === 'raw_wix_leads' &&
-    cWithSrc.externalSourceId?.includes('#')
+    (cExt.externalSourceTable === 'raw_wix_leads' ||
+     cExt.externalSourceTable === 'master_leads_base' ||
+     cExt.externalSourceTable === 'trial_form') &&
+    cExt.externalSourceId?.includes('#')
   ) {
-    const parentUuid = cWithSrc.externalSourceId.split('#')[0]
+    const parentUuid = cExt.externalSourceId.split('#')[0]
     const rows = await prisma.crm_contact.findMany({
       where: {
         tenantId: access.tenantId,
-        externalSourceTable: 'raw_wix_leads',
+        externalSourceTable: cExt.externalSourceTable,
         externalSourceId: { startsWith: `${parentUuid}#` },
         id: { not: contact.id },
         deletedAt: null,
@@ -169,12 +172,17 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
-                {fullName}
+                {studentName}
               </h1>
               <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold tracking-wider text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-200">
                 {opp.stage.shortCode}
               </span>
             </div>
+            {isChild && (
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                Parent: <span className="text-slate-700 dark:text-slate-200">{cExt.parentFullName}</span>
+              </p>
+            )}
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Stage: <span className="text-slate-700 dark:text-slate-200">{opp.stage.name}</span>
               {' · '}
@@ -219,7 +227,7 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
               Contact
             </h3>
             <div className="space-y-2 text-sm">
-              <Row icon={<User className="h-3.5 w-3.5" />}    label="Name"   value={fullName} />
+              <Row icon={<User className="h-3.5 w-3.5" />}    label="Parent" value={parentDisplay} />
               <Row icon={<Mail className="h-3.5 w-3.5" />}    label="Email"  value={contact.email ?? '—'} />
               <Row icon={<Phone className="h-3.5 w-3.5" />}   label="Phone"  value={contact.phone ?? '—'} />
               <Row icon={<MapPin className="h-3.5 w-3.5" />}  label="Branch" value={branch?.name ?? '—'} />

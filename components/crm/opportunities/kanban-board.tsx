@@ -1095,7 +1095,13 @@ function OpportunityDetailModal({
   onClose: () => void
 }) {
   const { contact } = opportunity
-  const fullName = `${contact.firstName} ${contact.lastName ?? ''}`.trim()
+  const childOwnName = `${contact.firstName} ${contact.lastName ?? ''}`.trim()
+  // With master_leads_base as source of truth, the contact IS the child when
+  // parentFullName is set. Header shows the child; the Contact section reveals
+  // the parent details (the user's "click the card to see parent" requirement).
+  const isChild = !!contact.parentFullName
+  const headerName = childOwnName || '(No name)'
+  const parentName = isChild ? (contact.parentFullName ?? '—') : childOwnName
 
   const { data: full, isLoading: loadingFull } = useOpportunity(opportunity.id) as {
     data: {
@@ -1142,7 +1148,7 @@ function OpportunityDetailModal({
         <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-700 px-5 py-4">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">{fullName || '(No name)'}</h2>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">{headerName}</h2>
               {displayShortCode && (
                 <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold tracking-wider text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-200">
                   {displayShortCode}
@@ -1210,8 +1216,14 @@ function OpportunityDetailModal({
               Contact
             </h3>
             <div className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1.5">
-              <div className="text-slate-500 dark:text-slate-400">Name</div>
-              <div className="text-slate-900 dark:text-slate-100">{fullName || '—'}</div>
+              <div className="text-slate-500 dark:text-slate-400">Parent</div>
+              <div className="text-slate-900 dark:text-slate-100">{parentName || '—'}</div>
+              {isChild && (
+                <>
+                  <div className="text-slate-500 dark:text-slate-400">Child</div>
+                  <div className="text-slate-900 dark:text-slate-100">{childOwnName || '—'}</div>
+                </>
+              )}
               <div className="text-slate-500 dark:text-slate-400">Email</div>
               <div className="text-slate-900 dark:text-slate-100">{contact.email ?? '—'}</div>
               <div className="text-slate-500 dark:text-slate-400">Parent&apos;s Contact</div>

@@ -103,28 +103,33 @@ export function WalkInModal({ open, onClose, event, preferredDay, onSuccess }: W
   const wouldExceedQuota = !!(targetQuota && targetQuota.used >= targetQuota.quota);
   const noQuotaAllocated = !!(session && branch && !targetQuota);
 
-  function handleConfirm() {
+  async function handleConfirm() {
     if (!student || !session || !branch || !user) return;
     setError(null);
-    const created = inviteStudent({
-      eventId: event.id,
-      sessionId: session.id,
-      studentId: student.id,
-      branch,
-      invitedBy: user.id,
-      initialStatus: "confirmed",
-      allowOverQuota: true,
-    });
-    if (!created) {
-      // The only remaining failure mode is the duplicate guard, which the
-      // student picker already filters against — show a defensive message.
-      setError("Could not add walk-in. The student may already be invited to this event.");
-      return;
+    try {
+      const created = await inviteStudent({
+        eventId: event.id,
+        sessionId: session.id,
+        studentId: student.id,
+        branch,
+        invitedBy: user.id,
+        initialStatus: "confirmed",
+        allowOverQuota: true,
+      });
+      if (!created) {
+        // The only remaining failure mode is the duplicate guard, which the
+        // student picker already filters against — show a defensive message.
+        setError("Could not add walk-in. The student may already be invited to this event.");
+        return;
+      }
+      const studentName = student.name;
+      resetAll();
+      onSuccess(studentName);
+      onClose();
+    } catch (err) {
+      console.error("[walk-in] failed:", err);
+      setError("Could not add walk-in. Try again.");
     }
-    const studentName = student.name;
-    resetAll();
-    onSuccess(studentName);
-    onClose();
   }
 
   const stepNum = step === "branch" ? 1 : step === "student" ? 2 : step === "session" ? 3 : 4;

@@ -138,10 +138,25 @@ function computeRates(m: Pick<BranchMetrics, 'NL' | 'CT' | 'SU' | 'ENR'>) {
   }
 }
 
+// All dashboard ranges are computed against Asia/Kuala_Lumpur wall-clock
+// terms — that's the timezone the business operates in, and the timezone
+// the cron-fed master_leads_base.submission_date is written in. Without
+// this, a Next.js container running in UTC would treat "today" as 00:00
+// UTC → 07:59 KL the next morning, classifying every lead submitted
+// between midnight and 8 AM KL as "yesterday". KL has no DST so a fixed
+// +8h offset is safe and saves us pulling in date-fns-tz.
+const KL_OFFSET_MS = 8 * 3600 * 1000
+
+/** UTC instant at midnight Asia/Kuala_Lumpur for the KL day that contains `now`. */
+function startOfDayKL(now: Date = new Date()): Date {
+  const wall = new Date(now.getTime() + KL_OFFSET_MS) // shift so UTC fields == KL wall-clock
+  const midnightKL = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate())
+  return new Date(midnightKL - KL_OFFSET_MS)
+}
+
 function parseDateRange(sp: URLSearchParams): { from: Date; to: Date } {
   const preset = sp.get('preset') ?? 'today'
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+  const today = startOfDayKL()
   const endOfToday = new Date(today.getTime() + 24 * 3600 * 1000 - 1)
 
   if (preset === 'custom') {
@@ -161,8 +176,9 @@ function parseDateRange(sp: URLSearchParams): { from: Date; to: Date } {
       return { from, to: endOfToday }
     }
     case 'this_week': {
-      // Monday start
-      const dow = today.getDay() // 0=Sun
+      // Monday start in KL day-of-week terms (KL has no DST).
+      const wall = new Date(today.getTime() + KL_OFFSET_MS)
+      const dow = wall.getUTCDay() // 0=Sun
       const daysBack = dow === 0 ? 6 : dow - 1
       const from = new Date(today.getTime() - daysBack * 24 * 3600 * 1000)
       return { from, to: endOfToday }
@@ -360,11 +376,15 @@ export async function GET(req: NextRequest) {
     // re-apply the same cumulative-stage logic used for the main block.
     let byMonth: Array<{ month: string; NL: number; CT: number; SU: number; ENR: number }> = []
     if (!elevated) {
-      const monthKey = (d: Date) => d.toISOString().slice(0, 7) // 'YYYY-MM'
-      const sixMonthsBack = new Date(to)
-      sixMonthsBack.setMonth(sixMonthsBack.getMonth() - 5)
-      sixMonthsBack.setDate(1)
-      sixMonthsBack.setHours(0, 0, 0, 0)
+      // Bucket by KL month so a lead at 02:00 KL on the 1st doesn't fall
+      // back into the previous UTC month. Same +8h shift trick as above.
+      const monthKey = (d: Date) => {
+        const wall = new Date(d.getTime() + KL_OFFSET_MS)
+        return `${wall.getUTCFullYear()}-${String(wall.getUTCMonth() + 1).padStart(2, '0')}`
+      }
+      const wall = new Date(to.getTime() + KL_OFFSET_MS)
+      const sixMonthsBackWallMs = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth() - 5, 1)
+      const sixMonthsBack = new Date(sixMonthsBackWallMs - KL_OFFSET_MS)
 
       // Re-fetch for the wider window — `from`/`to` may be just "today".
       const trendOpps = await prisma.crm_opportunity.findMany({
@@ -379,10 +399,13 @@ export async function GET(req: NextRequest) {
 
       const monthMap = new Map<string, { NL: number; CT: number; SU: number; ENR: number }>()
       // Pre-seed every month so the chart shows zeros instead of gaps.
+      // Iterate in wall-clock space (KL) so we don't drift across DST/UTC.
+      const startYear = wall.getUTCFullYear()
+      const startMonth = wall.getUTCMonth() - 5
       for (let m = 0; m < 6; m++) {
-        const d = new Date(sixMonthsBack)
-        d.setMonth(d.getMonth() + m)
-        monthMap.set(monthKey(d), { NL: 0, CT: 0, SU: 0, ENR: 0 })
+        const yyyy = startYear + Math.floor((startMonth + m) / 12)
+        const mm = ((startMonth + m) % 12 + 12) % 12
+        monthMap.set(`${yyyy}-${String(mm + 1).padStart(2, '0')}`, { NL: 0, CT: 0, SU: 0, ENR: 0 })
       }
 
       for (const o of trendOpps) {
