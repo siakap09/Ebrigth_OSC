@@ -1234,6 +1234,8 @@ function OpportunityDetailModal({
                   <div className="text-slate-900 dark:text-slate-100">{contact.leadSource.name}</div>
                 </>
               )}
+              <div className="text-slate-500 dark:text-slate-400">Campaign</div>
+              <div className="text-slate-900 dark:text-slate-100">{contact.campaignName || '-'}</div>
             </div>
           </section>
 

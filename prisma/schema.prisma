@@ -411,6 +411,10 @@ model crm_contact {
   // the parent's. Single-child / no-children imports leave parentFullName null
   // so the card and the modal both show the same name.
   parentFullName    String?
+  // Marketing campaign that produced this lead (from master_leads_base.campaign_name).
+  // Stored verbatim — display as written, no normalisation. Null = lead didn't
+  // come from a tracked campaign; UI renders "-" in that case.
+  campaignName      String?
   childName1        String?
   childAge1         String?
   childName2        String?

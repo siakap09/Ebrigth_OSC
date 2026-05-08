@@ -116,7 +116,8 @@ async function fetchUnifiedRows(
 ): Promise<UnifiedLeadRow[]> {
   const res = await pg.query<UnifiedLeadRow>(
     `SELECT source_table, source_id, lead_source, full_name, phone, email,
-            clean_branch, region, submitted_at, children_details, sibling_index
+            clean_branch, region, submitted_at, children_details, sibling_index,
+            campaign_name
        FROM public.master_leads_unified
       WHERE source_table = $1
         AND (source_id = $2 OR source_id LIKE $2 || '#%')
@@ -200,7 +201,8 @@ async function runBackstop(pg: PgClient): Promise<void> {
 
   const res = await pg.query<UnifiedLeadRow>(
     `SELECT source_table, source_id, lead_source, full_name, phone, email,
-            clean_branch, region, submitted_at, children_details, sibling_index
+            clean_branch, region, submitted_at, children_details, sibling_index,
+            campaign_name
        FROM public.master_leads_unified
       WHERE submitted_at > $1
       ORDER BY submitted_at ASC, sibling_index ASC NULLS FIRST`,

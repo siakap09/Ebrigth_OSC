@@ -52,6 +52,8 @@ export interface UnifiedLeadRow {
   submitted_at: Date | null
   children_details: string | null  // raw JSON string from raw_wix_leads
   sibling_index: number | null     // 1-based; >1 only for Wix multi-child submissions
+  campaign_name: string | null     // marketing campaign label, stored verbatim; null when
+                                   // the lead didn't come from a tracked campaign
 }
 
 export type ImportStatus =
@@ -362,6 +364,10 @@ export async function importLead(
           // exploded row). Null when the contact already IS the parent — in
           // that case firstName/lastName already hold the parent's name.
           parentFullName,
+          // Marketing campaign as written in master_leads_base.campaign_name.
+          // Verbatim — no trim/normalise — UI surfaces this in the modal +
+          // lead-detail page; null becomes "-" at render time.
+          campaignName:        row.campaign_name,
           externalSourceTable: row.source_table,
           externalSourceId:    row.source_id,
           createdAt:           submittedAt,

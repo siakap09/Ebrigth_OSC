@@ -28,6 +28,7 @@ export type OpportunityCard = {
     childName2: string | null
     childAge2: string | null
     parentFullName: string | null
+    campaignName: string | null
     preferredBranchId: string | null
     leadSourceId: string | null
     leadSource: { id: string; name: string } | null
@@ -134,6 +135,7 @@ export async function getAllBranchesKanban(
           childName2: true,
           childAge2: true,
           parentFullName: true,
+          campaignName: true,
           preferredBranchId: true,
           leadSourceId: true,
           leadSource: { select: { id: true, name: true } },

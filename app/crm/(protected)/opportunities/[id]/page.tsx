@@ -47,6 +47,7 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
   // parent themself otherwise. childAge1 holds the child's age in both flows.
   type CExt = typeof contact & {
     parentFullName:     string | null
+    campaignName:       string | null
     childName1:         string | null
     childAge1:          string | null
     externalSourceTable: string | null
@@ -234,6 +235,7 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
               {contact.leadSource && (
                 <Row icon={<Tag className="h-3.5 w-3.5" />}   label="Source" value={contact.leadSource.name} />
               )}
+              <Row icon={<Tag className="h-3.5 w-3.5" />}     label="Campaign" value={cExt.campaignName || '-'} />
             </div>
           </section>
 
