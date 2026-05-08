@@ -22,9 +22,10 @@ async function resolveSession() {
 
   // Fallback for preview mode / impersonated users without crm_user_branch:
   // use the default tenant + treat them as SUPER_ADMIN (preview users only).
+  // Try 'ebright' (prod seed) first, then 'ebright-demo' (legacy demo seed).
   if (isPreviewMode()) {
-    const tenant = await prisma.crm_tenant.findUnique({
-      where: { slug: 'ebright-demo' },
+    const tenant = await prisma.crm_tenant.findFirst({
+      where: { slug: { in: ['ebright', 'ebright-demo'] } },
       select: { id: true },
     })
     if (tenant) {

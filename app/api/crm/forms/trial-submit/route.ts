@@ -48,9 +48,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 })
     }
 
-    // Resolve default tenant
-    const tenant = await prisma.crm_tenant.findUnique({
-      where: { slug: 'ebright-demo' },
+    // Resolve default tenant. Production seed uses slug 'ebright'; the legacy
+    // demo seed used 'ebright-demo'. Try both so this works in either env.
+    const tenant = await prisma.crm_tenant.findFirst({
+      where: { slug: { in: ['ebright', 'ebright-demo'] } },
       select: { id: true },
     })
     if (!tenant) {
