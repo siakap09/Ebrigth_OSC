@@ -70,12 +70,17 @@ const TENANT_SLUG     = process.env.LEADS_TENANT_SLUG ?? 'ebright'
 const NOTIFY_CHANNEL  = 'lead_inserted'
 const RECONNECT_DELAY = 5_000  // ms — base delay; doubles per failure up to 60s
 const MAX_RECONNECT   = 60_000
+// Periodic re-run of the backstop so we self-heal from dropped notifications.
+// Default 5 min — short enough that operations don't notice a missing lead,
+// long enough to avoid wasted DB queries when nothing's new.
+const BACKSTOP_INTERVAL_MS = 5 * 60_000
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
 let client: PgClient | null = null
 let reconnectAttempts        = 0
 let reconnectTimer: NodeJS.Timeout | null = null
+let backstopTimer: NodeJS.Timeout | null  = null
 let stopping                 = false
 let tenantId: string | null  = null
 const caches: ImportCaches   = makeEmptyCaches()
@@ -266,6 +271,20 @@ async function connectAndListen(): Promise<void> {
     // Backstop runs after LISTEN is registered so any race-window inserts are
     // caught either by LISTEN or by the watermark query — never lost.
     await runBackstop(pg)
+
+    // Periodic backstop: re-runs the watermark query on a loop so dropped
+    // notifications (silent LISTEN connection drops, full notify queue, etc.)
+    // self-heal within BACKSTOP_INTERVAL_MS instead of waiting for the next
+    // worker restart. Idempotent — already-imported rows hit the unique
+    // constraint and are counted as `dup`.
+    if (backstopTimer) clearInterval(backstopTimer)
+    backstopTimer = setInterval(() => {
+      // Don't await — let it run in the background; runBackstop handles its
+      // own errors.
+      void runBackstop(pg).catch((e) => {
+        console.error('[leadIngest] Periodic backstop failed:', (e as Error).message)
+      })
+    }, BACKSTOP_INTERVAL_MS)
   } catch (e) {
     console.error('[leadIngest] Connect failed:', (e as Error).message)
     void scheduleReconnect()
@@ -275,6 +294,13 @@ async function connectAndListen(): Promise<void> {
 function scheduleReconnect(): void {
   if (stopping) return
   if (reconnectTimer) return  // already pending
+
+  // Stop the periodic backstop while the connection is down — it'd just
+  // throw on every tick. We restart it after connectAndListen succeeds.
+  if (backstopTimer) {
+    clearInterval(backstopTimer)
+    backstopTimer = null
+  }
 
   if (client) {
     try { void client.end() } catch { /* ignore */ }
@@ -311,6 +337,10 @@ export async function stopLeadIngestWorker(): Promise<void> {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
+  }
+  if (backstopTimer) {
+    clearInterval(backstopTimer)
+    backstopTimer = null
   }
   if (client) {
     try { await client.end() } catch { /* ignore */ }
