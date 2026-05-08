@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
         name:       true,
         nickname:   true,
         employeeId: true,
+        branch:     true,
         department: true,
         role:       true,
         email:      true,
@@ -29,6 +30,14 @@ export async function GET(req: NextRequest) {
       where:   { status: 'Active' },
       orderBy: { name: 'asc' },
     });
+
+    // `location=all` is the lookup-by-employeeId path used by the attendance
+    // summary so it can resolve names + roles for staff who scanned at one
+    // branch but are registered to another. Anything else filters by the
+    // staff member's normalized location as before.
+    if (location === 'all') {
+      return NextResponse.json({ staff: all });
+    }
 
     const filtered = all.filter(s => normalizeLocation(s.location) === location);
     return NextResponse.json({ staff: filtered });

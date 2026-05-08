@@ -200,7 +200,12 @@ export const useFAStore = create<FAStore>()(
           method: "POST",
           body: JSON.stringify(ev),
         });
-        if (!r.ok) throw new Error(`Create event failed (HTTP ${r.status})`);
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error;
+          throw new Error(
+            `Create event failed (HTTP ${r.status})${detail ? ": " + detail : ""}`
+          );
+        }
         const newEvent = r.data;
         set((s) => ({ events: [...s.events, newEvent] }));
         return newEvent;

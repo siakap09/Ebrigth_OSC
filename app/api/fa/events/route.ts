@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(created);
   } catch (err) {
     console.error("[api/fa/events POST] failed:", err);
-    return NextResponse.json({ error: "Failed to create event" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

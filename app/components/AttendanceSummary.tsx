@@ -200,6 +200,7 @@ interface BranchStaffMember {
   name: string | null;
   nickname: string | null;
   employeeId: string | null;
+  branch: string | null;
   department: string | null;
   role: string | null;
   email: string | null;
@@ -222,6 +223,10 @@ export default function AttendanceSummary() {
   const [locations, setLocations] = useState<string[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<string>("HQ");
   const [branchStaff, setBranchStaff] = useState<BranchStaffMember[]>([]);
+  // Full BranchStaff list (all locations, active only) — used to resolve
+  // name + dept + role for any scanner empNo, even when the employee is
+  // registered to a different branch than the one being viewed.
+  const [allBranchStaff, setAllBranchStaff] = useState<BranchStaffMember[]>([]);
 
   // ── Date picker (defaults to today KL; auto-refresh only runs when on today) ──
   const [selectedDate, setSelectedDate] = useState<string>(todayKLStr());
@@ -245,6 +250,13 @@ export default function AttendanceSummary() {
   const employeesRef = useRef<Employee[]>([]);
   useEffect(() => { employeesRef.current = employees; }, [employees]);
 
+  // Same trick for BranchStaff — canonical source of full name + dept + role.
+  // The scanner emits an 8-digit empNo that matches BranchStaff.employeeId.
+  // We mirror the *all-locations* list so a person who scans at HQ but is
+  // registered to RBY still resolves to their canonical record.
+  const branchStaffRef = useRef<BranchStaffMember[]>([]);
+  useEffect(() => { branchStaffRef.current = allBranchStaff; }, [allBranchStaff]);
+
   // Track current date for midnight auto-reset
   const currentDateRef = useRef<string>(getTodayStr());
 
@@ -264,14 +276,44 @@ export default function AttendanceSummary() {
       .catch(() => console.error("Failed to load locations"));
   }, []);
 
-  // ── Load staff for selected location ──────────────────────────────────────
-  useEffect(() => {
+  // ── Load staff for selected location (drives the "Missing Today" panel) ──
+  const loadBranchStaff = useCallback(() => {
     if (!selectedLocation) return;
     fetch(`/api/branch-locations?location=${encodeURIComponent(selectedLocation)}`)
-      .then(r => r.json())
+      .then(async r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status} (${r.statusText})`);
+        return r.json();
+      })
       .then(d => setBranchStaff(d.staff ?? []))
-      .catch(() => console.error("Failed to load branch staff"));
+      .catch(err => console.error("Failed to load branch staff:", err));
   }, [selectedLocation]);
+
+  // ── Load full active staff list (drives the row-level name + dept + role
+  //    lookup so anyone who scans here resolves correctly, not just locals)
+  const loadAllBranchStaff = useCallback(() => {
+    fetch(`/api/branch-locations?location=all`)
+      .then(async r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status} (${r.statusText})`);
+        return r.json();
+      })
+      .then(d => setAllBranchStaff(d.staff ?? []))
+      .catch(err => console.error("Failed to load all branch staff:", err));
+  }, []);
+
+  useEffect(() => { loadBranchStaff(); }, [loadBranchStaff]);
+  useEffect(() => { loadAllBranchStaff(); }, [loadAllBranchStaff]);
+
+  // Re-pull both staff lists every 30s so HR edits (new thumbprint, name
+  // change, role swap, etc.) flow through to the attendance page without a
+  // page reload or a code deploy. Polling is light — one query each, active
+  // rows only.
+  useEffect(() => {
+    const id = setInterval(() => {
+      loadBranchStaff();
+      loadAllBranchStaff();
+    }, 30000);
+    return () => clearInterval(id);
+  }, [loadBranchStaff, loadAllBranchStaff]);
 
   // ── Poll /api/attendance-today every 5 seconds (reads from DB, written by office sync script) ──
   const fetchScans = useCallback(async () => {
@@ -293,17 +335,26 @@ export default function AttendanceSummary() {
 
       setRawCount(dbRows.length);
 
-      // Build AttendanceRecord from DB rows
+      // Build AttendanceRecord from DB rows.
+      //
+      // Canonical source: BranchStaff.employeeId === row.empNo (the scanner
+      // emits 8-digit empNo and BranchStaff.employeeId stores the same form).
+      // We render whatever the HR records say so the attendance page stays in
+      // sync with the HR Employee Management page — no CSV in the loop.
+      //
+      // Dept column shows BranchStaff.branch (the short code like OD / FNC /
+      // HR) to match what HR Employee Management displays under "Branch/Dept".
+      // Falls back to .department only if branch is missing.
       const records: AttendanceRecord[] = dbRows.map(row => {
-        const emp = employeesRef.current.find(e => e.scannerRef === row.empNo);
+        const staff = branchStaffRef.current.find(s => s.employeeId === row.empNo);
         const checkInDate = new Date(`${row.date}T${row.clockInTime}`);
         const checkOutDate = row.clockOutTime ? new Date(`${row.date}T${row.clockOutTime}`) : null;
         const isSaturday = new Date().getDay() === 6;
         return {
           empNo: row.empNo,
-          name: emp?.name ?? row.empName,
-          dept: emp?.dept ?? "—",
-          position: emp?.position ?? "—",
+          name: staff?.name ?? row.empName ?? "Unknown",
+          dept: staff?.branch ?? staff?.department ?? "—",
+          position: staff?.role ?? "—",
           checkInTime: checkInDate,
           checkInStr: row.clockInTime,
           checkInStatus: getCheckInStatus(row.clockInTime),
@@ -847,7 +898,9 @@ export default function AttendanceSummary() {
             ) : (
               <div className="max-h-[680px] overflow-y-auto divide-y divide-gray-100">
                 {missingEmployees.map((s, i) => {
-                  const display = s.nickname ?? s.name ?? "—";
+                  // Prefer full name (matches the attendance row column) and
+                  // fall back to nickname only if name is blank.
+                  const display = s.name ?? s.nickname ?? "—";
                   const initial = display.charAt(0).toUpperCase();
                   const tones = [
                     "bg-rose-50 text-rose-600 ring-rose-100",
