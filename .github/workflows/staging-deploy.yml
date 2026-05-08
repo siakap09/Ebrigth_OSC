@@ -18,7 +18,9 @@ jobs:
           host: 103.209.156.225
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
-          command_timeout: 45m
+          # 45m wasn't enough when deploy.sh runs the aggressive Docker
+          # cleanup — npm ci has to redownload all deps from scratch.
+          command_timeout: 90m
           script: |
             export NEXTAUTH_SECRET='${{ secrets.NEXTAUTH_SECRET }}'
             export BETTER_AUTH_SECRET='${{ secrets.BETTER_AUTH_SECRET }}'
