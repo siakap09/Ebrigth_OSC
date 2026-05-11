@@ -278,7 +278,7 @@ interface BranchUser {
   email: string
 }
 
-export type WeekFilter = 'this' | 'next' | 'last' | 'custom' | 'all'
+export type WeekFilter = 'today' | 'yesterday' | 'this' | 'next' | 'last' | 'custom' | 'all'
 
 /**
  * Resolve the selected preset into a concrete {from, to} Date range (inclusive
@@ -292,6 +292,21 @@ function resolveRange(
 ): { from: Date; to: Date } | null {
   if (filter === 'all') return null
   const now = new Date()
+  if (filter === 'today') {
+    const from = new Date(now)
+    from.setHours(0, 0, 0, 0)
+    const to = new Date(now)
+    to.setHours(23, 59, 59, 999)
+    return { from, to }
+  }
+  if (filter === 'yesterday') {
+    const from = new Date(now)
+    from.setDate(from.getDate() - 1)
+    from.setHours(0, 0, 0, 0)
+    const to = new Date(from)
+    to.setHours(23, 59, 59, 999)
+    return { from, to }
+  }
   if (filter === 'this') {
     return {
       from: startOfWeek(now, { weekStartsOn: 1 }),
@@ -339,6 +354,16 @@ interface FiltersBarProps {
   customTo: string
   onCustomFromChange: (s: string) => void
   onCustomToChange: (s: string) => void
+  // Refinement filters — options derived from the currently-loaded card set so
+  // we don't show choices that yield zero results.
+  sourceFilter: string  // '' = all, otherwise lead-source name
+  onSourceFilterChange: (s: string) => void
+  sourceOptions: string[]
+  ageFilter: string  // '' = all | 'Junior' | 'Mid' | 'Senior'
+  onAgeFilterChange: (s: string) => void
+  tagFilter: string  // '' = all, otherwise tag id
+  onTagFilterChange: (s: string) => void
+  tagOptions: Array<{ id: string; name: string; color: string }>
 }
 
 function FiltersBar({
@@ -355,6 +380,14 @@ function FiltersBar({
   customTo,
   onCustomFromChange,
   onCustomToChange,
+  sourceFilter,
+  onSourceFilterChange,
+  sourceOptions,
+  ageFilter,
+  onAgeFilterChange,
+  tagFilter,
+  onTagFilterChange,
+  tagOptions,
 }: FiltersBarProps) {
   const pipelineDisabled = !canSwitchPipelines || pipelineLocked
   return (
@@ -425,6 +458,8 @@ function FiltersBar({
             'focus:outline-none focus:ring-2 focus:ring-indigo-500',
           )}
         >
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
           <option value="this">This week</option>
           <option value="next">Next week</option>
           <option value="last">Last week</option>
@@ -451,6 +486,66 @@ function FiltersBar({
           />
         </div>
       )}
+
+      {/* Platform / lead-source refinement */}
+      <div className="relative">
+        <select
+          value={sourceFilter}
+          onChange={(e) => onSourceFilterChange(e.target.value)}
+          className={cn(
+            'appearance-none rounded-lg border border-slate-300 dark:border-slate-600',
+            'bg-white dark:bg-slate-800 pl-3 pr-8 py-1.5 text-sm text-slate-900 dark:text-white',
+            'focus:outline-none focus:ring-2 focus:ring-indigo-500',
+          )}
+          title="Filter by lead source / platform"
+        >
+          <option value="">All platforms</option>
+          {sourceOptions.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+      </div>
+
+      {/* Age class refinement */}
+      <div className="relative">
+        <select
+          value={ageFilter}
+          onChange={(e) => onAgeFilterChange(e.target.value)}
+          className={cn(
+            'appearance-none rounded-lg border border-slate-300 dark:border-slate-600',
+            'bg-white dark:bg-slate-800 pl-3 pr-8 py-1.5 text-sm text-slate-900 dark:text-white',
+            'focus:outline-none focus:ring-2 focus:ring-indigo-500',
+          )}
+          title="Filter by age class (Junior 7-9, Mid 10-12, Senior 13-16)"
+        >
+          <option value="">All ages</option>
+          <option value="Junior">Junior (7-9)</option>
+          <option value="Mid">Mid (10-12)</option>
+          <option value="Senior">Senior (13-16)</option>
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+      </div>
+
+      {/* Tag refinement */}
+      <div className="relative">
+        <select
+          value={tagFilter}
+          onChange={(e) => onTagFilterChange(e.target.value)}
+          className={cn(
+            'appearance-none rounded-lg border border-slate-300 dark:border-slate-600',
+            'bg-white dark:bg-slate-800 pl-3 pr-8 py-1.5 text-sm text-slate-900 dark:text-white',
+            'focus:outline-none focus:ring-2 focus:ring-indigo-500',
+          )}
+          title="Filter by tag"
+        >
+          <option value="">All tags</option>
+          {tagOptions.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+      </div>
     </div>
   )
 }
@@ -562,6 +657,10 @@ export function KanbanBoard({
   const [weekFilter, setWeekFilter] = useState<WeekFilter>('this')
   const [customFrom, setCustomFrom] = useState<string>('')
   const [customTo, setCustomTo] = useState<string>('')
+  // Refinement filters (lead source / age class / tag). Empty string = "all".
+  const [sourceFilter, setSourceFilter] = useState<string>('')
+  const [ageFilter, setAgeFilter] = useState<string>('')
+  const [tagFilter, setTagFilter] = useState<string>('')
   const search = useDebounce(searchInput, 350)
 
   // Always pass undefined for branchId — the pipeline itself already scopes to one branch.
@@ -628,19 +727,56 @@ export function KanbanBoard({
   // Card detail modal
   const [detailCard, setDetailCard] = useState<OpportunityCard | null>(null)
 
-  // Filter by creation-week range (client-side)
+  // Derive available source / tag options from the current card set so the
+  // dropdowns only offer choices that yield results.
+  const sourceOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const s of stages) {
+      for (const o of s.opportunities) {
+        const name = o.contact.leadSource?.name
+        if (name) set.add(name)
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [stages])
+
+  const tagOptions = useMemo(() => {
+    const byId = new Map<string, { id: string; name: string; color: string }>()
+    for (const s of stages) {
+      for (const o of s.opportunities) {
+        for (const { tag } of o.contact.contactTags) byId.set(tag.id, tag)
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name))
+  }, [stages])
+
+  // Filter by creation date range + lead source + age class + tag (client-side)
   const filteredStages = useMemo(() => {
     const range = resolveRange(weekFilter, customFrom, customTo)
-    if (!range) return stages
     return stages.map((stage) => ({
       ...stage,
       opportunities: stage.opportunities.filter((o) => {
-        const created = new Date(o.createdAt)
-        if (created < range.from || created > range.to) return false
+        // Date range
+        if (range) {
+          const created = new Date(o.createdAt)
+          if (created < range.from || created > range.to) return false
+        }
+        // Lead source / platform
+        if (sourceFilter && o.contact.leadSource?.name !== sourceFilter) return false
+        // Age class — childAge1 is the canonical sibling age column post-refactor
+        if (ageFilter) {
+          const cat = getAgeCategory(o.contact.childAge1)
+          if (cat !== ageFilter) return false
+        }
+        // Tag — opportunity matches if ANY of its tags equals the selected one
+        if (tagFilter) {
+          const hasTag = o.contact.contactTags.some(({ tag }) => tag.id === tagFilter)
+          if (!hasTag) return false
+        }
         return true
       }),
     }))
-  }, [stages, weekFilter, customFrom, customTo])
+  }, [stages, weekFilter, customFrom, customTo, sourceFilter, ageFilter, tagFilter])
 
   // ── Drag & Drop ──────────────────────────────────────────────────────────────
 
@@ -894,6 +1030,14 @@ export function KanbanBoard({
         customTo={customTo}
         onCustomFromChange={setCustomFrom}
         onCustomToChange={setCustomTo}
+        sourceFilter={sourceFilter}
+        onSourceFilterChange={setSourceFilter}
+        sourceOptions={sourceOptions}
+        ageFilter={ageFilter}
+        onAgeFilterChange={setAgeFilter}
+        tagFilter={tagFilter}
+        onTagFilterChange={setTagFilter}
+        tagOptions={tagOptions}
       />
 
       {/* Bulk action bar */}

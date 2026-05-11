@@ -45,6 +45,12 @@ export default function FormsPage() {
   const [branch, setBranch] = useState('')
   const [remarks, setRemarks] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // viewerRole drives whether the preferred-branch dropdown is locked or not.
+  // Branch managers can only submit form leads for their own branch — they
+  // see a single read-only option pre-filled with their assigned branch.
+  // Super admin / agency admin pick freely from the full BRANCHES list.
+  const [viewerRole, setViewerRole] = useState<string | null>(null)
+  const [allowedBranches, setAllowedBranches] = useState<string[]>([])
 
   useEffect(() => {
     // Sync children array length with numChildren selection
@@ -55,6 +61,29 @@ export default function FormsPage() {
       return next
     })
   }, [numChildren])
+
+  useEffect(() => {
+    // Fetch the caller's role + branch scope so we know whether to lock the
+    // preferred-branch dropdown. /api/crm/branches already scopes the returned
+    // branch list to whatever the user can see.
+    void fetch('/api/crm/branches')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { branches?: Array<{ name: string }>; viewerRole?: string } | null) => {
+        if (!data) return
+        setViewerRole(data.viewerRole ?? null)
+        const names = (data.branches ?? []).map((b) => b.name)
+        setAllowedBranches(names)
+        // For non-admins with exactly one branch, pre-fill it.
+        const isAdmin = data.viewerRole === 'SUPER_ADMIN' || data.viewerRole === 'AGENCY_ADMIN'
+        if (!isAdmin && names.length === 1) setBranch(names[0])
+      })
+      .catch(() => {/* fall back to the unlocked dropdown */})
+  }, [])
+
+  const isAdmin = viewerRole === 'SUPER_ADMIN' || viewerRole === 'AGENCY_ADMIN'
+  // Admins see the canonical BRANCHES list; everyone else sees only the
+  // branches they're explicitly linked to (usually one).
+  const branchOptions = isAdmin ? BRANCHES : allowedBranches
 
   const progress = step === 5 ? 100 : (step / 4) * 100
 
@@ -285,7 +314,18 @@ export default function FormsPage() {
           {step === 4 && (
             <Fade>
               <Group label="Preferred branch near you">
-                <SelectField value={branch} onChange={setBranch} placeholder="Please select" options={BRANCHES} />
+                <SelectField
+                  value={branch}
+                  onChange={isAdmin ? setBranch : () => {/* locked for branch managers */}}
+                  placeholder="Please select"
+                  options={branchOptions}
+                  disabled={!isAdmin && allowedBranches.length <= 1}
+                />
+                {!isAdmin && allowedBranches.length <= 1 && (
+                  <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                    Locked to your branch. Only super admins can submit on behalf of other branches.
+                  </p>
+                )}
               </Group>
               <Group label="Remarks [If any]">
                 <TextareaField value={remarks} onChange={setRemarks} placeholder="Special needs (e.g. ADHD, autism)" />
@@ -418,17 +458,20 @@ function SelectField({
   onChange,
   placeholder,
   options,
+  disabled = false,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder: string
   options: string[]
+  disabled?: boolean
 }) {
   const filled = value.trim() !== ''
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
       style={{
         ...inputStyle(filled),
         appearance: 'none',
@@ -437,6 +480,8 @@ function SelectField({
           'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'16\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23666\' stroke-width=\'2.5\'><polyline points=\'6 9 12 15 18 9\'></polyline></svg>")',
         backgroundRepeat: 'no-repeat',
         backgroundPosition: 'right 14px center',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.7 : 1,
       }}
     >
       <option value="">{placeholder}</option>

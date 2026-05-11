@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { headers } from 'next/headers'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
+import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { logAudit } from '@/lib/crm/audit'
 
@@ -62,6 +64,31 @@ export async function POST(req: NextRequest) {
     const branchId = await resolveBranchId(tenant.id, parsed.data.preferredBranch)
     if (!branchId) {
       return NextResponse.json({ error: 'No branches available — configure one first' }, { status: 409 })
+    }
+
+    // Branch-scope guard: a branch manager submitting from /crm/forms can only
+    // create leads for branches they're explicitly linked to. The dropdown is
+    // locked client-side; this is the server-side enforcement against people
+    // editing the request payload in dev tools. Super/agency admins bypass.
+    const session = await auth.api.getSession({ headers: await headers() })
+    if (session?.user?.id) {
+      const userBranch = await prisma.crm_user_branch.findFirst({
+        where: { userId: session.user.id, tenantId: tenant.id },
+        select: { role: true },
+      })
+      const isAdmin = userBranch?.role === 'SUPER_ADMIN' || userBranch?.role === 'AGENCY_ADMIN'
+      if (!isAdmin) {
+        const allowed = await prisma.crm_user_branch.findFirst({
+          where: { userId: session.user.id, tenantId: tenant.id, branchId },
+          select: { branchId: true },
+        })
+        if (!allowed) {
+          return NextResponse.json(
+            { error: 'You can only submit form leads for your own branch.' },
+            { status: 403 },
+          )
+        }
+      }
     }
 
     // Find the "New Lead" stage — first stage of the branch's pipeline

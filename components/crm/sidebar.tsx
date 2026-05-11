@@ -77,7 +77,10 @@ const LEAD_NAV_ITEMS: NavItemDef[] = [
   { href: '/crm/dashboard',     label: 'Dashboard',        icon: LayoutDashboard },
   { href: '/crm/contacts',      label: 'Contacts',         icon: Users },
   { href: '/crm/opportunities', label: 'Opportunities',    icon: Kanban },
-  { href: '/crm/forms',         label: 'Forms',            icon: FileText,  roles: ['super_admin'],                    hideInBranchView: true },
+  // Forms is visible to every signed-in role so branch managers can submit
+  // leads for their own branch. The trial form locks the preferred-branch
+  // dropdown to the manager's branch — only super_admin can pick freely.
+  { href: '/crm/forms',         label: 'Forms',            icon: FileText },
   { href: '/crm/automations',   label: 'Automations',      icon: Zap,       roles: ['super_admin'],                    hideInBranchView: true },
   { href: '/crm/analytics',     label: 'Analytics',        icon: BarChart3, roles: ['super_admin', 'platform_admin'],  hideInBranchView: true },
   { href: '/crm/integrations',  label: 'Integrations',     icon: Plug,      roles: ['super_admin'],                    hideInBranchView: true },
