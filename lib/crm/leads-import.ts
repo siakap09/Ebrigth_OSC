@@ -426,9 +426,46 @@ export async function importLead(
     return { status: 'created', contactId: result, branchId: branch.id }
   } catch (e) {
     // Unique-constraint hit on (tenantId, externalSourceTable, externalSourceId)
-    // means this row is already imported. Treat as a soft skip — the polling
-    // backstop and the LISTEN handler can race freely.
+    // means this row is already imported. Treat as a soft skip — but also
+    // backfill columns the view newly exposes (campaignName, parentFullName,
+    // childAge1) whenever the existing CRM row left them NULL.
+    //
+    // We only fill NULLs — that way fields a user has manually edited or
+    // corrected stay intact. Re-firing pg_notify after a column-add becomes a
+    // safe one-pass migration: created counts go up where the row was missing,
+    // duplicate counts go up where it was already there but gets its new
+    // fields populated in-place.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      try {
+        const updates: Prisma.crm_contactUpdateManyMutationInput = {}
+        if (row.campaign_name) updates.campaignName = row.campaign_name
+        if (parentFullName)    updates.parentFullName = parentFullName
+        if (childAge)          updates.childAge1 = childAge
+
+        if (Object.keys(updates).length > 0) {
+          // updateMany allows the NULL-only filter and doesn't require knowing
+          // the compound-unique key's Prisma alias. Only touches rows where the
+          // target field is still NULL.
+          for (const [field, value] of Object.entries(updates)) {
+            await prisma.crm_contact.updateMany({
+              where: {
+                tenantId:            ctx.tenantId,
+                externalSourceTable: row.source_table,
+                externalSourceId:    row.source_id,
+                [field]:             null,
+              },
+              data: { [field]: value },
+            })
+          }
+        }
+      } catch (updateErr) {
+        // Don't fail the import path if backfill misfires — the row is at
+        // least already present; the operator can re-run later.
+        console.warn(
+          '[leads-import] Backfill on duplicate failed:',
+          (updateErr as Error).message,
+        )
+      }
       return { status: 'duplicate', branchId: branch.id }
     }
     throw e
