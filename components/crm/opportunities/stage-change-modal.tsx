@@ -14,11 +14,11 @@ interface StageChangeModalProps {
   onNoteChange: (note: string) => void
   trialDate?: string
   trialTimeSlot?: string
-  enrollmentMonths?: 3 | 6 | 9 | 12
+  enrollmentMonths?: 6 | 9 | 12
   rescheduleDate?: string
   onTrialDateChange?: (v: string) => void
   onTrialTimeSlotChange?: (v: string) => void
-  onEnrollmentMonthsChange?: (v: 3 | 6 | 9 | 12) => void
+  onEnrollmentMonthsChange?: (v: 6 | 9 | 12) => void
   onRescheduleDateChange?: (v: string) => void
   onConfirm: () => void
   onCancel: () => void
@@ -61,8 +61,7 @@ function isoOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-const PACKAGE_OPTIONS: Array<{ months: 3 | 6 | 9 | 12; label: string; subtitle: string }> = [
-  { months: 3,  label: '3 Months',  subtitle: 'Starter'   },
+const PACKAGE_OPTIONS: Array<{ months: 6 | 9 | 12; label: string; subtitle: string }> = [
   { months: 6,  label: '6 Months',  subtitle: 'Standard'  },
   { months: 9,  label: '9 Months',  subtitle: 'Extended'  },
   { months: 12, label: '12 Months', subtitle: 'Full year' },
@@ -90,6 +89,10 @@ export function StageChangeModal({
   const isTrial = normalized === 'confirmed for trial'
   const isEnrolled = normalized === 'enrolled'
   const isReschedule = normalized === 'reschedule'
+  // Cold Lead requires an explicit remark — staff must explain why the lead
+  // is being dropped before the move commits. No date / package picker is
+  // shown for this stage, just the note field with a "required" hint.
+  const isColdLead = normalized === 'cold lead'
 
   const availableSlots = useMemo(() => slotsForDate(trialDate), [trialDate])
 
@@ -139,7 +142,8 @@ export function StageChangeModal({
     (!isTrial ||
       (!!trialDate && !!trialTimeSlot && availableSlots.includes(trialTimeSlot) && !selectedSlotFull)) &&
     (!isEnrolled || !!enrollmentMonths) &&
-    (!isReschedule || !!rescheduleDate)
+    (!isReschedule || !!rescheduleDate) &&
+    (!isColdLead || !!note?.trim())
 
   return (
     <div
@@ -160,7 +164,9 @@ export function StageChangeModal({
                 ? 'Select Enrollment Package'
                 : isReschedule
                   ? 'Pick Reschedule Follow-up Date'
-                  : 'Move Opportunity'}
+                  : isColdLead
+                    ? 'Drop Lead — Cold Lead'
+                    : 'Move Opportunity'}
           </h2>
           <button
             onClick={onCancel}
@@ -329,16 +335,30 @@ export function StageChangeModal({
           {/* Note */}
           <div className="space-y-1.5">
             <label htmlFor="stage-change-note" className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Note <span className="text-slate-400 font-normal">(optional)</span>
+              {isColdLead ? (
+                <>Reason <span className="text-red-500">*</span></>
+              ) : (
+                <>Note <span className="text-slate-400 font-normal">(optional)</span></>
+              )}
             </label>
             <textarea
               id="stage-change-note"
               value={note}
               onChange={(e) => onNoteChange(e.target.value)}
-              placeholder="Add a note about this stage change..."
-              rows={2}
+              placeholder={
+                isColdLead
+                  ? 'Required: why is this lead being marked Cold? (e.g. parent decided not to enroll, unresponsive after 3 attempts…)'
+                  : 'Add a note about this stage change...'
+              }
+              rows={isColdLead ? 4 : 2}
+              required={isColdLead}
               className="w-full resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
+            {isColdLead && !note?.trim() && (
+              <p className="text-xs text-red-500">
+                A reason is required when dropping a lead into Cold Lead.
+              </p>
+            )}
           </div>
         </div>
 

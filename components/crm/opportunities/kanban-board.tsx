@@ -603,7 +603,7 @@ export function KanbanBoard({
   const [moveNote, setMoveNote] = useState('')
   const [trialDate, setTrialDate] = useState<string>('')
   const [trialTimeSlot, setTrialTimeSlot] = useState<string>('')
-  const [enrollmentMonths, setEnrollmentMonths] = useState<3 | 6 | 9 | 12 | undefined>(undefined)
+  const [enrollmentMonths, setEnrollmentMonths] = useState<6 | 9 | 12 | undefined>(undefined)
   const [rescheduleDate, setRescheduleDate] = useState<string>('')
   // Local pending flag scoped to the modal confirm action. Using
   // moveMutation.isPending directly would leak state from any other in-flight
@@ -715,7 +715,8 @@ export function KanbanBoard({
       const requiresModal =
         normalized === 'confirmed for trial' ||
         normalized === 'enrolled' ||
-        normalized === 'reschedule'
+        normalized === 'reschedule' ||
+        normalized === 'cold lead'
 
       if (requiresModal) {
         // Show popup to collect trial date/slot or enrollment months
