@@ -153,7 +153,7 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-ink-900">{student.name}</div>
                     <div className="text-xs text-ink-400 mt-0.5 flex items-center gap-1.5">
-                      <span className="font-mono">G{student.grade}</span>
+                      <span className="font-mono">G{inv.targetGrade && inv.targetGrade > 0 ? inv.targetGrade : student.grade}</span>
                       <span>·</span>
                       <span className="font-mono text-xs font-semibold bg-ivory-200 px-1.5 py-0.5 rounded">
                         {inv.branch}
@@ -185,10 +185,20 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
               <ArrowLeft className="w-3.5 h-3.5" /> Back to students
             </button>
           </div>
-          <CertificateRender student={previewStudent} session={previewSession} event={event} />
+          <CertificateRender
+            student={previewStudent}
+            grade={studentInv && studentInv.targetGrade > 0 ? studentInv.targetGrade : previewStudent.grade}
+            session={previewSession}
+            event={event}
+          />
           {typeof document !== "undefined" && createPortal(
             <div className="fa-print-cert">
-              <CertificateRender student={previewStudent} session={previewSession} event={event} />
+              <CertificateRender
+                student={previewStudent}
+                grade={studentInv && studentInv.targetGrade > 0 ? studentInv.targetGrade : previewStudent.grade}
+                session={previewSession}
+                event={event}
+              />
             </div>,
             document.body
           )}
@@ -200,8 +210,8 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
 
 /* ── Certificate render ─────────────────────────────────────────────────── */
 function CertificateRender({
-  student, session, event,
-}: { student: Student; session: Session; event: FAEvent }) {
+  student, grade, session, event,
+}: { student: Student; grade: number; session: Session; event: FAEvent }) {
   return (
     <div
       className="bg-ivory-50 p-10 border-2 border-double border-gold-400 rounded-[10px] text-center"
@@ -225,7 +235,7 @@ function CertificateRender({
       <div className="fa-display text-4xl text-ink-900 mb-3">{student.name}</div>
       <div className="text-sm text-ink-600 mb-1">has successfully participated in the</div>
       <div className="fa-display text-2xl text-gold-700 mb-6">
-        Grade {student.grade} Foundation Appraisal
+        Grade {grade} Foundation Appraisal
       </div>
 
       <hr className="border-0 border-t border-gold-300 mb-4" />
