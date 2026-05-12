@@ -22,11 +22,12 @@ import { crmBranchToTktBranchNumber } from '@/lib/crm/branch-number'
 
 const SUB_TYPES_BY_PLATFORM: Record<string, Array<{ value: string; label: string }>> = {
   aone: [
-    { value: 'freeze_student', label: 'Freeze Student' },
+    { value: 'freeze_student',  label: 'Freeze Student' },
     { value: 'archive_student', label: 'Archive Student' },
-    { value: 'delete_invoice', label: 'Delete Invoice' },
-    { value: 'login_issue', label: 'Login Issue' },
-    { value: 'others', label: 'Others' },
+    { value: 'extend',          label: 'Extend' },
+    { value: 'delete_invoice',  label: 'Delete Invoice' },
+    { value: 'login_issue',     label: 'Login Issue' },
+    { value: 'others',          label: 'Others' },
   ],
   ghl: [
     { value: 'leads', label: 'Leads' },

@@ -114,14 +114,20 @@ export function TicketTable({
         header: 'Status',
         cell: (info) => <StatusBadge status={info.getValue()} />,
       }),
-      col.accessor((row) => row.submitter.user_id, {
+      col.accessor((row) => {
+        const s = row.submitter as { user_id: string; name?: string | null; email?: string | null }
+        return s.name ?? s.email ?? s.user_id
+      }, {
         id: 'submitter',
         header: 'Submitter',
-        cell: (info) => (
-          <span className="text-sm text-slate-600 dark:text-slate-400">
-            {info.row.original.submitter.user_id.slice(0, 8)}…
-          </span>
-        ),
+        cell: (info) => {
+          const s = info.row.original.submitter as { user_id: string; name?: string | null; email?: string | null }
+          return (
+            <span className="text-sm text-slate-600 dark:text-slate-400" title={s.email ?? s.user_id}>
+              {s.name ?? s.email ?? `${s.user_id.slice(0, 8)}…`}
+            </span>
+          )
+        },
       }),
       col.accessor('created_at', {
         header: 'Created',

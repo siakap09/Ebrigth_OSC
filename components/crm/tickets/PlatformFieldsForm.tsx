@@ -404,21 +404,19 @@ export function PlatformFieldsForm({
           <DateField name="endDate" label="Freeze End Date" required control={control} errors={errors} />
         </div>
         <TextareaField name="reason" label="Reason" required control={control} errors={errors} />
-        <FileUploadButton
-          label="Black & White File"
-          fieldKey="blackWhiteFile"
-          required
-          ticketId={ticketId}
-          control={control}
-          errors={errors}
-        />
-        <FileUploadButton
-          label="Supporting Document (Optional)"
-          fieldKey="generalFile"
-          ticketId={ticketId}
-          control={control}
-          errors={errors}
-        />
+      </div>
+    )
+  }
+
+  if (key === 'aone/extend') {
+    return (
+      <div className="space-y-4">
+        <TextField name="studentName" label="Student Name" required control={control} errors={errors} />
+        <div className="grid grid-cols-2 gap-4">
+          <DateField name="startDate" label="Extend Start Date" required control={control} errors={errors} />
+          <DateField name="endDate" label="Extend End Date" required control={control} errors={errors} />
+        </div>
+        <TextareaField name="reason" label="Reason" required control={control} errors={errors} />
       </div>
     )
   }
