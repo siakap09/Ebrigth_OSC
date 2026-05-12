@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/crm/utils'
 import { useBranchContext, type BranchInfo } from './branch-context'
 import { authClient } from '@/lib/crm/auth-client'
+import { useUnreadCount } from '@/hooks/crm/useNotifications'
 import type { SessionUser } from './providers'
 import { BranchAccessModal } from './branch-access-modal'
 
@@ -29,8 +30,6 @@ interface TopbarProps {
   collapsed: boolean
   onToggleCollapse: () => void
   session: { user: SessionUser }
-  /** Total unread notification count */
-  unreadCount?: number
 }
 
 // ─── Avatar initials helper ───────────────────────────────────────────────────
@@ -63,6 +62,29 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
   const [mounted, setMounted] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const router = useRouter()
+  const pathname = usePathname()
+
+  // After picking a branch (or "View all"), send the user to that module's
+  // dashboard so they're not stranded on a detail page that no longer applies
+  // to the new scope. Ticket pages → ticket dashboard, anything else → CRM
+  // dashboard. Pages already on a dashboard or settings page stay where they
+  // are (the route re-renders against the new branch scope automatically).
+  function defaultLandingPage(): string {
+    if (pathname.startsWith('/crm/tickets') || pathname.startsWith('/crm/tkt-')) {
+      return '/crm/tickets/dashboard'
+    }
+    return '/crm/dashboard'
+  }
+
+  function selectBranchAndNavigate(branch: BranchInfo | null) {
+    setSelectedBranch(branch)
+    setOpen(false)
+    setQuery('')
+    // Push to module-specific dashboard. If user is already on a dashboard,
+    // this still re-fires the route — useful since the branch context change
+    // alone may not trigger a refetch on every detail page.
+    router.push(defaultLandingPage())
+  }
 
   // "Admin" for the purposes of seeing the Super Admin / Agency View toggle.
   // Three sources are accepted:
@@ -229,7 +251,7 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
           {/* "View all" option — admins see all their branches at once */}
           {branches.length > 1 && (
             <button
-              onClick={() => { setSelectedBranch(null); setOpen(false); setQuery('') }}
+              onClick={() => selectBranchAndNavigate(null)}
               className={cn(
                 'flex w-full items-center gap-3 px-3 py-2.5 text-sm transition',
                 'hover:bg-slate-50 dark:hover:bg-slate-700',
@@ -274,7 +296,7 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
                     )}
                   >
                     <button
-                      onClick={() => { setSelectedBranch(branch); setOpen(false); setQuery('') }}
+                      onClick={() => selectBranchAndNavigate(branch)}
                       className="flex flex-1 items-start gap-3 px-3 py-2.5 text-left min-w-0"
                     >
                       <div className={cn(
@@ -590,8 +612,12 @@ function UserMenu({ user }: { user: SessionUser }) {
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 
-export function CrmTopbar({ collapsed, onToggleCollapse, session, unreadCount = 0 }: TopbarProps) {
+export function CrmTopbar({ collapsed, onToggleCollapse, session }: TopbarProps) {
   const router = useRouter()
+  // Bell badge — polls /api/crm/notifications?filter=unread every 30s via React Query.
+  // Branch scoping is automatic: the API filters by session.user.id, and leads-import
+  // only creates notification rows for users with access to the lead's branch.
+  const { data: unreadCount = 0 } = useUnreadCount()
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4">

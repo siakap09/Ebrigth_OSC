@@ -97,11 +97,10 @@ const LEAD_NAV_ITEMS: NavItemDef[] = [
 // /api/crm/tickets/analytics ?branch= filter, so a non-admin only sees
 // statistics for the branch their account is assigned to.
 const TICKET_NAV_ITEMS: NavItemDef[] = [
-  // Note: a "Dashboard" entry was previously pointing at /crm/tickets/dashboard
-  // which has no matching page — the [id] dynamic route was catching "dashboard"
-  // as a UUID and returning "Ticket not found". Removed until a real ticket
-  // dashboard page is built; admins use "Opportunities" (the kanban) as the
-  // overview, regular users see "My Tickets".
+  // Dashboard now points at a real page (app/crm/(protected)/tickets/dashboard).
+  // Earlier the href pointed at a non-existent route, causing the [id] dynamic
+  // route to catch "dashboard" as a UUID and return "Ticket not found".
+  { href: '/crm/tickets/dashboard', label: 'Dashboard',     icon: LayoutDashboard },
   { href: '/crm/tickets/kanban',    label: 'Opportunities', icon: Kanban,    roles: ['super_admin'], hideInBranchView: true },
   { href: '/crm/tickets',           label: 'My Tickets',    icon: Ticket },
   { href: '/crm/tickets/new',       label: 'New Ticket',    icon: Plus },

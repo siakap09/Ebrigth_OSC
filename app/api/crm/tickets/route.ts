@@ -29,9 +29,13 @@ export async function GET(req: NextRequest) {
     const ctx = await requireTktAuth(req.headers)
     const sp = req.nextUrl.searchParams
 
-    // Parse query params
+    // Parse query params. The list page sends platformId / branchId (UUIDs);
+    // older callers (e.g. tickets/kanban topbar wiring) still send platform
+    // (slug) / branch (branch_number). Accept both shapes.
     const platform        = sp.get('platform') ?? undefined
+    const platformId      = sp.get('platformId') ?? undefined
     const branch          = sp.get('branch') ?? undefined
+    const branchId        = sp.get('branchId') ?? undefined
     const status          = sp.get('status') ?? undefined
     const search          = sp.get('search') ?? undefined
     const dateFrom        = sp.get('dateFrom') ?? undefined
@@ -57,8 +61,13 @@ export async function GET(req: NextRequest) {
     }
     // super_admin sees all
 
-    // Platform filter (by slug)
-    if (platform) {
+    // Platform filter — accept either slug or UUID.
+    if (platformId) {
+      if (ctx.role === 'platform_admin' && !ctx.platformIds.includes(platformId)) {
+        return Response.json({ data: [], total: 0, page, pageSize })
+      }
+      where.platform_id = platformId
+    } else if (platform) {
       const plat = await prisma.tkt_platform.findFirst({
         where: { tenant_id: ctx.tenantId, slug: platform },
         select: { id: true },
@@ -71,8 +80,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Branch filter (by branch_number)
-    if (branch) {
+    // Branch filter — accept either branch_number or UUID.
+    if (branchId) {
+      where.branch_id = branchId
+    } else if (branch) {
       where.branch = { branch_number: branch }
     }
 
@@ -132,6 +143,18 @@ export async function GET(req: NextRequest) {
       prisma.tkt_ticket.count({ where }),
     ])
 
+    // Enrich submitter with name/email from crm_auth_user so the list can show
+    // "Denize" instead of "f7fe1e37…". tkt_user_profile only carries
+    // notification prefs / role, not display name.
+    const submitterIds = Array.from(new Set(tickets.map((t) => t.user_id)))
+    const submitterUsers = submitterIds.length
+      ? await prisma.crm_auth_user.findMany({
+          where: { id: { in: submitterIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : []
+    const submitterById = new Map(submitterUsers.map((u) => [u.id, u]))
+
     // Reshape attachments/events to legacy UI field names — same adapter
     // applied in app/api/crm/tickets/[id]/route.ts. The schema was simplified
     // (event_type + meta JSON; url/filename/created_at on attachments) but
@@ -139,6 +162,13 @@ export async function GET(req: NextRequest) {
     // field set, so we adapt at the boundary.
     const data = tickets.map((t) => ({
       ...t,
+      submitter: {
+        ...t.submitter,
+        // Flatten in the auth-user fields the UI displays. The base submitter
+        // object only had role + prefs; the table needs a human-readable name.
+        name:  submitterById.get(t.user_id)?.name  ?? null,
+        email: submitterById.get(t.user_id)?.email ?? null,
+      },
       attachments: t.attachments.map((a) => ({
         id:            a.id,
         ticket_id:     a.ticket_id,
