@@ -18,6 +18,7 @@
 import type { PrismaClient } from '@prisma/client'
 import { Prisma } from '@prisma/client'
 import { normalizePhone } from './utils'
+import { createLeadNotifications } from './notifications'
 
 // Importing './queue' transitively pulls in BullMQ + ioredis, which try to
 // connect at module load. When Redis is unreachable the leadIngest worker
@@ -421,6 +422,22 @@ export async function importLead(
       } catch (e) {
         console.warn('[leads-import] Automation enqueue failed:', (e as Error).message)
       }
+    }
+
+    // In-app bell notifications — one row per recipient (branch users +
+    // elevated admins). Best-effort: the contact already exists, so failing
+    // to write notifications shouldn't bubble up and roll anything back.
+    try {
+      const displayName = lastName ? `${firstName} ${lastName}` : firstName
+      await createLeadNotifications(prisma, {
+        tenantId:   ctx.tenantId,
+        branchId:   branch.id,
+        contactId:  result,
+        leadName:   displayName,
+        leadSource: normalizeSourceName(row.lead_source),
+      })
+    } catch (e) {
+      console.warn('[leads-import] Notification fan-out failed:', (e as Error).message)
     }
 
     return { status: 'created', contactId: result, branchId: branch.id }

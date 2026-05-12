@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/crm/utils'
 import { useBranchContext, type BranchInfo } from './branch-context'
 import { authClient } from '@/lib/crm/auth-client'
+import { useUnreadCount } from '@/hooks/crm/useNotifications'
 import type { SessionUser } from './providers'
 import { BranchAccessModal } from './branch-access-modal'
 
@@ -29,8 +30,6 @@ interface TopbarProps {
   collapsed: boolean
   onToggleCollapse: () => void
   session: { user: SessionUser }
-  /** Total unread notification count */
-  unreadCount?: number
 }
 
 // ─── Avatar initials helper ───────────────────────────────────────────────────
@@ -613,8 +612,12 @@ function UserMenu({ user }: { user: SessionUser }) {
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 
-export function CrmTopbar({ collapsed, onToggleCollapse, session, unreadCount = 0 }: TopbarProps) {
+export function CrmTopbar({ collapsed, onToggleCollapse, session }: TopbarProps) {
   const router = useRouter()
+  // Bell badge — polls /api/crm/notifications?filter=unread every 30s via React Query.
+  // Branch scoping is automatic: the API filters by session.user.id, and leads-import
+  // only creates notification rows for users with access to the lead's branch.
+  const { data: unreadCount = 0 } = useUnreadCount()
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4">
