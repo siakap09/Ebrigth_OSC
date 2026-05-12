@@ -97,7 +97,11 @@ const LEAD_NAV_ITEMS: NavItemDef[] = [
 // /api/crm/tickets/analytics ?branch= filter, so a non-admin only sees
 // statistics for the branch their account is assigned to.
 const TICKET_NAV_ITEMS: NavItemDef[] = [
-  { href: '/crm/tickets/dashboard', label: 'Dashboard',     icon: LayoutDashboard },
+  // Note: a "Dashboard" entry was previously pointing at /crm/tickets/dashboard
+  // which has no matching page — the [id] dynamic route was catching "dashboard"
+  // as a UUID and returning "Ticket not found". Removed until a real ticket
+  // dashboard page is built; admins use "Opportunities" (the kanban) as the
+  // overview, regular users see "My Tickets".
   { href: '/crm/tickets/kanban',    label: 'Opportunities', icon: Kanban,    roles: ['super_admin'], hideInBranchView: true },
   { href: '/crm/tickets',           label: 'My Tickets',    icon: Ticket },
   { href: '/crm/tickets/new',       label: 'New Ticket',    icon: Plus },
@@ -107,10 +111,18 @@ const TICKET_NAV_ITEMS: NavItemDef[] = [
   { href: '/crm/notifications',     label: 'Notifications', icon: Bell },
 ]
 
-/** Pick the right nav set based on what page the user is currently on. */
-function pickNavForPath(pathname: string): NavItemDef[] {
+/** Pick the right nav set based on what page the user is currently on,
+ *  AND the last "module" they were in (so shared pages like /crm/settings
+ *  or /crm/notifications don't reset the sidebar context). */
+function pickNavForPath(pathname: string, stickyModule: 'tickets' | 'leads' | null): NavItemDef[] {
   if (pathname.startsWith('/crm/tickets') || pathname.startsWith('/crm/tkt-')) {
     return TICKET_NAV_ITEMS
+  }
+  if (pathname.startsWith('/crm/settings') || pathname.startsWith('/crm/notifications')) {
+    // Shared pages — fall back to whatever module the user was last in,
+    // so clicking Notifications/Settings from the ticket sidebar keeps the
+    // ticket nav visible. Defaults to LEAD if nothing is remembered.
+    if (stickyModule === 'tickets') return TICKET_NAV_ITEMS
   }
   return LEAD_NAV_ITEMS
 }
@@ -213,7 +225,34 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
   //     super_admin — because the user is intentionally scoped to a branch.
   const { selectedBranch } = useBranchContext()
   const inBranchView = !!selectedBranch
-  const navItems = filterNav(pickNavForPath(pathname), user.tktRole, inBranchView)
+
+  // Sticky module tracking — remembers whether the user was last in the
+  // tickets module or the leads module, so clicking Notifications/Settings
+  // (shared routes) doesn't reset the sidebar context unexpectedly.
+  // Persisted to sessionStorage so the choice survives a page reload but
+  // not a new browser session.
+  const [stickyModule, setStickyModule] = useState<'tickets' | 'leads' | null>(null)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (pathname.startsWith('/crm/tickets') || pathname.startsWith('/crm/tkt-')) {
+      sessionStorage.setItem('crmStickyModule', 'tickets')
+      setStickyModule('tickets')
+    } else if (
+      !pathname.startsWith('/crm/settings') &&
+      !pathname.startsWith('/crm/notifications')
+    ) {
+      // Any non-shared, non-ticket path counts as the leads module.
+      sessionStorage.setItem('crmStickyModule', 'leads')
+      setStickyModule('leads')
+    } else {
+      // On a shared page; hydrate from storage so the first paint has the
+      // right nav set (React state is empty on mount).
+      const stored = sessionStorage.getItem('crmStickyModule')
+      if (stored === 'tickets' || stored === 'leads') setStickyModule(stored)
+    }
+  }, [pathname])
+
+  const navItems = filterNav(pickNavForPath(pathname, stickyModule), user.tktRole, inBranchView)
   const canSeeSettings = !inBranchView && (user.tktRole ?? 'user') !== 'user'
 
   return (
