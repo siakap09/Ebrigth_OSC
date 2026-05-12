@@ -18,6 +18,7 @@ interface DailyHour {
   coachHrs: number;
   execHrs: number;
   totalHrs: number;
+  classCount: number;
 }
 
 interface StaffHourEntry {
@@ -29,6 +30,7 @@ interface StaffHourEntry {
   coachHrs: number;
   execHrs: number;
   totalHrs: number;
+  classCount: number;
   dailyBreakdown: DailyHour[];
 }
 
@@ -67,15 +69,15 @@ function branchesMatch(a: string | null | undefined, b: string | null | undefine
 function calculateHoursFromSelections(
   selections: Record<string, string>,
   branch: string
-): Record<string, { coachHrs: number; execHrs: number; totalHrs: number; dailyBreakdown: DailyHour[] }> {
+): Record<string, { coachHrs: number; execHrs: number; totalHrs: number; classCount: number; dailyBreakdown: DailyHour[] }> {
   const allNames = new Set<string>();
   Object.values(selections).forEach((val) => {
     if (val && val !== "" && val !== "None") allNames.add(val);
   });
 
-  const staffStats: Record<string, { coachHrs: number; execHrs: number; totalHrs: number; dailyBreakdown: DailyHour[] }> = {};
+  const staffStats: Record<string, { coachHrs: number; execHrs: number; totalHrs: number; classCount: number; dailyBreakdown: DailyHour[] }> = {};
   allNames.forEach((name) => {
-    staffStats[name] = { coachHrs: 0, execHrs: 0, totalHrs: 0, dailyBreakdown: [] };
+    staffStats[name] = { coachHrs: 0, execHrs: 0, totalHrs: 0, classCount: 0, dailyBreakdown: [] };
   });
 
   getWorkingDaysForBranch(branch).forEach((day) => {
@@ -84,6 +86,7 @@ function calculateHoursFromSelections(
 
     allNames.forEach((emp) => {
       let coachingHoursForDay = 0;
+      let classesForDay = 0;
       let workedThatDay = false;
 
       getTimeSlotsForDay(day, branch).forEach((slot) => {
@@ -91,9 +94,13 @@ function calculateHoursFromSelections(
         COLUMNS.forEach((col) => {
           if (selections[`${day}-${slot}-${col.id}`] === emp) {
             workedThatDay = true;
-            const slotDuration = isAdminSlot(slot, branch) ? 0.25 : 1.25;
+            const isAdmin = isAdminSlot(slot, branch);
+            const slotDuration = isAdmin ? 0.25 : 1.25;
             if (col.type === "coach") {
               coachingHoursForDay += slotDuration;
+              // A "class" is a regular (non-admin) coach slot — admin slots are
+              // short housekeeping blocks (0.25h) where no class is taught.
+              if (!isAdmin) classesForDay += 1;
             }
           }
         });
@@ -104,11 +111,13 @@ function calculateHoursFromSelections(
         staffStats[emp].coachHrs += coachingHoursForDay;
         staffStats[emp].execHrs += execHrs;
         staffStats[emp].totalHrs = staffStats[emp].coachHrs + staffStats[emp].execHrs;
+        staffStats[emp].classCount += classesForDay;
         staffStats[emp].dailyBreakdown.push({
           day,
           coachHrs: coachingHoursForDay,
           execHrs,
           totalHrs: coachingHoursForDay + execHrs,
+          classCount: classesForDay,
         });
       }
     });
@@ -256,9 +265,18 @@ export async function GET(request: Request) {
       ? `${Number(year) + 1}-01-01`
       : `${year}-${String(Number(mon) + 1).padStart(2, "0")}-01`;
 
+    // Include any schedule whose week OVERLAPS the requested month — not just
+    // ones whose startDate falls inside it. Weeks routinely span a month
+    // boundary (e.g. Apr 30 – May 6), and the previous "startDate in month"
+    // filter dropped those entirely for the second month, causing May 2 / 3
+    // to be missing for everyone who only worked on the cross-boundary week.
+    // The per-day filter below trims the days back to the requested month.
     const schedules = await prisma.manpowerSchedule.findMany({
       where: {
-        startDate: { gte: monthStart, lt: nextMonth },
+        AND: [
+          { startDate: { lt: nextMonth } },
+          { endDate: { gte: monthStart } },
+        ],
         status: "Finalized",
       },
       orderBy: { startDate: "asc" },
@@ -331,6 +349,7 @@ export async function GET(request: Request) {
 
         const filteredCoachHrs = dailyWithDates.reduce((s, d) => s + d.coachHrs, 0);
         const filteredExecHrs = dailyWithDates.reduce((s, d) => s + d.execHrs, 0);
+        const filteredClassCount = dailyWithDates.reduce((s, d) => s + (d.classCount || 0), 0);
 
         allEntries.push({
           name,
@@ -341,6 +360,7 @@ export async function GET(request: Request) {
           coachHrs: filteredCoachHrs,
           execHrs: filteredExecHrs,
           totalHrs: filteredCoachHrs + filteredExecHrs,
+          classCount: filteredClassCount,
           dailyBreakdown: dailyWithDates,
         });
       });
@@ -348,7 +368,7 @@ export async function GET(request: Request) {
 
     // Aggregate by BranchStaff.id so name variants ("Diena" / "IRDIENA" /
     // "NUR IRDIENA BATRISYIA BINTI ASMAWI") collapse into one row.
-    interface DailyEntry { date: string; day: string; coachHrs: number; execHrs: number; totalHrs: number; scheduleBranch?: string }
+    interface DailyEntry { date: string; day: string; coachHrs: number; execHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }
 
     const aggregated: Record<string, {
       key: string;
@@ -361,6 +381,7 @@ export async function GET(request: Request) {
       coachHrs: number;
       execHrs: number;
       totalHrs: number;
+      classCount: number;
       coachPay: number;
       execPay: number;
       totalPay: number;
@@ -397,6 +418,7 @@ export async function GET(request: Request) {
           coachHrs: 0,
           execHrs: 0,
           totalHrs: 0,
+          classCount: 0,
           coachPay: 0,
           execPay: 0,
           totalPay: 0,
@@ -408,6 +430,7 @@ export async function GET(request: Request) {
       bucket.coachHrs += entry.coachHrs;
       bucket.execHrs += entry.execHrs;
       bucket.totalHrs += entry.totalHrs;
+      bucket.classCount += entry.classCount;
 
       // Mark a day as a "replacement" only when the schedule branch is
       // genuinely different from the staff's home branch. Compare via
@@ -421,6 +444,7 @@ export async function GET(request: Request) {
           coachHrs: d.coachHrs,
           execHrs: d.execHrs,
           totalHrs: d.totalHrs,
+          classCount: d.classCount || 0,
           scheduleBranch: isReplacement ? scheduleBranch : undefined,
         });
       });
@@ -492,6 +516,7 @@ export async function GET(request: Request) {
       totalCoachHrs: results.reduce((s, r) => s + r.coachHrs, 0),
       totalExecHrs: results.reduce((s, r) => s + r.execHrs, 0),
       totalHrs: results.reduce((s, r) => s + r.totalHrs, 0),
+      totalClasses: results.reduce((s, r) => s + r.classCount, 0),
       totalCoachPay: ptResults.reduce((s, r) => s + r.coachPay, 0),
       totalExecPay: ptResults.reduce((s, r) => s + r.execPay, 0),
       totalPay: ptResults.reduce((s, r) => s + r.totalPay, 0),

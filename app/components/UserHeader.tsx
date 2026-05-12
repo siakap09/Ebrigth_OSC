@@ -75,7 +75,7 @@ export default function UserHeader({
             >
               👤 My Profile
             </Link>
-            
+
           </div>
 
           {/* Logout */}

@@ -46,10 +46,11 @@ interface StaffEntry {
   coachHrs: number;
   execHrs: number;
   totalHrs: number;
+  classCount: number;
   coachPay: number;
   execPay: number;
   totalPay: number;
-  days: { date: string; day: string; coachHrs: number; execHrs: number; totalHrs: number; scheduleBranch?: string }[];
+  days: { date: string; day: string; coachHrs: number; execHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }[];
 }
 
 interface Totals {
@@ -59,6 +60,7 @@ interface Totals {
   totalCoachHrs: number;
   totalExecHrs: number;
   totalHrs: number;
+  totalClasses: number;
   totalCoachPay: number;
   totalExecPay: number;
   totalPay: number;
@@ -133,19 +135,39 @@ export default function ManpowerCostReportPage() {
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
 
-    // Try to load logo
+    // Load logo through an Image + canvas so jsPDF gets a freshly re-encoded
+    // PNG. Going blob → readAsDataURL directly handed jsPDF bytes it rejected
+    // with "Incomplete or corrupt PNG file" — likely an interaction with the
+    // dev server's PNG response. The canvas round-trip normalizes the image.
+    //
+    // Notably we do NOT set img.crossOrigin: this is a same-origin asset, and
+    // setting crossOrigin="anonymous" causes Next's dev server (which doesn't
+    // always emit Access-Control-Allow-Origin for /public files) to block the
+    // load with a CORS error, leaving the PDF logo-less.
     let logoImg: string | null = null;
     try {
-      const resp = await fetch("/ebright-logo.png");
-      if (resp.ok) {
-        const blob = await resp.blob();
-        logoImg = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
-      }
-    } catch { /* no logo available */ }
+      logoImg = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return reject(new Error("no 2d context"));
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL("image/png"));
+          } catch (err) {
+            reject(err);
+          }
+        };
+        img.onerror = () => reject(new Error("logo load failed"));
+        img.src = "/ebright-logo.png";
+      });
+    } catch (err) {
+      console.warn("PDF logo could not be loaded; generating without it", err);
+      logoImg = null;
+    }
 
     // Header bar
     doc.setFillColor(30, 41, 59); // slate-800
@@ -153,8 +175,15 @@ export default function ManpowerCostReportPage() {
 
     let headerX = 14;
     if (logoImg) {
-      doc.addImage(logoImg, "PNG", 14, 3, 55, 22);
-      headerX = 74;
+      // Defensive: even after validation, jsPDF can still reject the buffer
+      // (e.g. interlaced PNGs in older jsPDF versions). Don't kill the whole
+      // PDF over a logo — fall back to a text-only header.
+      try {
+        doc.addImage(logoImg, "PNG", 14, 3, 55, 22);
+        headerX = 74;
+      } catch (e) {
+        console.warn("PDF logo render failed, continuing without logo", e);
+      }
     }
 
     doc.setTextColor(255, 255, 255);
@@ -209,18 +238,21 @@ export default function ManpowerCostReportPage() {
       s.days.forEach((d) => { wMap[d.date] = d; });
 
       const dHead = isEmployeePT
-        ? [["No.", "Day", "Date", "Coach Hr", "Rate", "Total", "Exec Hr", "Rate", "Total", "Total Hr", "Total Pay"]]
-        : [["No.", "Day", "Date", "Coach Hr", "Exec Hr", "Total Hr"]];
+        ? [["No.", "Day", "Date", "Coach Hr", "Class", "Rate", "Total", "Exec Hr", "Rate", "Total", "Total Hr", "Total Pay"]]
+        : [["No.", "Day", "Date", "Coach Hr", "Class", "Exec Hr", "Total Hr"]];
 
       const dBody = showDays.map((row) => {
         const e = wMap[row.date];
         const worked = !!e;
+        const cls = worked ? (e.classCount ?? 0) : 0;
         if (isEmployeePT) {
           const cp = worked ? e.coachHrs * (s.rate || 0) : 0;
           const ep = worked ? e.execHrs * eRate : 0;
           return [
             String(row.dayNum), row.day.slice(0,3), row.date,
-            worked ? fmtHrs(e.coachHrs) : "-", worked && e.coachHrs > 0 ? `RM${s.rate}` : "-", worked && cp > 0 ? `RM ${cp.toFixed(2)}` : "-",
+            worked ? fmtHrs(e.coachHrs) : "-",
+            worked && cls > 0 ? String(cls) : "-",
+            worked && e.coachHrs > 0 ? `RM${s.rate}` : "-", worked && cp > 0 ? `RM ${cp.toFixed(2)}` : "-",
             worked ? fmtHrs(e.execHrs) : "-", worked && e.execHrs > 0 ? `RM${eRate}` : "-", worked && ep > 0 ? `RM ${ep.toFixed(2)}` : "-",
             worked ? fmtHrs(e.totalHrs) : "-",
             worked ? `RM ${(cp + ep).toFixed(2)}` : "-",
@@ -228,14 +260,17 @@ export default function ManpowerCostReportPage() {
         }
         return [
           String(row.dayNum), row.day.slice(0,3), row.date,
-          worked ? fmtHrs(e.coachHrs) : "-", worked ? fmtHrs(e.execHrs) : "-", worked ? fmtHrs(e.totalHrs) : "-",
+          worked ? fmtHrs(e.coachHrs) : "-",
+          worked && cls > 0 ? String(cls) : "-",
+          worked ? fmtHrs(e.execHrs) : "-", worked ? fmtHrs(e.totalHrs) : "-",
         ];
       });
 
       // Footer
+      const totalClasses = s.classCount ?? 0;
       const dFooter = isEmployeePT
-        ? ["Total", "", `${s.days.length} days`, fmtHrs(s.coachHrs), "", `RM ${s.coachPay.toFixed(2)}`, fmtHrs(s.execHrs), "", `RM ${s.execPay.toFixed(2)}`, fmtHrs(s.totalHrs), `RM ${s.totalPay.toFixed(2)}`]
-        : ["Total", "", `${s.days.length} days`, fmtHrs(s.coachHrs), fmtHrs(s.execHrs), fmtHrs(s.totalHrs)];
+        ? ["Total", "", `${s.days.length} days`, fmtHrs(s.coachHrs), String(totalClasses), "", `RM ${s.coachPay.toFixed(2)}`, fmtHrs(s.execHrs), "", `RM ${s.execPay.toFixed(2)}`, fmtHrs(s.totalHrs), `RM ${s.totalPay.toFixed(2)}`]
+        : ["Total", "", `${s.days.length} days`, fmtHrs(s.coachHrs), String(totalClasses), fmtHrs(s.execHrs), fmtHrs(s.totalHrs)];
       dBody.push(dFooter);
 
       autoTable(doc, {
@@ -274,16 +309,16 @@ export default function ManpowerCostReportPage() {
       y += 4;
 
       const tableHead = viewTab === "ft"
-        ? [["Name", "Branch", "Type", "Coach Hrs", "Exec Hrs", "Total Hrs"]]
-        : [["Name", "Branch", "Type", "Coach Hrs", "Exec Hrs", "Total Hrs", "Rate", "Total Pay"]];
+        ? [["Name", "Branch", "Type", "Coach Hrs", "Class", "Exec Hrs", "Total Hrs"]]
+        : [["Name", "Branch", "Type", "Coach Hrs", "Class", "Exec Hrs", "Total Hrs", "Rate", "Total Pay"]];
 
       const tableBody = filteredStaff.map((s) => {
-        const row = [s.name, s.branch, s.isPT ? "PT" : "FT", fmtHrs(s.coachHrs), fmtHrs(s.execHrs), fmtHrs(s.totalHrs)];
+        const row = [s.name, s.branch, s.isPT ? "PT" : "FT", fmtHrs(s.coachHrs), String(s.classCount ?? 0), fmtHrs(s.execHrs), fmtHrs(s.totalHrs)];
         if (viewTab !== "ft") { row.push(s.isPT && s.rate ? `RM${s.rate}` : "-"); row.push(s.isPT ? `RM ${s.totalPay.toFixed(2)}` : "-"); }
         return row;
       });
 
-      const footerRow = [`Total (${filteredTotals.totalStaff})`, "", "", fmtHrs(filteredTotals.totalCoachHrs), fmtHrs(filteredTotals.totalExecHrs), fmtHrs(filteredTotals.totalHrs)];
+      const footerRow = [`Total (${filteredTotals.totalStaff})`, "", "", fmtHrs(filteredTotals.totalCoachHrs), String(filteredTotals.totalClasses ?? 0), fmtHrs(filteredTotals.totalExecHrs), fmtHrs(filteredTotals.totalHrs)];
       if (viewTab !== "ft") { footerRow.push(""); footerRow.push(`RM ${filteredTotals.totalPay.toFixed(2)}`); }
       tableBody.push(footerRow);
 
@@ -364,10 +399,11 @@ export default function ManpowerCostReportPage() {
       if (weekDays.length === 0) return null;
       const coachHrs = weekDays.reduce((sum, d) => sum + d.coachHrs, 0);
       const execHrs = weekDays.reduce((sum, d) => sum + d.execHrs, 0);
+      const classCount = weekDays.reduce((sum, d) => sum + (d.classCount || 0), 0);
       const totalHrs = coachHrs + execHrs;
       const coachPay = s.isPT && s.rate ? coachHrs * s.rate : 0;
       const execPay = s.isPT ? execHrs * (data?.totals.executiveRate || 11) : 0;
-      return { ...s, days: weekDays, coachHrs, execHrs, totalHrs, coachPay, execPay, totalPay: coachPay + execPay };
+      return { ...s, days: weekDays, coachHrs, execHrs, totalHrs, classCount, coachPay, execPay, totalPay: coachPay + execPay };
     })
     .filter((s): s is StaffEntry => {
       if (!s) return false;
@@ -398,6 +434,7 @@ export default function ManpowerCostReportPage() {
     totalCoachHrs: filteredStaff.reduce((s, r) => s + r.coachHrs, 0),
     totalExecHrs: filteredStaff.reduce((s, r) => s + r.execHrs, 0),
     totalHrs: filteredStaff.reduce((s, r) => s + r.totalHrs, 0),
+    totalClasses: filteredStaff.reduce((s, r) => s + (r.classCount || 0), 0),
     totalCoachPay: filteredStaff.filter((s) => s.isPT).reduce((s, r) => s + r.coachPay, 0),
     totalExecPay: filteredStaff.filter((s) => s.isPT).reduce((s, r) => s + r.execPay, 0),
     totalPay: filteredStaff.filter((s) => s.isPT).reduce((s, r) => s + r.totalPay, 0),
@@ -478,10 +515,18 @@ export default function ManpowerCostReportPage() {
                     options={[
                       { value: "", label: "Full Month" },
                       ...data.availableWeeks.map((w, i) => {
-                        const sd = new Date(w.start + "T00:00:00").getDate();
-                        const ed = new Date(w.end + "T00:00:00").getDate();
-                        const mn = new Date(w.start + "T00:00:00").toLocaleString("en-US", { month: "short" });
-                        return { value: `${w.start}:::${w.end}`, label: `Wk${i + 1} (${sd}-${ed} ${mn})` };
+                        const startDateObj = new Date(w.start + "T00:00:00");
+                        const endDateObj = new Date(w.end + "T00:00:00");
+                        const sd = startDateObj.getDate();
+                        const ed = endDateObj.getDate();
+                        const sm = startDateObj.toLocaleString("en-US", { month: "short" });
+                        const em = endDateObj.toLocaleString("en-US", { month: "short" });
+                        // Cross-month weeks (e.g. Apr 30 – May 5) must show both
+                        // months so the user can tell which week they're picking.
+                        const label = sm === em
+                          ? `Wk${i + 1} (${sd}-${ed} ${sm})`
+                          : `Wk${i + 1} (${sd} ${sm} - ${ed} ${em})`;
+                        return { value: `${w.start}:::${w.end}`, label };
                       }),
                     ]}
                     placeholder="Week"
@@ -581,7 +626,7 @@ export default function ManpowerCostReportPage() {
               const displayDays = weekFilter
                 ? allDaysRaw.filter((d) => d.date >= weekStart && d.date <= weekEnd)
                 : allDaysRaw;
-              const workedMap: Record<string, { coachHrs: number; execHrs: number; totalHrs: number; scheduleBranch?: string }> = {};
+              const workedMap: Record<string, { coachHrs: number; execHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
               s.days.forEach((d) => { workedMap[d.date] = d; });
 
               return (
@@ -673,7 +718,10 @@ export default function ManpowerCostReportPage() {
                     )}
                   </div>
 
-                  {/* Daily Breakdown Table (shown directly, no expand) */}
+                  {/* Daily Breakdown Table (shown directly, no expand).
+                      The inner div is the scroll container (max-h + overflow),
+                      so sticky-thead is anchored here and definitely works
+                      regardless of whether <main> or the body is scrolling. */}
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="px-5 py-3 flex items-center justify-between bg-slate-50 border-b border-slate-200">
                       <p className="text-sm font-bold text-slate-700">
@@ -681,31 +729,33 @@ export default function ManpowerCostReportPage() {
                       </p>
                       <p className="text-xs text-slate-500 font-medium">{s.days.length} day{s.days.length !== 1 ? "s" : ""} worked</p>
                     </div>
-                    <div className="overflow-x-auto">
+                    <div className="max-h-[70vh] overflow-auto">
                       <table className="w-full text-left">
-                        <thead>
+                        <thead className="sticky-thead">
                           {isEmployeePT ? (
                             <tr className="text-[10px] font-bold uppercase tracking-wider bg-slate-50 border-b border-slate-200">
-                              <th className="px-3 py-3 text-slate-400 w-10">No.</th>
-                              <th className="px-3 py-3 text-slate-400">Day</th>
-                              <th className="px-3 py-3 text-slate-400">Date</th>
-                              <th className="px-3 py-3 text-orange-400 text-center">Coach Hr</th>
-                              <th className="px-3 py-3 text-orange-400 text-center">Rate</th>
-                              <th className="px-3 py-3 text-orange-500 text-center">Total</th>
-                              <th className="px-3 py-3 text-indigo-400 text-center">Exec Hr</th>
-                              <th className="px-3 py-3 text-indigo-400 text-center">Rate</th>
-                              <th className="px-3 py-3 text-indigo-500 text-center">Total</th>
-                              <th className="px-3 py-3 text-blue-400 text-center">Total Hr</th>
-                              <th className="px-3 py-3 text-green-600 text-right">Total Pay</th>
+                              <th className="px-3 py-3 text-slate-400 w-10 bg-slate-50">No.</th>
+                              <th className="px-3 py-3 text-slate-400 bg-slate-50">Day</th>
+                              <th className="px-3 py-3 text-slate-400 bg-slate-50">Date</th>
+                              <th className="px-3 py-3 text-orange-400 text-center bg-slate-50">Coach Hr</th>
+                              <th className="px-3 py-3 text-pink-400 text-center bg-slate-50">Class</th>
+                              <th className="px-3 py-3 text-orange-400 text-center bg-slate-50">Rate</th>
+                              <th className="px-3 py-3 text-orange-500 text-center bg-slate-50">Total</th>
+                              <th className="px-3 py-3 text-indigo-400 text-center bg-slate-50">Exec Hr</th>
+                              <th className="px-3 py-3 text-indigo-400 text-center bg-slate-50">Rate</th>
+                              <th className="px-3 py-3 text-indigo-500 text-center bg-slate-50">Total</th>
+                              <th className="px-3 py-3 text-blue-400 text-center bg-slate-50">Total Hr</th>
+                              <th className="px-3 py-3 text-green-600 text-right bg-slate-50">Total Pay</th>
                             </tr>
                           ) : (
                             <tr className="text-xs font-bold uppercase tracking-wider bg-slate-50 border-b border-slate-200">
-                              <th className="px-4 py-3 text-slate-400 w-12">No.</th>
-                              <th className="px-4 py-3 text-slate-400">Day</th>
-                              <th className="px-4 py-3 text-slate-400">Date</th>
-                              <th className="px-4 py-3 text-orange-400 text-center">Coach Hr</th>
-                              <th className="px-4 py-3 text-indigo-400 text-center">Exec Hr</th>
-                              <th className="px-4 py-3 text-blue-400 text-center">Total Hr</th>
+                              <th className="px-4 py-3 text-slate-400 w-12 bg-slate-50">No.</th>
+                              <th className="px-4 py-3 text-slate-400 bg-slate-50">Day</th>
+                              <th className="px-4 py-3 text-slate-400 bg-slate-50">Date</th>
+                              <th className="px-4 py-3 text-orange-400 text-center bg-slate-50">Coach Hr</th>
+                              <th className="px-4 py-3 text-pink-400 text-center bg-slate-50">Class</th>
+                              <th className="px-4 py-3 text-indigo-400 text-center bg-slate-50">Exec Hr</th>
+                              <th className="px-4 py-3 text-blue-400 text-center bg-slate-50">Total Hr</th>
                             </tr>
                           )}
                         </thead>
@@ -740,6 +790,9 @@ export default function ManpowerCostReportPage() {
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
                                   <span className={worked ? "text-orange-600" : "text-slate-300"}>{worked ? fmtHrs(entry.coachHrs) : "-"}</span>
+                                </td>
+                                <td className="px-3 py-2 text-center text-xs font-bold">
+                                  <span className={worked && (entry.classCount ?? 0) > 0 ? "text-pink-600" : "text-slate-300"}>{worked && (entry.classCount ?? 0) > 0 ? entry.classCount : "-"}</span>
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs text-slate-400">
                                   {worked && entry.coachHrs > 0 ? `RM${s.rate}` : "-"}
@@ -785,6 +838,9 @@ export default function ManpowerCostReportPage() {
                                   <span className={worked ? "text-orange-600" : "text-slate-300"}>{worked ? fmtHrs(entry.coachHrs) : "-"}</span>
                                 </td>
                                 <td className="px-4 py-2 text-center text-xs font-bold">
+                                  <span className={worked && (entry.classCount ?? 0) > 0 ? "text-pink-600" : "text-slate-300"}>{worked && (entry.classCount ?? 0) > 0 ? entry.classCount : "-"}</span>
+                                </td>
+                                <td className="px-4 py-2 text-center text-xs font-bold">
                                   <span className={worked ? "text-indigo-600" : "text-slate-300"}>{worked ? fmtHrs(entry.execHrs) : "-"}</span>
                                 </td>
                                 <td className="px-4 py-2 text-center text-xs font-black">
@@ -799,6 +855,7 @@ export default function ManpowerCostReportPage() {
                             <tr className="bg-slate-900 text-white">
                               <td colSpan={3} className="px-3 py-3 text-xs font-black uppercase">Total ({s.days.length} days)</td>
                               <td className="px-3 py-3 text-center text-xs font-black text-orange-300">{fmtHrs(s.coachHrs)}</td>
+                              <td className="px-3 py-3 text-center text-xs font-black text-pink-300">{s.classCount ?? 0}</td>
                               <td className="px-3 py-3"></td>
                               <td className="px-3 py-3 text-center text-xs font-black text-orange-300">RM {s.coachPay.toFixed(2)}</td>
                               <td className="px-3 py-3 text-center text-xs font-black text-indigo-300">{fmtHrs(s.execHrs)}</td>
@@ -811,6 +868,7 @@ export default function ManpowerCostReportPage() {
                             <tr className="bg-slate-900 text-white">
                               <td colSpan={3} className="px-4 py-3 text-xs font-black uppercase">Monthly Total ({s.days.length} days worked)</td>
                               <td className="px-4 py-3 text-center text-xs font-black text-orange-300">{fmtHrs(s.coachHrs)}</td>
+                              <td className="px-4 py-3 text-center text-xs font-black text-pink-300">{s.classCount ?? 0}</td>
                               <td className="px-4 py-3 text-center text-xs font-black text-indigo-300">{fmtHrs(s.execHrs)}</td>
                               <td className="px-4 py-3 text-center text-xs font-black text-blue-300">{fmtHrs(s.totalHrs)}</td>
                             </tr>
@@ -878,25 +936,29 @@ export default function ManpowerCostReportPage() {
                   </button>
                 </div>
 
-                {/* Staff Table */}
+                {/* Staff Table — the inner div is the scroll container
+                    (max-h + overflow), which guarantees sticky-thead actually
+                    sticks regardless of whether the outer page or <main>
+                    scrolls. */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="overflow-x-auto">
+                  <div className="max-h-[70vh] overflow-auto">
                     <table className="w-full text-left">
-                      <thead>
+                      <thead className="sticky-thead">
                         <tr className="bg-slate-50 border-b border-slate-200">
-                          <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Name</th>
-                          <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Branch</th>
-                          <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Type</th>
-                          <th className="px-5 py-4 text-xs font-bold text-orange-500 uppercase tracking-wider text-center">Coach Hrs</th>
-                          <th className="px-5 py-4 text-xs font-bold text-indigo-500 uppercase tracking-wider text-center">Exec Hrs</th>
-                          <th className="px-5 py-4 text-xs font-bold text-blue-500 uppercase tracking-wider text-center">Total Hrs</th>
+                          <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider bg-slate-50">Name</th>
+                          <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider bg-slate-50">Branch</th>
+                          <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center bg-slate-50">Type</th>
+                          <th className="px-5 py-4 text-xs font-bold text-orange-500 uppercase tracking-wider text-center bg-slate-50">Coach Hrs</th>
+                          <th className="px-5 py-4 text-xs font-bold text-pink-500 uppercase tracking-wider text-center bg-slate-50">Class</th>
+                          <th className="px-5 py-4 text-xs font-bold text-indigo-500 uppercase tracking-wider text-center bg-slate-50">Exec Hrs</th>
+                          <th className="px-5 py-4 text-xs font-bold text-blue-500 uppercase tracking-wider text-center bg-slate-50">Total Hrs</th>
                           {viewTab !== "ft" && (
                             <>
-                              <th className="px-5 py-4 text-xs font-bold text-orange-500 uppercase tracking-wider text-center">Rate</th>
-                              <th className="px-5 py-4 text-xs font-bold text-green-600 uppercase tracking-wider text-right">Total Pay</th>
+                              <th className="px-5 py-4 text-xs font-bold text-orange-500 uppercase tracking-wider text-center bg-slate-50">Rate</th>
+                              <th className="px-5 py-4 text-xs font-bold text-green-600 uppercase tracking-wider text-right bg-slate-50">Total Pay</th>
                             </>
                           )}
-                          <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center w-12"></th>
+                          <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center w-12 bg-slate-50"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -935,6 +997,7 @@ export default function ManpowerCostReportPage() {
                                     </span>
                                   </td>
                                   <td className="px-5 py-4 text-center text-sm font-bold text-orange-600">{fmtHrs(s.coachHrs)}</td>
+                                  <td className="px-5 py-4 text-center text-sm font-bold text-pink-600">{s.classCount ?? 0}</td>
                                   <td className="px-5 py-4 text-center text-sm font-bold text-indigo-600">{fmtHrs(s.execHrs)}</td>
                                   <td className="px-5 py-4 text-center text-sm font-black text-blue-600">{fmtHrs(s.totalHrs)}</td>
                                   {viewTab !== "ft" && (
@@ -975,7 +1038,7 @@ export default function ManpowerCostReportPage() {
                                   const allDaysInMonth = weekFilter
                                     ? allDaysRaw.filter((d) => d.date >= weekStart && d.date <= weekEnd)
                                     : allDaysRaw;
-                                  const workedMap: Record<string, { coachHrs: number; execHrs: number; totalHrs: number; scheduleBranch?: string }> = {};
+                                  const workedMap: Record<string, { coachHrs: number; execHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
                                   s.days.forEach((d) => { workedMap[d.date] = d; });
                                   const execRate = data?.totals.executiveRate || 10;
 
@@ -992,7 +1055,7 @@ export default function ManpowerCostReportPage() {
                                             </p>
                                             <p className="text-xs text-slate-500 font-medium">{s.days.length} day{s.days.length !== 1 ? "s" : ""} worked</p>
                                           </div>
-                                          <div className="overflow-x-auto">
+                                          <div>
                                             <table className="w-full text-left">
                                               <thead>
                                                 <tr className="text-xs font-bold uppercase tracking-wider bg-slate-50">
@@ -1000,6 +1063,7 @@ export default function ManpowerCostReportPage() {
                                                   <th className="px-4 py-2 text-slate-400">Day</th>
                                                   <th className="px-4 py-2 text-slate-400">Date</th>
                                                   <th className="px-4 py-2 text-orange-400 text-center">Coach Hr</th>
+                                                  <th className="px-4 py-2 text-pink-400 text-center">Class</th>
                                                   <th className="px-4 py-2 text-indigo-400 text-center">Exec Hr</th>
                                                   <th className="px-4 py-2 text-blue-400 text-center">Total Hr</th>
                                                   {s.isPT && <th className="px-4 py-2 text-green-500 text-right">Pay (RM)</th>}
@@ -1035,6 +1099,9 @@ export default function ManpowerCostReportPage() {
                                                         <span className={worked ? "text-orange-600" : "text-slate-300"}>{worked ? fmtHrs(entry.coachHrs) : "-"}</span>
                                                       </td>
                                                       <td className="px-4 py-1.5 text-center text-xs font-bold">
+                                                        <span className={worked && (entry.classCount ?? 0) > 0 ? "text-pink-600" : "text-slate-300"}>{worked && (entry.classCount ?? 0) > 0 ? entry.classCount : "-"}</span>
+                                                      </td>
+                                                      <td className="px-4 py-1.5 text-center text-xs font-bold">
                                                         <span className={worked ? "text-indigo-600" : "text-slate-300"}>{worked ? fmtHrs(entry.execHrs) : "-"}</span>
                                                       </td>
                                                       <td className="px-4 py-1.5 text-center text-xs font-black">
@@ -1053,6 +1120,7 @@ export default function ManpowerCostReportPage() {
                                                 <tr className="bg-slate-900 text-white">
                                                   <td colSpan={3} className="px-4 py-3 text-xs font-black uppercase">Monthly Total ({s.days.length} days worked)</td>
                                                   <td className="px-4 py-3 text-center text-xs font-black text-orange-300">{fmtHrs(s.coachHrs)}</td>
+                                                  <td className="px-4 py-3 text-center text-xs font-black text-pink-300">{s.classCount ?? 0}</td>
                                                   <td className="px-4 py-3 text-center text-xs font-black text-indigo-300">{fmtHrs(s.execHrs)}</td>
                                                   <td className="px-4 py-3 text-center text-xs font-black text-blue-300">{fmtHrs(s.totalHrs)}</td>
                                                   {s.isPT && <td className="px-4 py-3 text-right text-sm font-black text-green-400">RM {s.totalPay.toFixed(2)}</td>}
@@ -1077,6 +1145,7 @@ export default function ManpowerCostReportPage() {
                               Total ({filteredTotals.totalStaff} staff)
                             </td>
                             <td className="px-5 py-4 text-center text-sm font-bold text-orange-300">{fmtHrs(filteredTotals.totalCoachHrs)}</td>
+                            <td className="px-5 py-4 text-center text-sm font-bold text-pink-300">{filteredTotals.totalClasses ?? 0}</td>
                             <td className="px-5 py-4 text-center text-sm font-bold text-indigo-300">{fmtHrs(filteredTotals.totalExecHrs)}</td>
                             <td className="px-5 py-4 text-center text-sm font-bold text-blue-300">{fmtHrs(filteredTotals.totalHrs)}</td>
                             {viewTab !== "ft" && (
