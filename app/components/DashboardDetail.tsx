@@ -127,7 +127,7 @@ export default function DashboardDetail({ id }: DashboardDetailProps) {
   // (SUPER_ADMIN, ADMIN, HOD, ...) see every sub-item enabled.
   const isItemEnabled = (href: string) => {
     if (id !== "hrms") return true;
-    if (userIsBM)       return href === "/manpower-schedule";
+    if (userIsBM)       return href === "/manpower-schedule" || href === "/fa-system";
     if (userIsHR)       return href !== "/manpower-schedule";
     if (userIsAcademy)  return href === "/dashboard-employee-management";
     if (userIsEmployee) return href === "/manpower-cost-report";
