@@ -346,6 +346,21 @@ export async function importLead(
   const phone = row.phone ? normalizePhone(row.phone) : null
   const submittedAt = row.submitted_at ?? new Date()
 
+  // Disambiguated externalSourceId. Historical seeds used `<base_id>#<sibling>`
+  // (e.g. "16391#1"), but master_leads_base.id is NOT unique over time —
+  // ids get reused for new submissions. That meant two contacts with the
+  // same source_id pointing at different real rows, and the per-day
+  // dashboard counts drifted because the worker can't tell them apart.
+  //
+  // Format `<base_id>-<submitted_unix>-<sibling>` adds the submission's
+  // epoch seconds so each contact's source_id is unique even when the
+  // base_id gets reused. The "#"-style legacy ids still in CRM stay
+  // valid; they just can't conflict with the new ones (different
+  // delimiter, different shape).
+  const baseId = row.source_id.includes('#') ? row.source_id.split('#')[0] : row.source_id
+  const siblingIdx = row.sibling_index ?? 1
+  const externalSourceId = `${baseId}-${Math.floor(submittedAt.getTime() / 1000)}-${siblingIdx}`
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const contact = await tx.crm_contact.create({
@@ -370,7 +385,7 @@ export async function importLead(
           // lead-detail page; null becomes "-" at render time.
           campaignName:        row.campaign_name,
           externalSourceTable: row.source_table,
-          externalSourceId:    row.source_id,
+          externalSourceId,
           createdAt:           submittedAt,
         },
       })
@@ -468,7 +483,7 @@ export async function importLead(
               where: {
                 tenantId:            ctx.tenantId,
                 externalSourceTable: row.source_table,
-                externalSourceId:    row.source_id,
+                externalSourceId,
                 [field]:             null,
               },
               data: { [field]: value },
