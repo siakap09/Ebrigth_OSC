@@ -64,6 +64,12 @@ describe('buildPrintApiUrl', () => {
       buildPrintApiUrl({ all: false, branch: 'HQ', role: '', status: '', search: '' })
     ).toBe('/api/employees?branch=HQ');
   });
+
+  it('returns bare /api/employees when all is false and every filter is empty', () => {
+    expect(
+      buildPrintApiUrl({ all: false, branch: '', role: '', status: '', search: '' })
+    ).toBe('/api/employees');
+  });
 });
 
 describe('filterEmployeesForPrint', () => {
