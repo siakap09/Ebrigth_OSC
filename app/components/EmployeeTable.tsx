@@ -65,6 +65,7 @@ export default function EmployeeTable({
   const [statusFilter, setStatusFilter] = useState("all");
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
 
   const academyView = isAcademy(userRole);
 
@@ -162,9 +163,36 @@ export default function EmployeeTable({
       return (e.Emp_Status || "") === statusFilter;
     });
 
+  const openPrintRoute = (useCurrentFilters: boolean) => {
+    const qs = new URLSearchParams();
+    if (useCurrentFilters) {
+      if (searchTerm) qs.append("search", searchTerm);
+      if (branchFilter !== "all") qs.append("branch", branchFilter);
+      if (roleFilter !== "all") qs.append("role", roleFilter);
+      if (statusFilter !== "all") qs.append("status", statusFilter);
+    } else {
+      qs.append("all", "1");
+    }
+    const url = `/dashboard-employee-management/print?${qs.toString()}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    setPrintModalOpen(false);
+  };
+
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-2xl font-bold mb-6 text-gray-800">Employee</h2>
+
+      {!academyView && (
+        <div className="flex justify-end mb-4">
+          <button
+            type="button"
+            onClick={() => setPrintModalOpen(true)}
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium shadow"
+          >
+            Print List
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -420,6 +448,46 @@ export default function EmployeeTable({
           </p>
         </div>
       </div>
+
+      {printModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center"
+          onClick={() => setPrintModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold mb-2 text-gray-900">Print Employee List</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Choose which employees to include. The list opens in a new tab and the print dialog appears automatically.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => openPrintRoute(true)}
+                className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm"
+              >
+                Print current view
+              </button>
+              <button
+                type="button"
+                onClick={() => openPrintRoute(false)}
+                className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 text-gray-900 text-sm"
+              >
+                Print all employees
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintModalOpen(false)}
+                className="px-4 py-2 rounded bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

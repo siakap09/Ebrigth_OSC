@@ -45,17 +45,21 @@ async function resolveTenantId(): Promise<string | null> {
 
 /**
  * Branches whose lead activity is hidden from the elevated (super-admin)
- * dashboard view. Currently: Ebright OD is the internal stress-test /
- * training branch — its leads shouldn't pollute headline numbers, regional
- * totals, or the "Main" pipeline.
+ * dashboard view. Two categories:
+ *   - Internal / admin branches whose leads aren't real sales pipeline
+ *     (Ebright OD is the stress-test / training branch).
+ *   - Upcoming branches that exist in CRM but haven't opened yet
+ *     (Dataran Puchong Utama, Johor). Their leads are recorded but excluded
+ *     from regional totals until they're operationally active.
  *
- * The OD branch manager still sees their own data normally: when a
- * super-admin uses topbar "view as branch" to inspect OD, the request goes
- * through the non-elevated code path which respects the explicit branchId
- * and bypasses this exclusion.
+ * The branch manager for any of these still sees their own data normally:
+ * when a super-admin uses topbar "view as branch" to inspect them, the
+ * request goes through the non-elevated code path which respects the
+ * explicit branchId and bypasses this exclusion.
  */
 const ELEVATED_DASHBOARD_EXCLUDE = new Set<string>([
   '00 Ebright OD',
+  '20 Ebright Public Speaking (Dataran Puchong Utama)',
 ])
 
 /** Branch short-code lookup — matches the Data Studio labels.
@@ -81,7 +85,7 @@ const BRANCH_CODES: Record<string, string> = {
   '17 Ebright Public Speaking Academy (Bandar Rimbayu)': 'RBY',
   '18 Ebright Public Speaking Academy (Taman Sri Gombak)': 'TSG',
   '19 Ebright Public Speaking Academy (Kota Warisan)': 'KW',
-  '20 Ebright Public Speaking Academy (TTDI Grove)': 'TTG',
+  '20 Ebright Public Speaking Academy (TTDI Grove, Kajang)': 'KTG',
 }
 
 // Regions preserved geographically — same branches per region as before, just
@@ -104,7 +108,7 @@ const REGIONS: Record<'A' | 'B' | 'C', string[]> = {
     '07 Ebright Kids Public Speaking (Ampang)',
     '04 Ebright Public Speaking (Sri Petaling)',
     '14 Ebright Public Speaking (Bandar Tun Hussein Onn)',
-    '20 Ebright Public Speaking Academy (TTDI Grove)',
+    '20 Ebright Public Speaking Academy (TTDI Grove, Kajang)',
     '18 Ebright Public Speaking Academy (Taman Sri Gombak)',
   ],
   C: [
@@ -262,19 +266,11 @@ export async function GET(req: NextRequest) {
       stageInfo.set(s.id, { pipelineId: s.pipelineId, order: s.order, category: cat })
     }
 
-    // Per-pipeline category order (e.g., NL=0, CT=5, SU=7, ENR=9 for lead pipelines)
-    const categoryOrderByPipeline = new Map<
-      string,
-      { NL?: number; CT?: number; SU?: number; ENR?: number }
-    >()
-    for (const s of stages) {
-      if (!s.pipelineId) continue
-      const info = stageInfo.get(s.id)
-      if (!info?.category) continue
-      const bucket = categoryOrderByPipeline.get(s.pipelineId) ?? {}
-      bucket[info.category] = s.order
-      categoryOrderByPipeline.set(s.pipelineId, bucket)
-    }
+    // (Previously this block built a per-pipeline ordering of stage
+    // categories so cumulative-funnel counts could be derived. The
+    // dashboard now uses snapshot counts — each opp counts in NL plus
+    // exactly the category bucket of its current stage — so the ordering
+    // table is no longer needed.)
 
     // Fetch branches. Elevated users get the full canonical list MINUS
     // the dashboard-excluded ones (OD etc.); non-elevated users only get
@@ -314,19 +310,23 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Cumulative counting: an opp currently in stage with order >= N is counted
-    // as having "reached" every category with order <= N.
+    // Counting model:
     //
-    // NL  = every opportunity (reached order 0 = entered the pipeline)
-    // CT  = opps whose current stage.order >= CT stage.order
-    // SU  = opps whose current stage.order >= SU stage.order
-    // ENR = opps whose current stage.order >= ENR stage.order
+    // NL  = every opportunity received in the date range, regardless of its
+    //       current stage. This is the "leads received" total — it does NOT
+    //       drop when a lead is dragged out of New Lead into Confirmed for
+    //       Trial / Show Up / Enrolled. Once a lead enters the pipeline it
+    //       is counted as NL for the date range it arrived in, permanently.
     //
-    // This makes the rates match what the user expects:
-    //   Conversion   = ENR / NL   (end-to-end)
-    //   Confirmed    = CT  / NL   (% reached CT)
-    //   Show Up Rate = SU  / CT   (of those who confirmed, how many showed up)
-    //   Enrolment    = ENR / SU   (of those who showed up, how many enrolled)
+    // CT / SU / ENR = snapshot counts — opportunities whose CURRENT stage
+    //       matches that category. Dragging a card between stages on the
+    //       kanban moves it from one bucket to another (the source
+    //       decrements, the destination increments). Intermediate stages
+    //       like "Contacted" / "Trial Booked" don't match any pattern in
+    //       STAGE_PATTERN so they're only counted in NL.
+    //
+    // Rate denominators still use NL (received total) so they read as
+    // "% of received leads that are currently at this stage".
     for (const o of opps) {
       const m = branchMetrics.get(o.branchId)
       if (!m) continue
@@ -334,15 +334,13 @@ export async function GET(req: NextRequest) {
       const info = stageInfo.get(o.stageId)
       if (!info) continue
 
-      const catOrders = categoryOrderByPipeline.get(info.pipelineId)
-      if (!catOrders) continue
-
-      // NL: every opp that entered the pipeline
+      // NL: every opp received in the date range (constant under drag)
       m.NL += 1
 
-      if (catOrders.CT !== undefined && info.order >= catOrders.CT) m.CT += 1
-      if (catOrders.SU !== undefined && info.order >= catOrders.SU) m.SU += 1
-      if (catOrders.ENR !== undefined && info.order >= catOrders.ENR) m.ENR += 1
+      // CT / SU / ENR: only the opp's CURRENT stage category increments
+      if (info.category === 'CT')  m.CT  += 1
+      if (info.category === 'SU')  m.SU  += 1
+      if (info.category === 'ENR') m.ENR += 1
     }
 
     for (const m of branchMetrics.values()) {
@@ -429,19 +427,20 @@ export async function GET(req: NextRequest) {
         monthMap.set(`${yyyy}-${String(mm + 1).padStart(2, '0')}`, { NL: 0, CT: 0, SU: 0, ENR: 0 })
       }
 
+      // Same counting model as the main block above: NL counts every opp
+      // received that month (constant under drag); CT / SU / ENR are
+      // snapshots of the opp's CURRENT stage category.
       for (const o of trendOpps) {
         const key = monthKey(new Date(o.createdAt))
         const bucket = monthMap.get(key)
         if (!bucket) continue
         const info = stageInfo.get(o.stageId)
         if (!info) continue
-        const catOrders = categoryOrderByPipeline.get(info.pipelineId)
-        if (!catOrders) continue
 
         bucket.NL += 1
-        if (catOrders.CT  !== undefined && info.order >= catOrders.CT)  bucket.CT  += 1
-        if (catOrders.SU  !== undefined && info.order >= catOrders.SU)  bucket.SU  += 1
-        if (catOrders.ENR !== undefined && info.order >= catOrders.ENR) bucket.ENR += 1
+        if (info.category === 'CT')  bucket.CT  += 1
+        if (info.category === 'SU')  bucket.SU  += 1
+        if (info.category === 'ENR') bucket.ENR += 1
       }
 
       byMonth = Array.from(monthMap.entries())
