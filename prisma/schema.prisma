@@ -16,15 +16,19 @@ datasource db {
 // ============================================================
 
 model User {
-  id             Int       @id @default(autoincrement())
-  email          String    @unique
-  passwordHash   String
-  role           String    @default("BRANCH_MANAGER")
-  branchName     String?
-  createdAt      DateTime  @default(now())
-  name           String?
-  status         String    @default("ACTIVE")
-  lastLoggedInAt DateTime?
+  id                   Int       @id @default(autoincrement())
+  email                String    @unique
+  passwordHash         String
+  role                 String    @default("BRANCH_MANAGER")
+  branchName           String?
+  createdAt            DateTime  @default(now())
+  name                 String?
+  status               String    @default("ACTIVE")
+  lastLoggedInAt       DateTime?
+  // Per-user dashboard access overrides on top of the role default in
+  // lib/dashboard-access.ts. Shape: { "hrms.attendance": "DENIED", "crm": "ALLOWED" }
+  // Null/empty = follow the role default for every key.
+  dashboardOverrides   Json?
 }
 
 model ManpowerSchedule {

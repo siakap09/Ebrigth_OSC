@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useSession } from "next-auth/react";
-import { isFullTime, isPartTime } from "@/lib/roles";
+import { canSeeKey } from "@/lib/dashboard-access";
+import { useMyPermissions } from "@/lib/use-my-permissions";
 
 interface SidebarProps {
   sidebarOpen: boolean;
@@ -10,33 +10,24 @@ interface SidebarProps {
   onCollapse?: () => void;
 }
 
+// `key` ties each entry to lib/dashboard-access.ts so canAccess() decides
+// visibility. Entries unmatched by any role allowlist render as locked tiles.
 const navigationItems = [
-  { name: "Home", href: "/home", icon: "🏠" },
-  { name: "Library", href: "/dashboards/library", icon: "📚" },
-  { name: "Internal Dashboard", href: "/dashboards/internal-dashboard", icon: "📊" },
-  { name: "HRMS", href: "/dashboards/hrms", icon: "👥" },
-  { name: "CRM", href: "/dashboards/crm", icon: "📰" },
-  { name: "SMS", href: "/dashboards/sms", icon: "💬" },
-  { name: "Inventory", href: "/dashboards/inventory", icon: "📦" },
-  { name: "Academy", href: "/academy", icon: "🎓" },
-  { name: "Attendance", href: "/attendance", icon: "📅" },
-  { name: "Account Management", href: "/account-management", icon: "🔐" },
+  { key: "home",               name: "Home",                href: "/home",                          icon: "🏠" },
+  { key: "library",            name: "Library",             href: "/dashboards/library",            icon: "📚" },
+  { key: "internal-dashboard", name: "Internal Dashboard",  href: "/dashboards/internal-dashboard", icon: "📊" },
+  { key: "hrms",               name: "HRMS",                href: "/dashboards/hrms",               icon: "👥" },
+  { key: "crm",                name: "CRM",                 href: "/dashboards/crm",                icon: "📰" },
+  { key: "sms",                name: "SMS",                 href: "/dashboards/sms",                icon: "💬" },
+  { key: "inventory",          name: "Inventory",           href: "/dashboards/inventory",          icon: "📦" },
+  { key: "academy",            name: "Academy",             href: "/academy",                       icon: "🎓" },
+  { key: "hrms.attendance",    name: "Attendance",          href: "/attendance",                    icon: "📅" },
+  { key: "hrms.account",       name: "Account Management",  href: "/account-management",            icon: "🔐" },
 ];
-
-// Paths PT/FT can actually navigate to (kept in sync with middleware.ts
-// EMPLOYEE_ALLOWED_PATHS). Sidebar entries pointing elsewhere are shown but
-// locked, so the user can see future modules without being able to enter
-// them.
-const EMPLOYEE_UNLOCKED_HREFS = new Set<string>([
-  "/home",
-  "/dashboards/hrms",
-]);
 
 export default function Sidebar({ sidebarOpen, onToggle, onCollapse }: SidebarProps) {
   const handleToggle = onToggle ?? onCollapse ?? (() => {});
-  const { data: session } = useSession();
-  const role = (session?.user as { role?: unknown } | undefined)?.role;
-  const isEmployeeOnly = isFullTime(role) || isPartTime(role);
+  const { role, overrides } = useMyPermissions();
 
   const handleNavClick = () => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -80,7 +71,7 @@ export default function Sidebar({ sidebarOpen, onToggle, onCollapse }: SidebarPr
       >
         <nav className="p-6 pt-16 space-y-2 flex-1 overflow-y-auto">
           {navigationItems.map((item) => {
-            const locked = isEmployeeOnly && !EMPLOYEE_UNLOCKED_HREFS.has(item.href);
+            const locked = !canSeeKey(role, item.key, overrides);
             if (locked) {
               return (
                 <div

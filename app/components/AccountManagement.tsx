@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "./Sidebar";
 import { ALL_ROLES } from "@/lib/roles";
+import { DASHBOARD_TREE, canAccess, parseOverrides, type DashboardOverrides, type DashboardNode } from "@/lib/dashboard-access";
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -16,6 +17,7 @@ interface UserAccount {
   branchName: string | null;
   createdAt: string;
   lastLoggedInAt: string | null;
+  dashboardOverrides?: unknown;
 }
 
 type ModalMode = "create" | "edit" | "permission" | null;
@@ -64,6 +66,120 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
+// ─── Permission editor (editable tree) ───────────────────────────────────────
+//
+// Renders the dashboard tree from lib/dashboard-access.ts with a checkbox per
+// node. Each toggle writes an explicit override on top of the role default.
+// "Reset to role default" clears every override. Saved as a JSON column on
+// the User row — see /api/users PATCH update-permissions.
+
+function PermissionTree({
+  role,
+  overrides,
+  onChange,
+}: {
+  role: string;
+  overrides: DashboardOverrides;
+  onChange: (next: DashboardOverrides) => void;
+}) {
+  function toggleNode(key: string) {
+    const currentlyAllowed = canAccess(role, key, overrides);
+    onChange({ ...overrides, [key]: currentlyAllowed ? "DENIED" : "ALLOWED" });
+  }
+
+  // "Tick parent" = allow self + every descendant. "Untick parent" = deny self
+  // + every descendant. Matches the screenshot UX where the parent checkbox
+  // is a bulk action over its children.
+  function toggleParent(parent: DashboardNode) {
+    const allOn =
+      canAccess(role, parent.key, overrides) &&
+      (parent.children ?? []).every((c) => canAccess(role, c.key, overrides));
+    const value = allOn ? "DENIED" : "ALLOWED";
+    const next = { ...overrides, [parent.key]: value as "ALLOWED" | "DENIED" };
+    for (const c of parent.children ?? []) next[c.key] = value;
+    onChange(next);
+  }
+
+  function rowType(key: string): "Role Default" | "Custom" {
+    return key in overrides ? "Custom" : "Role Default";
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+          Dashboard access
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange({})}
+          className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-50"
+          disabled={Object.keys(overrides).length === 0}
+        >
+          Reset to role defaults
+        </button>
+      </div>
+      <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+        {DASHBOARD_TREE.map((parent) => {
+          const parentAllowed = canAccess(role, parent.key, overrides);
+          const children = parent.children ?? [];
+          const someChildAllowed = children.some((c) => canAccess(role, c.key, overrides));
+          const allChildAllowed  = children.length > 0 && children.every((c) => canAccess(role, c.key, overrides));
+          const indeterminate = parentAllowed && children.length > 0 && someChildAllowed && !allChildAllowed;
+
+          return (
+            <div key={parent.key} className="px-3 py-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={parentAllowed}
+                  ref={(el) => { if (el) el.indeterminate = indeterminate; }}
+                  onChange={() => toggleParent(parent)}
+                  className="h-4 w-4 accent-blue-600 cursor-pointer"
+                />
+                <span className="text-base">{parent.icon}</span>
+                <span className={`text-sm font-semibold flex-1 ${parentAllowed ? "text-gray-800" : "text-gray-400"}`}>
+                  {parent.label}
+                </span>
+                <span className={`text-[10px] uppercase font-semibold tracking-wider ${rowType(parent.key) === "Custom" ? "text-blue-600" : "text-gray-400"}`}>
+                  {rowType(parent.key)}
+                </span>
+              </div>
+              {children.length > 0 && (
+                <div className="ml-7 mt-1 space-y-1">
+                  {children.map((child) => {
+                    const childAllowed = canAccess(role, child.key, overrides);
+                    return (
+                      <div key={child.key} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={childAllowed}
+                          onChange={() => toggleNode(child.key)}
+                          className="h-3.5 w-3.5 accent-blue-600 cursor-pointer"
+                        />
+                        <span className={`text-xs flex-1 ${childAllowed ? "text-gray-700" : "text-gray-400"}`}>
+                          {child.label}
+                        </span>
+                        <span className={`text-[10px] uppercase font-semibold tracking-wider ${rowType(child.key) === "Custom" ? "text-blue-600" : "text-gray-400"}`}>
+                          {rowType(child.key)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="px-3 py-2 bg-gray-50 border-t border-gray-200 text-[11px] text-gray-500">
+        Defaults come from the user&apos;s role. Toggling a row marks it <span className="text-blue-600 font-semibold">Custom</span>.
+      </div>
+    </div>
+  );
+}
+
+
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
 interface ModalProps {
@@ -83,12 +199,18 @@ function UserModal({ mode, user, onClose, onSaved }: ModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Per-user dashboard overrides — only used in permission mode. Seeded from
+  // the user row the table already has; we don't re-fetch.
+  const [overrides, setOverrides] = useState<DashboardOverrides>(
+    () => parseOverrides(user?.dashboardOverrides),
+  );
+
   const title =
     mode === "create"
       ? "Add User"
       : mode === "edit"
       ? "Edit User"
-      : "Change Role";
+      : "Manage Permissions";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -97,15 +219,27 @@ function UserModal({ mode, user, onClose, onSaved }: ModalProps) {
 
     try {
       if (mode === "permission") {
-        // PATCH change-role
-        const res = await fetch("/api/users", {
+        // If role changed, persist that first so role-default lookups on the
+        // server line up with the overrides we're about to write.
+        if (role !== user!.role) {
+          const roleRes = await fetch("/api/users", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: user!.id, action: "change-role", role }),
+          });
+          if (!roleRes.ok) {
+            const d = await roleRes.json();
+            throw new Error(d.error ?? "Failed to change role");
+          }
+        }
+        const permRes = await fetch("/api/users", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: user!.id, action: "change-role", role }),
+          body: JSON.stringify({ id: user!.id, action: "update-permissions", overrides }),
         });
-        if (!res.ok) {
-          const d = await res.json();
-          throw new Error(d.error ?? "Failed to change role");
+        if (!permRes.ok) {
+          const d = await permRes.json();
+          throw new Error(d.error ?? "Failed to save permissions");
         }
       } else if (mode === "create") {
         if (!password) throw new Error("Password is required");
@@ -142,7 +276,7 @@ function UserModal({ mode, user, onClose, onSaved }: ModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${mode === "permission" ? "max-w-lg" : "max-w-md"} mx-4 overflow-hidden`}>
         {/* Header */}
         <div className="px-6 py-4 bg-blue-600 flex items-center justify-between">
           <h2 className="text-white font-bold text-lg">{title}</h2>
@@ -175,6 +309,11 @@ function UserModal({ mode, user, onClose, onSaved }: ModalProps) {
               ))}
             </select>
           </div>
+
+          {/* Editable permission tree — only in permission mode */}
+          {mode === "permission" && (
+            <PermissionTree role={role} overrides={overrides} onChange={setOverrides} />
+          )}
 
           {/* Full fields only for create/edit */}
           {mode !== "permission" && (
@@ -289,11 +428,14 @@ export default function AccountManagement() {
   const fetchUsers = useCallback(async () => {
     try {
       const res = await fetch("/api/users");
-      if (!res.ok) throw new Error("Failed to fetch");
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`HTTP ${res.status}: ${body}`);
+      }
       const data: UserAccount[] = await res.json();
       setUsers(data);
-    } catch {
-      console.error("Failed to load users");
+    } catch (err) {
+      console.error("Failed to load users:", err);
     } finally {
       setLoading(false);
     }
