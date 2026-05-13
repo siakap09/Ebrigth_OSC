@@ -70,27 +70,41 @@ export async function POST(req: Request) {
     }
     const body = parsed.data;
 
-    const schedule = await prisma.manpowerSchedule.upsert({
-      where:  { id: body.id },
-      update: {
-        selections: body.selections as any,
-        notes:      body.notes as any,
-        status:     'Finalized',
-      },
-      create: {
-        id:                 body.id,
-        branch:             body.branch,
-        startDate:          body.startDate,
-        endDate:            body.endDate,
-        selections:         body.selections as any,
-        notes:              body.notes as any,
-        originalSelections: body.originalSelections as any,
-        originalNotes:      body.originalNotes as any,
-        status:             body.status ?? 'Finalized',
-        // originalAuthor comes from the verified session, not the request body
-        originalAuthor:     session.user?.name ?? session.user?.email ?? 'Unknown',
-      },
+    // Manual upsert (findUnique + update/create) instead of prisma.upsert,
+    // because Prisma's upsert generates `INSERT ... ON CONFLICT DO UPDATE` SQL
+    // and Postgres rejects that against a FDW-backed view (error 42P10:
+    // "no unique or exclusion constraint matching the ON CONFLICT
+    // specification"). Splitting into two queries avoids ON CONFLICT
+    // entirely so the view can pass writes through to ebright_hrfs.
+    const existing = await prisma.manpowerSchedule.findUnique({
+      where: { id: body.id },
+      select: { id: true },
     });
+
+    const schedule = existing
+      ? await prisma.manpowerSchedule.update({
+          where: { id: body.id },
+          data: {
+            selections: body.selections as any,
+            notes:      body.notes as any,
+            status:     'Finalized',
+          },
+        })
+      : await prisma.manpowerSchedule.create({
+          data: {
+            id:                 body.id,
+            branch:             body.branch,
+            startDate:          body.startDate,
+            endDate:            body.endDate,
+            selections:         body.selections as any,
+            notes:              body.notes as any,
+            originalSelections: body.originalSelections as any,
+            originalNotes:      body.originalNotes as any,
+            status:             body.status ?? 'Finalized',
+            // originalAuthor comes from the verified session, not the request body
+            originalAuthor:     session.user?.name ?? session.user?.email ?? 'Unknown',
+          },
+        });
 
     return NextResponse.json({ success: true, schedule });
   } catch (err) {
