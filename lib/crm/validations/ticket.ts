@@ -33,6 +33,12 @@ export const ticketFieldSchemas = {
       studentName: z.string().min(2, 'Student name must be at least 2 characters'),
       reason:      z.string().min(5, 'Reason must be at least 5 characters'),
     }),
+    extend: z.object({
+      studentName: z.string().min(2, 'Student name must be at least 2 characters'),
+      startDate:   z.coerce.date({ invalid_type_error: 'Start date is required' }),
+      endDate:     z.coerce.date({ invalid_type_error: 'End date is required' }),
+      reason:      z.string().min(5, 'Reason must be at least 5 characters'),
+    }),
     delete_invoice: z.object({
       studentName:   z.string().min(2, 'Student name must be at least 2 characters'),
       invoiceNumber: z.string().min(1, 'Invoice number is required'),
