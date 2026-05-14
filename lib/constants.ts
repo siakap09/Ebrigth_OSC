@@ -67,6 +67,7 @@ export const BRANCH_OPTIONS = [
   { value: "IOP", label: "IOP" },
   { value: "FNC", label: "FNC" },
   { value: "HR", label: "HR" },
+  { value: "OPS", label: "OPS" },
   { value: "ONL", label: "ONL" },
   { value: "ST", label: "ST" },
   { value: "SP", label: "SP" },
