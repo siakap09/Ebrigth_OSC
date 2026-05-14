@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import {
   PanelLeftClose,
@@ -10,6 +11,7 @@ import {
   ChevronDown,
   Check,
   Building2,
+  Home,
   LogOut,
   UserCircle,
   UserCog,
@@ -633,6 +635,15 @@ export function CrmTopbar({ collapsed, onToggleCollapse, session }: TopbarProps)
           <PanelLeftClose className="h-5 w-5" />
         )}
       </button>
+
+      {/* Home — back to the CRM hub picker (Lead / Ticket tiles) */}
+      <Link
+        href="/dashboards/crm"
+        title="Back to CRM home"
+        className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-400 transition-colors"
+      >
+        <Home className="h-5 w-5" />
+      </Link>
 
       {/* Branch switcher — visible to all authenticated users.
           Server-side, non-admins only see their assigned branch(es). */}
