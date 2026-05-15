@@ -577,14 +577,19 @@ function BulkActionBar({
     <div className="flex items-center gap-3 px-4 py-2 bg-indigo-600 text-white text-sm font-medium">
       <span>{count} selected</span>
       <div className="flex items-center gap-2 ml-auto">
+        {/* Native <select> renders the open dropdown panel with OS defaults, so
+            colours from the closed-state classes don't propagate to <option>.
+            Force a readable white-panel/dark-text combo on the options so it
+            stays legible against the indigo BulkActionBar in both light and
+            dark mode. */}
         <select
           value={targetStage}
           onChange={(e) => setTargetStage(e.target.value)}
-          className="rounded bg-white/20 border border-white/30 px-2 py-1 text-sm text-white focus:outline-none"
+          className="rounded bg-white/20 border border-white/30 px-2 py-1 text-sm text-white focus:outline-none [&>option]:bg-white [&>option]:text-slate-900"
         >
-          <option value="">Move to stage...</option>
+          <option value="" className="bg-white text-slate-900">Move to stage...</option>
           {stages.map((s) => (
-            <option key={s.id} value={s.id}>
+            <option key={s.id} value={s.id} className="bg-white text-slate-900">
               {s.name}
             </option>
           ))}

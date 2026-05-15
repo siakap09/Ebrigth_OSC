@@ -74,7 +74,9 @@ function colorFor(name: string): string {
 }
 
 export default function TicketDashboardPage() {
-  const [preset, setPreset] = useState<Preset>('7d')
+  // Default to Today so the dashboard mirrors the lead dashboard's at-a-glance
+  // view — the user explicitly asked for "today" as the landing state.
+  const [preset, setPreset] = useState<Preset>('today')
 
   const { data, isLoading, isError, error } = useQuery<Analytics>({
     queryKey: ['ticketDashboard', preset],
