@@ -575,10 +575,10 @@ export default function AccountManagement() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold uppercase">
-                              {(u.name ?? u.email).slice(0, 2)}
+                              {(u.branchName ?? u.email).slice(0, 2)}
                             </div>
                             <span className="text-sm font-semibold text-gray-800">
-                              {u.name ?? <span className="text-gray-400 font-normal italic">—</span>}
+                              {u.branchName ?? <span className="text-gray-400 font-normal italic">—</span>}
                             </span>
                           </div>
                         </td>
