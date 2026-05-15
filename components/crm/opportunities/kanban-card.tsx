@@ -6,6 +6,8 @@ import { cn, formatMYR, formatDate } from '@/lib/crm/utils'
 import { getAgeCategory, ageCategoryClasses } from '@/lib/crm/age-category'
 import type { OpportunityCard } from '@/server/queries/opportunities'
 import { formatDistanceToNow } from 'date-fns'
+import { DEFAULT_CARD_PREFS, type CardPrefs } from '@/lib/crm/kanban-card-prefs'
+import { QuickActionIcon } from './customise-card-drawer'
 
 // ─── Lead source icons ────────────────────────────────────────────────────────
 
@@ -147,6 +149,11 @@ interface KanbanCardProps {
    * shared `selectedIds` set stays the source of truth.
    */
   onToggleSelect?: () => void
+  /**
+   * Per-browser customisation set in the Customise Card drawer. Falls back to
+   * the project default (matches the historical card layout) when omitted.
+   */
+  prefs?: CardPrefs
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -162,7 +169,11 @@ export function KanbanCard({
   isDragging = false,
   onClick,
   onToggleSelect,
+  prefs = DEFAULT_CARD_PREFS,
 }: KanbanCardProps) {
+  // Field toggles — checked once at the top so the JSX below stays readable.
+  const showField = (k: (typeof prefs.fields)[number]) => prefs.fields.includes(k)
+  const compact = prefs.layout === 'compact'
   const { contact } = opportunity
 
   // With master_leads_base as the source of truth, the contact's first/last
@@ -203,7 +214,7 @@ export function KanbanCard({
         onClick?.()
       }}
     >
-      <div className="flex items-start gap-1 p-2.5">
+      <div className={cn('flex items-start gap-1', compact ? 'p-1.5' : 'p-2.5')}>
         {/* Bulk-select checkbox — hidden until hover, sticky once selected. */}
         {onToggleSelect && (
           <label
@@ -250,7 +261,7 @@ export function KanbanCard({
               >
                 {primaryChildName}
               </Link>
-              {primaryChildAge && (() => {
+              {showField('ageCategory') && primaryChildAge && (() => {
                 const category = getAgeCategory(primaryChildAge)
                 if (category) {
                   return (
@@ -284,7 +295,7 @@ export function KanbanCard({
           )}
 
           {/* Parent name — shown below child name when this contact represents a child */}
-          {primaryChildName && (
+          {showField('parentName') && primaryChildName && !compact && (
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
               {isChild
                 ? contact.parentFullName
@@ -293,7 +304,7 @@ export function KanbanCard({
           )}
 
           {/* Tags */}
-          {contact.contactTags.length > 0 && (
+          {showField('tags') && contact.contactTags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {contact.contactTags.slice(0, 3).map(({ tag }) => (
                 <span
@@ -312,47 +323,73 @@ export function KanbanCard({
             </div>
           )}
 
-          {/* Bottom row */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              {/* Lead source */}
-              {contact.leadSource && (
-                <LeadSourceIcon name={contact.leadSource.name} />
-              )}
+          {/* Bottom row — collapses entirely when every field in it is hidden. */}
+          {(showField('leadSource') || showField('value') || showField('lastStageChange') || showField('owner')) && (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                {showField('leadSource') && contact.leadSource && (
+                  <LeadSourceIcon name={contact.leadSource.name} />
+                )}
+                {showField('value') && Number(opportunity.value) > 0 && (
+                  <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                    {formatMYR(Number(opportunity.value))}
+                  </span>
+                )}
+              </div>
 
-              {/* Value */}
-              {Number(opportunity.value) > 0 && (
-                <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                  {formatMYR(Number(opportunity.value))}
-                </span>
-              )}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {showField('lastStageChange') && (
+                  <span
+                    className="text-[10px] text-slate-400 dark:text-slate-500"
+                    title={`Last moved: ${formatDate(opportunity.lastStageChangeAt)}`}
+                  >
+                    {relativeTime}
+                  </span>
+                )}
+                {showField('owner') && (
+                  opportunity.assignedUser ? (
+                    <UserAvatar user={opportunity.assignedUser} />
+                  ) : (
+                    <div
+                      title="Unassigned"
+                      className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-400"
+                    >
+                      <User className="h-3 w-3" />
+                    </div>
+                  )
+                )}
+              </div>
             </div>
+          )}
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              {/* Time in stage */}
-              <span
-                className="text-[10px] text-slate-400 dark:text-slate-500"
-                title={`Last moved: ${formatDate(opportunity.lastStageChangeAt)}`}
-              >
-                {relativeTime}
-              </span>
-
-              {/* Assigned user avatar */}
-              {opportunity.assignedUser ? (
-                <UserAvatar user={opportunity.assignedUser} />
-              ) : (
-                <div
-                  title="Unassigned"
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-400"
-                >
-                  <User className="h-3 w-3" />
-                </div>
-              )}
+          {/* Quick-actions row — Tags + Notes show counts pulled from
+              real data when present; the rest are decorative placeholders
+              until those integrations land. */}
+          {prefs.quickActions.length > 0 && (
+            <div className="flex items-center gap-2 pt-0.5">
+              {prefs.quickActions.map((action) => {
+                let badge: number | null = null
+                if (action === 'tags') badge = contact.contactTags.length
+                return (
+                  <span
+                    key={action}
+                    title={action}
+                    className="relative inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                  >
+                    <QuickActionIcon action={action} />
+                    {badge !== null && badge > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-indigo-600 px-0.5 text-[8px] font-bold text-white">
+                        {badge > 9 ? '9+' : badge}
+                      </span>
+                    )}
+                  </span>
+                )
+              })}
             </div>
-          </div>
+          )}
 
           {/* Stage abbreviation pill at the bottom */}
-          {stageShortCode && (
+          {showField('stageBadge') && stageShortCode && (
             <div className="mt-1 flex justify-end">
               <span
                 title={stageName}

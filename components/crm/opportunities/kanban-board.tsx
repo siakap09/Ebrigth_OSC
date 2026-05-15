@@ -13,8 +13,10 @@ import {
   Draggable,
   type DropResult,
 } from '@hello-pangea/dnd'
-import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, AlertTriangle, ArrowRight, MoveRight, PenLine } from 'lucide-react'
+import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, AlertTriangle, ArrowRight, MoveRight, PenLine, Settings2 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
+import { CustomiseCardDrawer } from './customise-card-drawer'
+import { loadCardPrefs, saveCardPrefs, type CardPrefs, DEFAULT_CARD_PREFS } from '@/lib/crm/kanban-card-prefs'
 import { toast } from 'sonner'
 import { startOfWeek, endOfWeek, addWeeks } from 'date-fns'
 import { cn, formatMYR, formatDate } from '@/lib/crm/utils'
@@ -97,6 +99,7 @@ function VirtualColumnList({
   stageName,
   onCardClick,
   onToggleSelect,
+  cardPrefs,
 }: {
   items: OpportunityCard[]
   stuckHoursYellow: number
@@ -106,6 +109,7 @@ function VirtualColumnList({
   stageName?: string
   onCardClick?: (opp: OpportunityCard) => void
   onToggleSelect?: (id: string) => void
+  cardPrefs: CardPrefs
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -172,6 +176,7 @@ function VirtualColumnList({
                   isDragging={snapshot.isDragging}
                   onClick={() => onCardClick?.(opp)}
                   onToggleSelect={onToggleSelect ? () => onToggleSelect(opp.id) : undefined}
+                  prefs={cardPrefs}
                 />
               </div>
             )}
@@ -194,12 +199,14 @@ function KanbanColumn({
   onAddCard,
   onCardClick,
   onToggleSelect,
+  cardPrefs,
 }: {
   stage: KanbanStage
   selectedIds: Set<string>
   onAddCard: (stageId: string) => void
   onCardClick?: (opp: OpportunityCard) => void
   onToggleSelect?: (id: string) => void
+  cardPrefs: CardPrefs
 }) {
   const totalValue = stage.opportunities.reduce(
     (sum, o) => sum + Number(o.value),
@@ -261,6 +268,7 @@ function KanbanColumn({
               stageName={stage.name}
               onCardClick={onCardClick}
               onToggleSelect={onToggleSelect}
+              cardPrefs={cardPrefs}
             />
             {provided.placeholder}
           </div>
@@ -371,6 +379,8 @@ interface FiltersBarProps {
   tagFilter: string  // '' = all, otherwise tag id
   onTagFilterChange: (s: string) => void
   tagOptions: Array<{ id: string; name: string; color: string }>
+  /** Opens the Customise Card drawer. Mirrors GHL's "Manage Fields" button. */
+  onOpenCustomiseCard: () => void
 }
 
 function FiltersBar({
@@ -395,6 +405,7 @@ function FiltersBar({
   tagFilter,
   onTagFilterChange,
   tagOptions,
+  onOpenCustomiseCard,
 }: FiltersBarProps) {
   const pipelineDisabled = !canSwitchPipelines || pipelineLocked
   return (
@@ -553,6 +564,22 @@ function FiltersBar({
         </select>
         <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
       </div>
+
+      {/* Spacer pushes Manage Fields to the right edge, GHL-style. */}
+      <div className="ml-auto" />
+
+      {/* Manage Fields — opens the Customise Card drawer. */}
+      <button
+        type="button"
+        onClick={onOpenCustomiseCard}
+        title="Customise the kanban card layout"
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-indigo-400 hover:text-indigo-700',
+          'dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-400 dark:hover:text-indigo-300',
+        )}
+      >
+        <Settings2 className="h-3.5 w-3.5" /> Manage Fields
+      </button>
     </div>
   )
 }
@@ -641,6 +668,14 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   const [selectedPipelineId, setSelectedPipelineId] = useState(initialPipelineId)
   const [searchInput, setSearchInput] = useState('')
+  // Card customisation — persisted per browser via localStorage.
+  // Starts at the project default so first render matches SSR; the
+  // localStorage value is hydrated client-side after mount.
+  const [cardPrefs, setCardPrefs] = useState<CardPrefs>(DEFAULT_CARD_PREFS)
+  const [customiseOpen, setCustomiseOpen] = useState(false)
+  useEffect(() => {
+    setCardPrefs(loadCardPrefs())
+  }, [])
   // Branch filter UI was removed — the pipeline selector already implies a single
   // branch. This state is kept in sync with the selected pipeline so the
   // "Add card" modal pre-fills the right branch.
@@ -1126,6 +1161,7 @@ export function KanbanBoard({
         tagFilter={tagFilter}
         onTagFilterChange={setTagFilter}
         tagOptions={tagOptions}
+        onOpenCustomiseCard={() => setCustomiseOpen(true)}
       />
 
       {/* Bulk action bar */}
@@ -1179,6 +1215,7 @@ export function KanbanBoard({
                   onAddCard={(stageId) => setAddCardStageId(stageId)}
                   onCardClick={setDetailCard}
                   onToggleSelect={toggleSelect}
+                  cardPrefs={cardPrefs}
                 />
               ))}
             </div>
@@ -1274,6 +1311,19 @@ export function KanbanBoard({
           onClose={() => setBlockedMove(null)}
         />
       )}
+
+      {/* Customise Card drawer — GHL-style field picker for the kanban cards.
+          Persists per browser via localStorage. */}
+      <CustomiseCardDrawer
+        open={customiseOpen}
+        value={cardPrefs}
+        onClose={() => setCustomiseOpen(false)}
+        onApply={(next) => {
+          setCardPrefs(next)
+          saveCardPrefs(next)
+          setCustomiseOpen(false)
+        }}
+      />
     </div>
   )
 }
