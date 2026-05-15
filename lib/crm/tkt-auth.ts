@@ -17,6 +17,7 @@ import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import type { TktRole } from '@/lib/crm/permissions'
 import { isPreviewMode } from '@/lib/crm/preview-mode'
+import { crmBranchToTktBranchNumber } from '@/lib/crm/branch-number'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -112,10 +113,36 @@ async function loadOrCreateProfile(
     })
   }
 
+  let branchIds = profile.branches.map((b) => b.branch_id)
+
+  // Bridge: non-admin users with no explicit tkt_user_branch rows fall back
+  // to their CRM branch assignments. The CRM and ticket modules use parallel
+  // branch tables (crm_branch / tkt_branch); we map by the "NN" name prefix
+  // → tkt_branch.branch_number. Without this fallback, a user who only joined
+  // via the CRM module (the common path now) would see an empty ticket
+  // branch dropdown and either couldn't submit, or — under the previous
+  // unscoped behaviour — would auto-default to the wrong branch (Online).
+  if (branchIds.length === 0 && (profile.role === 'user' || !profile.role)) {
+    const crmLinks = await prisma.crm_user_branch.findMany({
+      where: { userId, tenantId },
+      select: { branch: { select: { name: true } } },
+    })
+    const branchNumbers = crmLinks
+      .map((l) => crmBranchToTktBranchNumber(l.branch?.name))
+      .filter((n): n is string => !!n)
+    if (branchNumbers.length > 0) {
+      const tktBranches = await prisma.tkt_branch.findMany({
+        where: { tenant_id: tenantId, branch_number: { in: branchNumbers } },
+        select: { id: true },
+      })
+      branchIds = tktBranches.map((b) => b.id)
+    }
+  }
+
   return {
     role:        profile.role as TktRole,
     platformIds: profile.platforms.map((p) => p.platform_id),
-    branchIds:   profile.branches.map((b) => b.branch_id),
+    branchIds,
   }
 }
 
