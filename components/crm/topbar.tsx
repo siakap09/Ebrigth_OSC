@@ -10,6 +10,7 @@ import {
   Bell,
   ChevronDown,
   Check,
+  CheckCheck,
   Building2,
   Home,
   LogOut,
@@ -24,7 +25,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/crm/utils'
 import { useBranchContext, type BranchInfo } from './branch-context'
 import { authClient } from '@/lib/crm/auth-client'
-import { useUnreadCount } from '@/hooks/crm/useNotifications'
+import { useUnreadCount, useNotifications, useMarkNotificationRead, useMarkAllRead } from '@/hooks/crm/useNotifications'
 import type { SessionUser } from './providers'
 import { BranchAccessModal } from './branch-access-modal'
 
@@ -612,15 +613,188 @@ function UserMenu({ user }: { user: SessionUser }) {
   )
 }
 
+// ─── Notification bell + dropdown ─────────────────────────────────────────────
+
+interface NotificationItem {
+  id: string
+  type: string
+  title: string
+  body: string
+  link?: string | null
+  readAt?: string | Date | null
+  createdAt: string | Date
+}
+
+function formatNotificationTime(d: string | Date): string {
+  const date = typeof d === 'string' ? new Date(d) : d
+  const diffMs = Date.now() - date.getTime()
+  const diffMin = Math.floor(diffMs / 60_000)
+  if (diffMin < 1) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+  const diffDay = Math.floor(diffHr / 24)
+  if (diffDay < 7) return `${diffDay}d ago`
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+}
+
+function NotificationBell() {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  const { data: unreadCount = 0 } = useUnreadCount()
+  // Only fetch the list payload when the dropdown is open — saves a poll
+  // on every topbar render for users who never click the bell.
+  const { data: list, isLoading } = useNotifications('all') as {
+    data: { data: NotificationItem[]; total: number } | undefined
+    isLoading: boolean
+  }
+  const markRead = useMarkNotificationRead()
+  const markAllRead = useMarkAllRead()
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const notifications = (list?.data ?? []).slice(0, 8)
+
+  function handleItemClick(n: NotificationItem) {
+    if (!n.readAt) {
+      markRead.mutate(n.id)
+    }
+    setOpen(false)
+    if (n.link) {
+      router.push(n.link)
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        title="Notifications"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <Bell className="h-5 w-5" />
+        {unreadCount > 0 && (
+          <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-50 mt-2 w-96 max-w-[90vw] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5 dark:border-slate-700">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                Notifications
+              </span>
+              {unreadCount > 0 && (
+                <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                  {unreadCount > 99 ? '99+' : unreadCount} new
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => markAllRead.mutate()}
+              disabled={unreadCount === 0 || markAllRead.isPending}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-indigo-600 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
+              title="Mark all as read"
+            >
+              <CheckCheck className="h-3 w-3" /> Mark all read
+            </button>
+          </div>
+
+          {/* List */}
+          <div className="max-h-96 overflow-y-auto">
+            {isLoading ? (
+              <div className="px-3 py-6 text-center text-xs text-slate-400">Loading…</div>
+            ) : notifications.length === 0 ? (
+              <div className="px-3 py-10 text-center">
+                <Bell className="mx-auto mb-2 h-8 w-8 text-slate-300 dark:text-slate-600" />
+                <p className="text-xs text-slate-400">No notifications yet.</p>
+              </div>
+            ) : (
+              notifications.map((n) => {
+                const unread = !n.readAt
+                return (
+                  <button
+                    key={n.id}
+                    onClick={() => handleItemClick(n)}
+                    className={cn(
+                      'flex w-full items-start gap-2 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-0',
+                      'hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/60',
+                      unread && 'bg-indigo-50/40 dark:bg-indigo-950/20',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'mt-1.5 h-2 w-2 shrink-0 rounded-full',
+                        unread ? 'bg-indigo-500' : 'bg-transparent',
+                      )}
+                      aria-hidden="true"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p
+                          className={cn(
+                            'truncate text-sm',
+                            unread
+                              ? 'font-semibold text-slate-900 dark:text-white'
+                              : 'font-medium text-slate-700 dark:text-slate-300',
+                          )}
+                        >
+                          {n.title}
+                        </p>
+                        <span className="shrink-0 whitespace-nowrap text-[10px] text-slate-400">
+                          {formatNotificationTime(n.createdAt)}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
+                        {n.body}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })
+            )}
+          </div>
+
+          {/* Footer — link to the full page */}
+          <div className="border-t border-slate-100 px-3 py-2 dark:border-slate-700">
+            <button
+              onClick={() => {
+                setOpen(false)
+                router.push('/crm/notifications')
+              }}
+              className="w-full rounded-md py-1.5 text-center text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
+            >
+              View all notifications
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 
 export function CrmTopbar({ collapsed, onToggleCollapse, session }: TopbarProps) {
-  const router = useRouter()
-  // Bell badge — polls /api/crm/notifications?filter=unread every 30s via React Query.
-  // Branch scoping is automatic: the API filters by session.user.id, and leads-import
-  // only creates notification rows for users with access to the lead's branch.
-  const { data: unreadCount = 0 } = useUnreadCount()
-
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4">
       {/* Sidebar toggle */}
@@ -655,19 +829,10 @@ export function CrmTopbar({ collapsed, onToggleCollapse, session }: TopbarProps)
       {/* Global search */}
       <GlobalSearch />
 
-      {/* Notification bell */}
-      <button
-        onClick={() => router.push('/crm/notifications')}
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-        title="Notifications"
-      >
-        <Bell className="h-5 w-5" />
-        {unreadCount > 0 && (
-          <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white">
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )}
-      </button>
+      {/* Notification bell — dropdown panel showing recent notifications.
+          Clicking an item marks it read and follows its link (if any).
+          "View all" in the footer still navigates to /crm/notifications. */}
+      <NotificationBell />
 
       {/* User menu */}
       <UserMenu user={session.user} />
