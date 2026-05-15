@@ -60,6 +60,7 @@ export const CONTRACT_OPTIONS = [
 ];
 
 export const BRANCH_OPTIONS = [
+  { value: "CEO", label: "CEO" },
   { value: "HQ", label: "HQ" },
   { value: "OD", label: "OD" },
   { value: "MKT", label: "MKT" },
