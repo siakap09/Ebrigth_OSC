@@ -298,6 +298,15 @@ model crm_branch {
   id               String   @id @default(uuid())
   tenantId         String
   name             String
+  /** Short branch code (e.g. "AMP", "ST", "KD"). Used by the dashboard
+   *  bar chart + ticket module. Until the manage-branches feature went in
+   *  this lived in a hard-coded map in leads-metrics; now it's a column
+   *  so super-admins can add/rename branches without editing source. */
+  code             String?
+  /** Region letter: 'A' | 'B' | 'C'. Drives the colour bucket on the
+   *  super-admin dashboard bar chart. Nullable for branches outside the
+   *  canonical regional grouping (e.g. the OD test branch, HR). */
+  region           String?
   address          String?
   phone            String?
   email            String?

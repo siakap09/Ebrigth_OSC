@@ -12,8 +12,10 @@ import {
   Check,
   CheckCheck,
   Building2,
+  HelpCircle,
   Home,
   LogOut,
+  RefreshCw,
   UserCircle,
   UserCog,
   ArrowLeftRight,
@@ -22,6 +24,7 @@ import {
   Share2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/crm/utils'
 import { useBranchContext, type BranchInfo } from './branch-context'
 import { authClient } from '@/lib/crm/auth-client'
@@ -350,6 +353,111 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
           onClose={() => setManageBranch(null)}
         />
       )}
+    </div>
+  )
+}
+
+// ─── Refresh button ───────────────────────────────────────────────────────────
+// Sits to the LEFT of the search bar. Click → invalidate every React Query
+// cache + soft-refresh the server components. Spins for a beat so the user
+// gets visual confirmation that something happened (the polling-based
+// queries refetch on a 30s interval anyway, this is the manual override).
+
+function RefreshButton() {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const [spinning, setSpinning] = useState(false)
+
+  async function handleRefresh() {
+    if (spinning) return
+    setSpinning(true)
+    try {
+      await queryClient.invalidateQueries()
+      router.refresh()
+    } finally {
+      // Brief minimum spin so the icon doesn't flash too fast to register.
+      setTimeout(() => setSpinning(false), 600)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleRefresh}
+      title="Refresh data"
+      aria-label="Refresh data"
+      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-300 transition-colors"
+    >
+      <RefreshCw className={cn('h-4 w-4', spinning && 'animate-spin')} />
+    </button>
+  )
+}
+
+// ─── Help tooltip ─────────────────────────────────────────────────────────────
+// Sits to the RIGHT of the search bar. Not clickable — hover/focus only.
+// The tooltip lists the keyboard shortcuts that already exist on the page
+// so branch managers can discover them without docs.
+
+function HelpTooltip() {
+  return (
+    <div
+      className="group relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
+      tabIndex={0}
+      aria-label="Help — shortcuts"
+    >
+      <HelpCircle className="h-4 w-4" aria-hidden="true" />
+      <div
+        role="tooltip"
+        className={cn(
+          'pointer-events-none absolute right-0 top-full z-50 mt-2 w-72',
+          'rounded-lg border border-slate-200 bg-white p-3 shadow-xl',
+          'opacity-0 translate-y-1 transition-all duration-150',
+          'group-hover:opacity-100 group-hover:translate-y-0',
+          'group-focus-within:opacity-100 group-focus-within:translate-y-0',
+          'dark:border-slate-700 dark:bg-slate-800',
+        )}
+      >
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          Tips & shortcuts
+        </p>
+        <ul className="space-y-1.5 text-xs text-slate-700 dark:text-slate-200">
+          <li className="flex items-center justify-between gap-3">
+            <span>Focus search</span>
+            <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">/</kbd>
+          </li>
+          <li className="flex items-center justify-between gap-3">
+            <span>Go to Dashboard</span>
+            <span>
+              <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">G</kbd>
+              <span className="px-1 text-slate-400">then</span>
+              <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">D</kbd>
+            </span>
+          </li>
+          <li className="flex items-center justify-between gap-3">
+            <span>Go to Contacts</span>
+            <span>
+              <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">G</kbd>
+              <span className="px-1 text-slate-400">then</span>
+              <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">C</kbd>
+            </span>
+          </li>
+          <li className="flex items-center justify-between gap-3">
+            <span>Go to Opportunities</span>
+            <span>
+              <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">G</kbd>
+              <span className="px-1 text-slate-400">then</span>
+              <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">O</kbd>
+            </span>
+          </li>
+          <li className="flex items-center justify-between gap-3">
+            <span>Blur search</span>
+            <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">Esc</kbd>
+          </li>
+        </ul>
+        <p className="mt-2 text-[10px] italic text-slate-400">
+          Click the refresh icon on the left to re-fetch everything on the page.
+        </p>
+      </div>
     </div>
   )
 }
@@ -826,8 +934,16 @@ export function CrmTopbar({ collapsed, onToggleCollapse, session }: TopbarProps)
       {/* Spacer */}
       <div className="flex-1" />
 
+      {/* Refresh — invalidates every React Query + soft-refreshes the
+          server components. Visual confirmation via a brief spin. */}
+      <RefreshButton />
+
       {/* Global search */}
       <GlobalSearch />
+
+      {/* Help — hover-only tooltip listing keyboard shortcuts.
+          Not clickable; tabbable for keyboard users (focus shows it too). */}
+      <HelpTooltip />
 
       {/* Notification bell — dropdown panel showing recent notifications.
           Clicking an item marks it read and follows its link (if any).

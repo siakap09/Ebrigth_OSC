@@ -41,9 +41,10 @@ function normalizeStageCode(code: string): string {
 }
 
 const ALLOWED_LEAD_TRANSITIONS: Record<string, string[]> = {
-  // NL: branch managers may pick any of the three follow-ups (no enforced
-  // FU1→FU2→FU3 ordering). Forward-only — no NL ← FU.
-  NL: ['FU1', 'FU2', 'FU3'],
+  // NL: must start with FU1 (no skipping to FU2 / FU3), but can short-cut
+  // directly to CT when a lead is already confirmed for a trial. Forward-
+  // only — no NL ← FU.
+  NL: ['FU1', 'CT'],
   // FU1/FU2/FU3: can advance to a later follow-up, jump to CT, or drop the
   // lead directly to Cold Lead without going through UR_W1/UR_W2/FU3M first.
   FU1: ['FU2', 'FU3', 'CT', 'CL', 'DND'],

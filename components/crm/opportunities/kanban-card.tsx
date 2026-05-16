@@ -10,20 +10,33 @@ import { DEFAULT_CARD_PREFS, type CardPrefs } from '@/lib/crm/kanban-card-prefs'
 import { QuickActionIcon } from './customise-card-drawer'
 
 // ─── Lead source icons ────────────────────────────────────────────────────────
+// TikTok and Meta render as the original 2-letter chips ("tt" / "fb") per the
+// user's preference — the inline brand-mark SVGs didn't pop the way the chips
+// did at the card's tiny scale. Anything else still gets the Globe icon since
+// that one tested better than the older "rf / wa / ?" chips.
+
+function GlobeMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M2.5 10h15" />
+      <path d="M10 2.5c2 2.3 3 5 3 7.5s-1 5.2-3 7.5c-2-2.3-3-5-3-7.5s1-5.2 3-7.5Z" />
+    </svg>
+  )
+}
 
 function LeadSourceIcon({ name }: { name: string }) {
   const lower = name.toLowerCase()
 
-  if (lower.includes('facebook') || lower.includes('meta')) {
-    return (
-      <span
-        title={name}
-        className="inline-flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-      >
-        fb
-      </span>
-    )
-  }
   if (lower.includes('tiktok')) {
     return (
       <span
@@ -34,42 +47,28 @@ function LeadSourceIcon({ name }: { name: string }) {
       </span>
     )
   }
-  if (lower.includes('instagram')) {
+  // Meta family — Facebook, Instagram, WhatsApp, "Meta" — all collapse to the
+  // same "fb" blue chip per the latest preference.
+  if (
+    lower.includes('facebook') ||
+    lower.includes('meta') ||
+    lower.includes('instagram') ||
+    lower.includes('whatsapp') ||
+    lower === 'wa'
+  ) {
     return (
       <span
         title={name}
-        className="inline-flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300"
+        className="inline-flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
       >
-        ig
+        fb
       </span>
     )
   }
-  if (lower.includes('walk') || lower.includes('referral')) {
-    return (
-      <span
-        title={name}
-        className="inline-flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-      >
-        rf
-      </span>
-    )
-  }
-  if (lower.includes('whatsapp') || lower.includes('wa')) {
-    return (
-      <span
-        title={name}
-        className="inline-flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300"
-      >
-        wa
-      </span>
-    )
-  }
+  // Walk-in / Referral / Website / Self-Generated / Others → Globe.
   return (
-    <span
-      title={name}
-      className="inline-flex h-5 w-5 items-center justify-center rounded text-[9px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-    >
-      ?
+    <span title={name} className="inline-flex h-5 w-5 items-center justify-center text-slate-700 dark:text-slate-300">
+      <GlobeMark className="h-5 w-5" />
     </span>
   )
 }

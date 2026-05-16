@@ -81,6 +81,10 @@ const LEAD_NAV_ITEMS: NavItemDef[] = [
   // leads for their own branch. The trial form locks the preferred-branch
   // dropdown to the manager's branch — only super_admin can pick freely.
   { href: '/crm/forms',         label: 'Forms',            icon: FileText },
+  // Branches — tenant-wide admin page. Adding a branch here auto-creates
+  // its kanban pipeline + tkt_branch row so the new entry shows up
+  // everywhere (topbar switcher, kanban, ticket form, dashboard chart).
+  { href: '/crm/branches',      label: 'Branches',         icon: Building2, roles: ['super_admin'],                    hideInBranchView: true },
   { href: '/crm/automations',   label: 'Automations',      icon: Zap,       roles: ['super_admin'],                    hideInBranchView: true },
   { href: '/crm/analytics',     label: 'Analytics',        icon: BarChart3, roles: ['super_admin', 'platform_admin'],  hideInBranchView: true },
   { href: '/crm/integrations',  label: 'Integrations',     icon: Plug,      roles: ['super_admin'],                    hideInBranchView: true },
@@ -256,16 +260,40 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
 
   return (
     <aside className="flex h-full flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
-      {/* Logo / brand */}
+      {/* Logo / brand — geometric diamond mark, inline so it inherits the
+          theme colour (navy in light, white in dark) without needing an
+          asset file. Matches the brand mark provided by the user. */}
       <div
         className={cn(
           'flex h-16 items-center border-b border-slate-200 dark:border-slate-800 px-4 shrink-0',
           collapsed ? 'justify-center' : 'gap-3',
         )}
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white font-bold text-sm">
-          E
-        </div>
+        <span
+          aria-label="Ebright"
+          className="flex h-8 w-8 shrink-0 items-center justify-center text-slate-900 dark:text-white"
+        >
+          <svg
+            viewBox="0 0 100 100"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={5}
+            strokeLinejoin="miter"
+            strokeLinecap="square"
+            className="h-7 w-7"
+            aria-hidden="true"
+          >
+            {/* Outer diamond frame */}
+            <path d="M50 6 L94 50 L50 94 L6 50 Z" />
+            {/* Inner concentric diamond */}
+            <path d="M50 26 L74 50 L50 74 L26 50 Z" />
+            {/* Centre small diamond */}
+            <path d="M50 40 L60 50 L50 60 L40 50 Z" />
+            {/* Side bridges connecting outer ↔ inner along the horizontal axis */}
+            <path d="M26 50 L40 50" />
+            <path d="M60 50 L74 50" />
+          </svg>
+        </span>
         {!collapsed && (
           <span className="font-semibold text-slate-900 dark:text-white tracking-tight">
             Ebright CRM

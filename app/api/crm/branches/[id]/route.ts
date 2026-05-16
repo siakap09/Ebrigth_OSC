@@ -22,6 +22,14 @@ export async function PATCH(
   try {
     const ctx = await resolveSession()
     if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Mirror the POST guard — only super_admin / agency_admin can edit a
+    // branch's name / code / region. Per-branch settings (operating hours,
+    // BM assignment) ride on the same endpoint, so non-elevated roles also
+    // can't change those for now — matches the read-only mental model the
+    // ops team uses today.
+    if (!['SUPER_ADMIN', 'AGENCY_ADMIN'].includes(ctx.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     const { id } = await params
     const body = await req.json()
