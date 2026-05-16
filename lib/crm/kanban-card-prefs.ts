@@ -20,6 +20,13 @@ export type CardFieldKey =
   | 'tags'              // Smart tags row.
   | 'owner'             // Assigned user avatar.
   | 'stageBadge'        // Short-code pill at the bottom (NL / FU1 / CT / ...).
+  // Contact details
+  | 'email'             // Contact email.
+  | 'phone'             // Contact phone.
+  | 'campaign'          // Marketing campaign name from master_leads_base.
+  // Opportunity details
+  | 'createdAt'         // Lead creation date (DD MMM YYYY).
+  | 'stageName'         // Full stage name (e.g. "Follow-Up 1st Attempt").
 
 export type QuickActionKey =
   | 'call'
@@ -45,18 +52,40 @@ export const DEFAULT_CARD_PREFS: CardPrefs = {
   quickActions: ['notes', 'tags', 'appointment'],
 }
 
-/** All field options the drawer renders, in display order. The `locked` flag
- *  marks fields the user can't deselect (always rendered on the card). */
-export const ALL_CARD_FIELDS: Array<{ key: CardFieldKey; label: string; locked?: boolean }> = [
-  { key: 'name',             label: 'Lead Name', locked: true },
-  { key: 'parentName',       label: 'Parent Name' },
-  { key: 'ageCategory',      label: 'Age Category' },
-  { key: 'leadSource',       label: 'Lead Source' },
-  { key: 'value',            label: 'Value (RM)' },
-  { key: 'lastStageChange',  label: 'Last Moved (relative)' },
-  { key: 'tags',             label: 'Tags' },
-  { key: 'owner',            label: 'Owner' },
-  { key: 'stageBadge',       label: 'Stage Badge' },
+/** All field options the drawer renders, grouped for readability. The
+ *  `locked` flag marks fields the user can't deselect (always rendered on
+ *  the card). The drawer groups by `group` so the long list scans like
+ *  GHL's collapsible sections (Other Details / Primary Contact / ...).
+ */
+export const ALL_CARD_FIELDS: Array<{
+  key: CardFieldKey
+  label: string
+  group: 'core' | 'contact' | 'opportunity'
+  locked?: boolean
+}> = [
+  // Core — what shows up directly on the card by default.
+  { key: 'name',            label: 'Lead Name',           group: 'core', locked: true },
+  { key: 'parentName',      label: 'Parent Name',         group: 'core' },
+  { key: 'ageCategory',     label: 'Age Category',        group: 'core' },
+  { key: 'leadSource',      label: 'Lead Source',         group: 'core' },
+  { key: 'value',           label: 'Value (RM)',          group: 'core' },
+  { key: 'lastStageChange', label: 'Last Moved (relative)', group: 'core' },
+  { key: 'tags',            label: 'Tags',                group: 'core' },
+  { key: 'owner',           label: 'Owner',               group: 'core' },
+  { key: 'stageBadge',      label: 'Stage Badge',         group: 'core' },
+  // Primary Contact Details — GHL-style group.
+  { key: 'email',           label: "Contact's Email",     group: 'contact' },
+  { key: 'phone',           label: "Contact's Phone",     group: 'contact' },
+  { key: 'campaign',        label: 'Campaign',            group: 'contact' },
+  // Opportunity Details — pipeline + stage metadata.
+  { key: 'createdAt',       label: 'Created On',          group: 'opportunity' },
+  { key: 'stageName',       label: 'Stage (full name)',   group: 'opportunity' },
+]
+
+export const CARD_FIELD_GROUPS: ReadonlyArray<{ key: 'core' | 'contact' | 'opportunity'; label: string }> = [
+  { key: 'core',        label: 'Default fields' },
+  { key: 'contact',     label: 'Primary Contact Details' },
+  { key: 'opportunity', label: 'Opportunity Details' },
 ]
 
 export const ALL_QUICK_ACTIONS: Array<{ key: QuickActionKey; label: string }> = [

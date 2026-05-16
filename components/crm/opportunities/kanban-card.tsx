@@ -362,19 +362,65 @@ export function KanbanCard({
             </div>
           )}
 
-          {/* Quick-actions row — Tags + Notes show counts pulled from
-              real data when present; the rest are decorative placeholders
-              until those integrations land. */}
+          {/* Extra detail rows — only rendered when the user has toggled
+              them on in the Manage Fields drawer. Keeps the default card
+              compact unless the BM explicitly wants more info on-card. */}
+          {(showField('email') || showField('phone') || showField('campaign') || showField('createdAt') || showField('stageName')) && (
+            <div className="flex flex-col gap-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+              {showField('email') && contact.email && (
+                <span className="truncate" title={contact.email}>{contact.email}</span>
+              )}
+              {showField('phone') && contact.phone && (
+                <span className="truncate" title={contact.phone}>{contact.phone}</span>
+              )}
+              {showField('campaign') && (contact as unknown as { campaignName?: string | null }).campaignName && (
+                <span className="truncate" title={(contact as unknown as { campaignName?: string | null }).campaignName ?? ''}>
+                  Campaign: {(contact as unknown as { campaignName?: string | null }).campaignName}
+                </span>
+              )}
+              {showField('createdAt') && (
+                <span title={`Created ${formatDate(opportunity.createdAt)}`}>
+                  Created {formatDate(opportunity.createdAt)}
+                </span>
+              )}
+              {showField('stageName') && stageName && (
+                <span className="truncate">Stage: {stageName}</span>
+              )}
+            </div>
+          )}
+
+          {/* Quick-actions row — clickable. Call uses tel:, the rest jump
+              to the lead detail page (where Notes / Tasks / Appointments
+              live). Tags + Notes show real count badges when available. */}
           {prefs.quickActions.length > 0 && (
             <div className="flex items-center gap-2 pt-0.5">
               {prefs.quickActions.map((action) => {
                 let badge: number | null = null
-                if (action === 'tags') badge = contact.contactTags.length
+                if (action === 'tags')  badge = contact.contactTags.length
+                const detailHref = `/crm/opportunities/${opportunity.id}`
+                // "call" uses tel: when a phone is present, "appointment" /
+                // "notes" / "tasks" / "conversations" jump to the lead
+                // detail page where the relevant section lives. Hashes
+                // give the page a chance to scroll-to-section later.
+                const href: string =
+                  action === 'call' && contact.phone
+                    ? `tel:${contact.phone}`
+                    : action === 'notes'
+                      ? `${detailHref}#notes`
+                      : action === 'tasks'
+                        ? `${detailHref}#tasks`
+                        : action === 'appointment'
+                          ? `${detailHref}#appointments`
+                          : detailHref
+                const ariaLabel = `${action} for ${(primaryChildName || contact.firstName)}`
                 return (
-                  <span
+                  <Link
                     key={action}
+                    href={href}
+                    onClick={(e) => e.stopPropagation()}
                     title={action}
-                    className="relative inline-flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    aria-label={ariaLabel}
+                    className="relative inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-700 dark:hover:text-indigo-300 transition-colors"
                   >
                     <QuickActionIcon action={action} />
                     {badge !== null && badge > 0 && (
@@ -382,7 +428,7 @@ export function KanbanCard({
                         {badge > 9 ? '9+' : badge}
                       </span>
                     )}
-                  </span>
+                  </Link>
                 )
               })}
             </div>

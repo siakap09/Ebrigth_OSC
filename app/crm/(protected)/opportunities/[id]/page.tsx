@@ -9,6 +9,7 @@ import { getOpportunityById } from '@/server/queries/opportunities'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
 import { getAgeCategory, ageCategoryClasses, formatChildAge, type AgeCategory } from '@/lib/crm/age-category'
 import { StudentEditCard } from '@/components/crm/opportunities/student-edit-card'
+import { NotesPanel, type NotePanelEntry } from '@/components/crm/opportunities/notes-panel'
 
 export const metadata = {
   title: 'Lead Detail | Ebright CRM',
@@ -362,8 +363,16 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
           )}
         </aside>
 
-        {/* Right column — Activity timeline */}
-        <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        {/* Right column — Notes + Activity timeline */}
+        <div className="space-y-4">
+          <NotesPanel
+            contactId={contact.id}
+            initial={
+              ((contact as unknown as { notes?: NotePanelEntry[] }).notes ?? []) as NotePanelEntry[]
+            }
+          />
+
+          <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <header className="flex items-center gap-2 border-b border-slate-200 px-5 py-4 dark:border-slate-700">
             <Clock className="h-4 w-4 text-slate-500" />
             <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -436,6 +445,7 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
             )}
           </div>
         </section>
+        </div>
       </div>
     </div>
   )

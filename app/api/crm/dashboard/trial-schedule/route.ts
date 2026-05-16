@@ -61,9 +61,43 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // Time window — next 7 KL days, starting today.
-  const from = startOfDayKL()
-  const to = new Date(from.getTime() + 7 * 24 * 3600 * 1000 - 1)
+  // Time window — driven by ?preset. All boundaries are KL wall-clock days.
+  //   today / yesterday          → 24h window
+  //   last_week / next_week      → rolling 7 days backwards or forwards from today
+  //   this_month                 → calendar month containing today
+  //   default ("next_7d")        → next 7 days starting today (back-compat)
+  const preset = (sp.get('preset') ?? 'next_7d').toLowerCase()
+  const today = startOfDayKL()
+  let from: Date
+  let to:   Date
+  switch (preset) {
+    case 'today':
+      from = today
+      to   = new Date(today.getTime() + 24 * 3600 * 1000 - 1)
+      break
+    case 'yesterday':
+      from = new Date(today.getTime() - 24 * 3600 * 1000)
+      to   = new Date(today.getTime() - 1)
+      break
+    case 'last_week':
+      from = new Date(today.getTime() - 7 * 24 * 3600 * 1000)
+      to   = new Date(today.getTime() - 1)
+      break
+    case 'this_month': {
+      const wall = new Date(today.getTime() + KL_OFFSET_MS)
+      const monthStartUtc = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), 1)
+      const nextMonthStartUtc = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth() + 1, 1)
+      from = new Date(monthStartUtc - KL_OFFSET_MS)
+      to   = new Date(nextMonthStartUtc - KL_OFFSET_MS - 1)
+      break
+    }
+    case 'next_week':
+    case 'next_7d':
+    default:
+      from = today
+      to   = new Date(today.getTime() + 7 * 24 * 3600 * 1000 - 1)
+      break
+  }
 
   const appointments = await prisma.crm_appointment.findMany({
     where: {

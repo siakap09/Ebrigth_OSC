@@ -6,6 +6,7 @@ import { cn } from '@/lib/crm/utils'
 import {
   ALL_CARD_FIELDS,
   ALL_QUICK_ACTIONS,
+  CARD_FIELD_GROUPS,
   type CardFieldKey,
   type CardLayout,
   type CardPrefs,
@@ -213,46 +214,59 @@ export function CustomiseCardDrawer({
             </div>
 
             {tab === 'fields' && (
-              <ul className="mt-3 space-y-1.5">
-                {ALL_CARD_FIELDS.map((f) => {
-                  const checked = draft.fields.includes(f.key)
+              <div className="mt-3 space-y-4">
+                {CARD_FIELD_GROUPS.map((g) => {
+                  const fields = ALL_CARD_FIELDS.filter((f) => f.group === g.key)
+                  if (fields.length === 0) return null
                   return (
-                    <li
-                      key={f.key}
-                      className={cn(
-                        'flex items-center gap-3 rounded-md px-2 py-1.5',
-                        f.locked
-                          ? 'bg-slate-50 dark:bg-slate-800/50'
-                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/50',
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked || !!f.locked}
-                        disabled={!!f.locked}
-                        onChange={() => !f.locked && toggleField(f.key)}
-                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-60"
-                      />
-                      <span className={cn(
-                        'flex-1 text-sm',
-                        f.locked
-                          ? 'font-medium text-slate-900 dark:text-slate-100'
-                          : 'text-slate-700 dark:text-slate-300',
-                      )}>
-                        {f.label}
-                      </span>
-                      {f.locked && (
-                        <span
-                          className="text-[10px] uppercase tracking-wide text-slate-400"
-                          title="Always shown"
-                        >
-                          locked
-                        </span>
-                      )}
-                    </li>
+                    <div key={g.key}>
+                      <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        {g.label}
+                      </h4>
+                      <ul className="space-y-1">
+                        {fields.map((f) => {
+                          const checked = draft.fields.includes(f.key)
+                          return (
+                            <li
+                              key={f.key}
+                              className={cn(
+                                'flex items-center gap-3 rounded-md px-2 py-1.5',
+                                f.locked
+                                  ? 'bg-slate-50 dark:bg-slate-800/50'
+                                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/50',
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked || !!f.locked}
+                                disabled={!!f.locked}
+                                onChange={() => !f.locked && toggleField(f.key)}
+                                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-60"
+                              />
+                              <span className={cn(
+                                'flex-1 text-sm',
+                                f.locked
+                                  ? 'font-medium text-slate-900 dark:text-slate-100'
+                                  : 'text-slate-700 dark:text-slate-300',
+                              )}>
+                                {f.label}
+                              </span>
+                              {f.locked && (
+                                <span
+                                  className="text-[10px] uppercase tracking-wide text-slate-400"
+                                  title="Always shown"
+                                >
+                                  locked
+                                </span>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
                   )
                 })}
-              </ul>
+              </div>
             )}
 
             {tab === 'quick' && (

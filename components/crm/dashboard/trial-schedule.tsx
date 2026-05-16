@@ -34,6 +34,21 @@ interface TrialScheduleResponse {
   days: DayBucket[]
 }
 
+type SchedulePreset =
+  | 'today'
+  | 'yesterday'
+  | 'last_week'
+  | 'next_week'
+  | 'this_month'
+
+const PRESET_OPTIONS: ReadonlyArray<{ key: SchedulePreset; label: string }> = [
+  { key: 'today',      label: 'Today' },
+  { key: 'yesterday',  label: 'Yesterday' },
+  { key: 'last_week',  label: 'Last week' },
+  { key: 'next_week',  label: 'Next week' },
+  { key: 'this_month', label: 'This month' },
+]
+
 interface TrialScheduleProps {
   /** Required — widget is hidden by the parent when no branch is in scope. */
   branchId: string | null
@@ -41,11 +56,12 @@ interface TrialScheduleProps {
 
 export function TrialSchedule({ branchId }: TrialScheduleProps) {
   const [activeCell, setActiveCell] = useState<{ day: DayBucket; slot: SlotCell } | null>(null)
+  const [preset, setPreset] = useState<SchedulePreset>('next_week')
 
   const { data, isLoading } = useQuery<TrialScheduleResponse>({
-    queryKey: ['crm', 'dashboard', 'trial-schedule', branchId ?? 'none'],
+    queryKey: ['crm', 'dashboard', 'trial-schedule', branchId ?? 'none', preset],
     queryFn: async () => {
-      const params = new URLSearchParams()
+      const params = new URLSearchParams({ preset })
       if (branchId) params.set('branchId', branchId)
       const res = await fetch(`/api/crm/dashboard/trial-schedule?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to load trial schedule')
@@ -81,13 +97,28 @@ export function TrialSchedule({ branchId }: TrialScheduleProps) {
             Trial Class Schedule
           </h2>
           <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-            Students booked into trial classes over the next 7 days.
+            Students booked into trial classes for the selected range.
             Click a count to see who&apos;s joining.
           </p>
         </div>
-        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-          <CalendarRange className="h-3 w-3" /> Next 7 days
-        </span>
+        <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 p-0.5 text-[11px] dark:bg-slate-800">
+          <CalendarRange className="ml-1.5 h-3 w-3 text-slate-400" />
+          {PRESET_OPTIONS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => setPreset(p.key)}
+              className={cn(
+                'rounded-full px-2.5 py-1 font-medium transition',
+                preset === p.key
+                  ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-300'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200',
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </header>
 
       {isLoading ? (
