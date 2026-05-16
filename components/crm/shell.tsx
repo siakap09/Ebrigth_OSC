@@ -20,7 +20,11 @@ const sidebarVariants = {
 }
 
 export function CrmShell({ children, session }: CrmShellProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  // Collapsed by default — keeps the kanban + dashboards roomy on first
+  // paint. Users can expand via the topbar toggle and the state persists
+  // for the session through React state (not localStorage — intentional;
+  // the next reload starts collapsed too).
+  const [collapsed, setCollapsed] = useState(true)
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
