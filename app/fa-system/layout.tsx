@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Fraunces, JetBrains_Mono } from "next/font/google";
 import "./fa-globals.css";
+import { SessionSync } from "./_components/SessionSync";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -33,7 +34,8 @@ export default function FASystemLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className={`${inter.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}>
+    <div className={`fa-system ${inter.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}>
+      <SessionSync />
       {children}
     </div>
   );

@@ -24,8 +24,9 @@ import { AttendanceRoster } from "@fa/_components/fa/AttendanceRoster";
 import { ConfirmDialog } from "@fa/_components/shared/ConfirmDialog";
 import { WalkInModal } from "@fa/_components/fa/WalkInModal";
 import { getDisplayOrder, mergeFilteredReorder } from "@fa/_lib/sessionOrder";
-import { BRANCHES, BranchCode, Session, hasBacklog } from "@fa/_types";
+import { BRANCHES, BranchCode, Session } from "@fa/_types";
 import { downloadCSV } from "@fa/_lib/csv";
+import { buildEventAttendanceCsv } from "@fa/_lib/eventAttendanceCsv";
 
 const SESSION_DROPPABLE_PREFIX = "session:";
 
@@ -189,64 +190,14 @@ export default function AttendancePage() {
 
   function handleDownloadCSV() {
     if (!selectedEvent) return;
-    const branchNameByCode: Record<string, string> = Object.fromEntries(
-      BRANCHES.map(b => [b.code, b.name])
-    );
-    const sessionById = new Map(eventSessions.map(s => [s.id, s]));
-    const studentById = new Map(students.map(s => [s.id, s]));
-    const userById = new Map(users.map(u => [u.id, u]));
-
-    const eventInvitations = invitations.filter(i => i.eventId === selectedEvent.id);
-
-    const header = [
-      "Student name", "Student ID", "Branch code", "Branch name",
-      "Grade", "Credit", "Age category",
-      "Day", "Session #", "Session time", "Session label",
-      "Status", "Has backlog",
-      "Invited by", "Invited at", "Confirmed at", "Attendance marked at",
-      "Parent name", "Parent phone", "Enrolment date",
-    ];
-
-    const rows = eventInvitations
-      .map(inv => {
-        const student = studentById.get(inv.studentId);
-        const sess    = sessionById.get(inv.sessionId);
-        const inviter = userById.get(inv.invitedBy);
-        return [
-          student?.name ?? "(unknown)",
-          inv.studentId,
-          inv.branch,
-          branchNameByCode[inv.branch] ?? "",
-          student?.grade ?? "",
-          student?.credit ?? "",
-          student?.ageCategory ?? "",
-          sess?.dayNumber ?? "",
-          sess?.sessionNumber ?? "",
-          sess ? `${sess.startTime}-${sess.endTime}` : "",
-          sess?.label ?? "",
-          inv.status,
-          student ? (hasBacklog(student) ? "yes" : "no") : "",
-          inviter?.name ?? inv.invitedBy,
-          inv.invitedAt,
-          inv.confirmedAt ?? "",
-          inv.attendanceMarkedAt ?? "",
-          student?.parentName ?? "",
-          student?.parentPhone ?? "",
-          student?.enrolmentDate ?? "",
-        ];
-      })
-      .sort((a, b) => {
-        const c = String(a[2]).localeCompare(String(b[2]));
-        if (c !== 0) return c;
-        const d = Number(a[7] || 0) - Number(b[7] || 0);
-        if (d !== 0) return d;
-        const e = Number(a[8] || 0) - Number(b[8] || 0);
-        if (e !== 0) return e;
-        return String(a[0]).localeCompare(String(b[0]));
-      });
-
-    const safeName = selectedEvent.name.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "");
-    downloadCSV(`FA_${safeName}_attendance.csv`, [header, ...rows]);
+    const { filename, rows } = buildEventAttendanceCsv({
+      event: selectedEvent,
+      sessions: eventSessions,
+      invitations,
+      students,
+      users,
+    });
+    downloadCSV(filename, rows);
   }
 
   if (!user) return null;

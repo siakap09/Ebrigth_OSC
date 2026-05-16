@@ -1,15 +1,29 @@
-﻿"use client";
+"use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { useFAStore } from "@fa/_lib/store";
 import { useRouter } from "next/navigation";
 import { Modal } from "@fa/_components/shared/Modal";
 
-export default function LoginPage() {
+/** The FA "view switcher" page. Renders the Marketing / Branch Managers
+ *  picker. Real BRANCH_MANAGER users can't actually impersonate Marketing
+ *  because SessionSync (see SessionSync.tsx) force-overrides their FA user
+ *  on the next render. So we don't need to gate the picker UI — we just
+ *  need to bounce unauthenticated visitors to the NextAuth sign-in. */
+export default function FAViewSwitcher() {
   const users = useFAStore(s => s.users);
   const login = useFAStore(s => s.login);
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [bmModalOpen, setBmModalOpen] = useState(false);
+
+  const authRole = (session?.user as { role?: string } | undefined)?.role;
+
+  useEffect(() => {
+    if (status === "loading") return;
+    if (status !== "authenticated") router.replace("/login");
+  }, [status, router]);
 
   function handleLogin(userId: string, role: "MKT" | "BM") {
     login(userId);
@@ -18,6 +32,16 @@ export default function LoginPage() {
 
   const mktUsers = useMemo(() => users.filter(u => u.role === "MKT"), [users]);
   const bmUsers  = useMemo(() => users.filter(u => u.role === "BM"),  [users]);
+
+  // Brief loader while NextAuth resolves the session, then render the picker.
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-ink-400 fa-mono text-xs uppercase">
+        Loading…
+      </div>
+    );
+  }
+  if (status !== "authenticated") return null;
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
@@ -37,7 +61,7 @@ export default function LoginPage() {
             className="fa-mono text-[10px] uppercase text-gold-600"
             style={{ letterSpacing: "0.1em" }}
           >
-            Demo mode — select a user to continue
+            Switch view — pick the side to enter
           </div>
         </div>
 
@@ -98,7 +122,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center fa-mono text-[11px] text-ink-400 mt-8 fa-enter fa-delay-2">
-          In production, authentication will use single sign-on from the eBright dashboard.
+          Signed in as {session?.user?.email ?? authRole}. You can switch views any time.
         </p>
       </div>
 
@@ -107,7 +131,7 @@ export default function LoginPage() {
         open={bmModalOpen}
         onClose={() => setBmModalOpen(false)}
         kicker="Branch Managers"
-        title="Select your branch"
+        title="Select a branch"
         size="md"
       >
         <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-1">

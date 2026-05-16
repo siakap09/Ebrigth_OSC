@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { eventId, sessionId, studentId, branch, invitedBy } = body;
+    const targetGrade: number = Number(body.targetGrade) || 0;
     const status: InvitationStatus = body.initialStatus ?? "invited";
     const allowOverQuota: boolean = body.allowOverQuota === true;
 
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
       sessionId,
       studentId,
       branch: branch as BranchCode,
+      targetGrade,
       status,
       invitedBy,
     });

@@ -63,6 +63,122 @@
 }
 
 /* ============================================================================
+   Theme variants — override the @theme tokens above on the <html> element
+   when data-fa-theme is set. The default (Ivory & Bronze) needs no overrides.
+   ============================================================================ */
+
+/* Vibrant Modern — clean white surfaces, navy ink, blue + teal accents. */
+[data-fa-theme="vibrant"] {
+  --color-ivory-50:  #ffffff;
+  --color-ivory-100: #f7fafc;
+  --color-ivory-200: #edf2f7;
+  --color-ivory-300: #cbd5e0;
+
+  --color-ink-400: #4a5568;
+  --color-ink-500: #2d3748;
+  --color-ink-600: #1a202c;
+  --color-ink-700: #171923;
+  --color-ink-800: #0f111a;
+  --color-ink-900: #060818;
+
+  /* "gold" repurposed as blue accent. */
+  --color-gold-100: #e6f4ff;
+  --color-gold-200: #b3dcfd;
+  --color-gold-300: #66b8fa;
+  --color-gold-400: #1f8af1;
+  --color-gold-500: #1565c0;
+  --color-gold-600: #0d47a1;
+  --color-gold-700: #082c5e;
+
+  --color-brand-500: #ee6c5e;
+  --color-brand-600: #e94e4e;
+  --color-brand-700: #c53030;
+
+  --color-success:      #0f9f6e;
+  --color-success-soft: #d3f6e8;
+  --color-warning:      #d97706;
+  --color-warning-soft: #fff3d6;
+  --color-danger:       #e94e4e;
+  --color-danger-soft:  #fee2e2;
+  --color-info:         #1f8af1;
+  --color-info-soft:    #e6f4ff;
+}
+
+/* Warm Sunset — peach + cream + orange/pink/purple. */
+[data-fa-theme="sunset"] {
+  --color-ivory-50:  #fffaf3;
+  --color-ivory-100: #fff7ed;
+  --color-ivory-200: #ffedd5;
+  --color-ivory-300: #fbcfa5;
+
+  --color-ink-400: #6b21a8;
+  --color-ink-500: #581c87;
+  --color-ink-600: #4c1d95;
+  --color-ink-700: #3b0764;
+  --color-ink-800: #2e1065;
+  --color-ink-900: #1e0b3a;
+
+  --color-gold-100: #ffe6c8;
+  --color-gold-200: #fed7aa;
+  --color-gold-300: #fdba74;
+  --color-gold-400: #fb923c;
+  --color-gold-500: #ea580c;
+  --color-gold-600: #c2410c;
+  --color-gold-700: #9a3412;
+
+  --color-brand-500: #d946ef;
+  --color-brand-600: #c026d3;
+  --color-brand-700: #a21caf;
+
+  --color-success:      #65a30d;
+  --color-success-soft: #ecfccb;
+  --color-warning:      #f59e0b;
+  --color-warning-soft: #fef3c7;
+  --color-danger:       #db2777;
+  --color-danger-soft:  #fce7f3;
+  --color-info:         #8b5cf6;
+  --color-info-soft:    #ede9fe;
+}
+
+/* High-Contrast Pro — deep navy + bright accents, maximum number readability. */
+[data-fa-theme="highcontrast"] {
+  --color-ivory-50:  #ffffff;
+  --color-ivory-100: #ffffff;
+  --color-ivory-200: #f1f5f9;
+  --color-ivory-300: #94a3b8;
+
+  --color-ink-200: #475569;
+  --color-ink-300: #334155;
+  --color-ink-400: #1e293b;
+  --color-ink-500: #0f172a;
+  --color-ink-600: #020617;
+  --color-ink-700: #000000;
+  --color-ink-800: #000000;
+  --color-ink-900: #000000;
+
+  --color-gold-100: #fef9c3;
+  --color-gold-200: #fef08a;
+  --color-gold-300: #facc15;
+  --color-gold-400: #eab308;
+  --color-gold-500: #ca8a04;
+  --color-gold-600: #854d0e;
+  --color-gold-700: #422006;
+
+  --color-brand-500: #ef4444;
+  --color-brand-600: #dc2626;
+  --color-brand-700: #b91c1c;
+
+  --color-success:      #16a34a;
+  --color-success-soft: #dcfce7;
+  --color-warning:      #ca8a04;
+  --color-warning-soft: #fef9c3;
+  --color-danger:       #dc2626;
+  --color-danger-soft:  #fee2e2;
+  --color-info:         #0891b2;
+  --color-info-soft:    #cffafe;
+}
+
+/* ============================================================================
    Base
    ============================================================================ */
 
@@ -210,6 +326,22 @@ h1, h2, h3, h4 {
 
 .fa-input-icon-left {
   padding-left: 2.5rem;
+}
+
+/* Safety net: any native input/textarea/select inside the FA system that
+ * forgets to set its text colour explicitly falls back to ink-900 here, so
+ * quota numbers, search boxes, etc. stay readable in every theme. Also
+ * forces the color-scheme so the browser doesn't apply a dark-mode tint to
+ * the input chrome (spinners, calendar picker, etc.). */
+.fa-system input,
+.fa-system textarea,
+.fa-system select {
+  color: var(--color-ink-900);
+  color-scheme: light;
+}
+.fa-system input::placeholder,
+.fa-system textarea::placeholder {
+  color: var(--color-ink-400);
 }
 
 .fa-label {
@@ -365,6 +497,16 @@ h1, h2, h3, h4 {
   }
   .fa-print-cert * {
     visibility: visible;
+  }
+  /* Each bulk-print certificate gets its own page. The single-preview
+     flow doesn't wrap with .fa-print-cert-page so it still prints on one page. */
+  .fa-print-cert-page {
+    page-break-after: always;
+    break-after: page;
+  }
+  .fa-print-cert-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
   }
 }
 

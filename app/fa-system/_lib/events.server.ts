@@ -56,6 +56,7 @@ interface InvitationRow {
   session_id: string;
   student_id: string;
   branch: string;
+  target_grade: number | null;
   status: string;
   invited_by: string | null;
   invited_at: Date | string;
@@ -123,6 +124,7 @@ function rowToInvitation(r: InvitationRow): Invitation {
     sessionId: r.session_id,
     studentId: r.student_id,
     branch: r.branch as BranchCode,
+    targetGrade: r.target_grade ?? 0,
     status: r.status as InvitationStatus,
     invitedBy: r.invited_by ?? "",
     invitedAt: isoTimestamp(r.invited_at) ?? new Date().toISOString(),
@@ -165,7 +167,7 @@ export async function fetchAllEventData(): Promise<{
       [TENANT]
     ),
     pool.query<InvitationRow>(
-      `SELECT id, event_id, session_id, student_id, branch, status, invited_by,
+      `SELECT id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
               invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes
          FROM fa_invitations
         WHERE tenant_id = $1`,
@@ -342,6 +344,7 @@ export async function createInvitationRow(args: {
   sessionId: string;
   studentId: string;
   branch: BranchCode;
+  targetGrade: number;
   status: InvitationStatus;
   invitedBy: string;
 }): Promise<Invitation | null> {
@@ -349,11 +352,11 @@ export async function createInvitationRow(args: {
   try {
     const { rows } = await pool.query<InvitationRow>(
       `INSERT INTO fa_invitations
-         (tenant_id, event_id, session_id, student_id, branch, status, invited_by, invited_at, confirmed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, now(), CASE WHEN $6 = 'confirmed' THEN now() ELSE NULL END)
-       RETURNING id, event_id, session_id, student_id, branch, status, invited_by,
+         (tenant_id, event_id, session_id, student_id, branch, target_grade, status, invited_by, invited_at, confirmed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $7 = 'confirmed' THEN now() ELSE NULL END)
+       RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
                  invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes`,
-      [TENANT, args.eventId, args.sessionId, args.studentId, args.branch, args.status, args.invitedBy]
+      [TENANT, args.eventId, args.sessionId, args.studentId, args.branch, args.targetGrade, args.status, args.invitedBy]
     );
     return rowToInvitation(rows[0]);
   } catch (err) {
@@ -393,11 +396,43 @@ export async function updateInvitationRow(
   values.push(id, TENANT);
   const { rows } = await pool.query<InvitationRow>(
     `UPDATE fa_invitations SET ${fields.join(", ")} WHERE id = $${i++} AND tenant_id = $${i}
-     RETURNING id, event_id, session_id, student_id, branch, status, invited_by,
+     RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
                invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes`,
     values
   );
-  return rows[0] ? rowToInvitation(rows[0]) : null;
+  if (!rows[0]) return null;
+  const invitation = rowToInvitation(rows[0]);
+  // When attendance is marked, persist the picked grade onto the student's
+  // fa_progress_json so the FA tick stays after the event.
+  if (patch.status === "attended" && invitation.targetGrade > 0) {
+    await markFaProgressForStudent(invitation.studentId, invitation.targetGrade);
+  }
+  return invitation;
+}
+
+/** Mark grade `grade` as completed in a student's fa_progress_json array.
+ *  The array is indexed 0-based (index `grade-1` = entry for grade `grade`).
+ *  Read-modify-write so we handle shorter/null arrays defensively. */
+export async function markFaProgressForStudent(
+  studentId: string,
+  grade: number,
+): Promise<void> {
+  const sid = Number(studentId);
+  if (!Number.isFinite(sid) || grade < 1) return;
+  const { rows } = await pool.query<{ fa_progress_json: unknown }>(
+    `SELECT fa_progress_json FROM studentrecords WHERE id = $1`,
+    [sid]
+  );
+  if (!rows[0]) return;
+  const arr: boolean[] = Array.isArray(rows[0].fa_progress_json)
+    ? (rows[0].fa_progress_json as unknown[]).map(v => v === true)
+    : [];
+  while (arr.length < grade) arr.push(false);
+  arr[grade - 1] = true;
+  await pool.query(
+    `UPDATE studentrecords SET fa_progress_json = $1::jsonb WHERE id = $2`,
+    [JSON.stringify(arr), sid]
+  );
 }
 
 export async function deleteInvitationRow(id: string): Promise<void> {

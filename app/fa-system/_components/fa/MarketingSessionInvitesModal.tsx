@@ -1,6 +1,7 @@
 ﻿"use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { ArrowRightLeft } from "lucide-react";
 import { Modal } from "@fa/_components/shared/Modal";
 import { useFAStore } from "@fa/_lib/store";
 import { StatusPill } from "@fa/_components/fa/StatusPill";
@@ -38,6 +39,32 @@ export function MarketingSessionInvitesModal({
   const users = useFAStore(s => s.users);
   const allInvitations = useFAStore(s => s.invitations);
   const allQuotas = useFAStore(s => s.quotas);
+  const allSessions = useFAStore(s => s.sessions);
+  const moveInvitationToSession = useFAStore(s => s.moveInvitationToSession);
+
+  // Other sessions in the same event (different day/time) — destinations
+  // when reassigning a confirmed student via the per-row Move dropdown.
+  const otherSessionsInEvent = useMemo(
+    () => allSessions
+      .filter(s => s.eventId === session.eventId && s.id !== session.id)
+      .sort((a, b) => a.dayNumber - b.dayNumber || a.sessionNumber - b.sessionNumber),
+    [allSessions, session.eventId, session.id]
+  );
+
+  const [movingId, setMovingId] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+
+  async function handleMove(invitationId: string, targetSessionId: string) {
+    setMovingId(invitationId);
+    setMoveError(null);
+    try {
+      await moveInvitationToSession(invitationId, targetSessionId);
+    } catch (err) {
+      setMoveError(err instanceof Error ? err.message : "Move failed");
+    } finally {
+      setMovingId(null);
+    }
+  }
 
   const sessionInvites = useMemo(
     () => allInvitations.filter(i => i.sessionId === session.id),
@@ -89,6 +116,11 @@ export function MarketingSessionInvitesModal({
       description={`${session.startTime}–${session.endTime}${session.label ? ` · ${session.label}` : ""}`}
       size="xl"
     >
+      {moveError && (
+        <div className="text-xs text-danger bg-danger-soft rounded-md px-3 py-2 mb-3" role="alert">
+          {moveError}
+        </div>
+      )}
       <div className="flex items-center gap-6 mb-4 pb-4 border-b border-ivory-300 text-sm">
         <div>
           <span className="text-ink-400 mr-1">Total slots:</span>
@@ -132,6 +164,11 @@ export function MarketingSessionInvitesModal({
                 <div className="space-y-1">
                   {invites.map(inv => {
                     const s = studentLabel(inv);
+                    const canMove =
+                      inv.status === "invited" ||
+                      inv.status === "confirmed" ||
+                      inv.status === "declined";
+                    const isMoving = movingId === inv.id;
                     return (
                       <div
                         key={inv.id}
@@ -153,6 +190,30 @@ export function MarketingSessionInvitesModal({
                         <StatusPill tone={STATUS_TONE[inv.status]} showDot={false}>
                           {STATUS_LABEL[inv.status]}
                         </StatusPill>
+                        {canMove && otherSessionsInEvent.length > 0 && (
+                          <div className="relative">
+                            <select
+                              aria-label={`Move ${s.name} to a different session`}
+                              value=""
+                              disabled={isMoving}
+                              onChange={e => {
+                                const target = e.target.value;
+                                if (target) handleMove(inv.id, target);
+                              }}
+                              className="fa-btn-ghost text-[11px] pl-6 pr-1.5 py-1 appearance-none cursor-pointer disabled:opacity-50"
+                              title="Move to another session/day"
+                              style={{ minWidth: "92px" }}
+                            >
+                              <option value="">{isMoving ? "Moving…" : "Move to…"}</option>
+                              {otherSessionsInEvent.map(os => (
+                                <option key={os.id} value={os.id}>
+                                  Day {os.dayNumber} · S{os.sessionNumber} ({os.startTime})
+                                </option>
+                              ))}
+                            </select>
+                            <ArrowRightLeft className="w-3 h-3 absolute left-1.5 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none" />
+                          </div>
+                        )}
                       </div>
                     );
                   })}

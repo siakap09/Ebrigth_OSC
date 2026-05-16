@@ -18,6 +18,7 @@ import {
   Session,
   SessionQuota,
   Student,
+  StudentLoadReport,
   User,
   BranchCode,
 } from "@fa/_types";
@@ -41,7 +42,19 @@ interface FAStore {
   studentsLoaded: boolean;
   studentsLoading: boolean;
   studentsError: string | null;
+  /** Stats about which studentrecords rows were skipped during the last
+   *  load (e.g. unknown branch, missing grade). Surfaced in the UI so
+   *  Marketing can see exactly which records need fixing in Heidi. */
+  studentsReport: StudentLoadReport | null;
+  /** Epoch ms of the last successful student fetch. Lets the UI show
+   *  "synced 2 min ago" and decide whether a refresh is overdue. */
+  studentsFetchedAt: number | null;
+  /** First-load lazy fetch — no-op if students are already in the store. */
   loadStudents: () => Promise<void>;
+  /** Always re-fetch from /api/fa/students. Use this whenever the user has
+   *  (or might have) edited studentrecords in Heidi and we want the FA UI
+   *  to reflect it without a full page reload. */
+  refreshStudents: () => Promise<void>;
 
   // ------- Event data loading (real DB) -------
   eventsLoaded: boolean;
@@ -72,6 +85,8 @@ interface FAStore {
     sessionId: string;
     studentId: string;
     branch: BranchCode;
+    /** Grade the student is being appraised for (BM picks this when inviting). */
+    targetGrade: number;
     invitedBy: string;
     initialStatus?: InvitationStatus;
     allowOverQuota?: boolean;
@@ -97,6 +112,37 @@ interface FAStore {
 // ----------------------------------------------------------------------------
 // API helpers
 // ----------------------------------------------------------------------------
+
+/** Shared student-fetch implementation used by both loadStudents (first-load)
+ *  and refreshStudents (force re-fetch). Hits /api/fa/students with cache:
+ *  no-store so we always get the latest snapshot from studentrecords.
+ *  Defined outside the store so both methods can share it without a closure
+ *  over the store factory. */
+async function fetchAndStoreStudents(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  set: (partial: any) => void,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _get: () => any,
+): Promise<void> {
+  set({ studentsLoading: true, studentsError: null });
+  try {
+    const res = await fetch("/api/fa/students", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as { students: Student[]; report?: StudentLoadReport };
+    set({
+      students: data.students,
+      studentsReport: data.report ?? null,
+      studentsLoaded: true,
+      studentsLoading: false,
+      studentsFetchedAt: Date.now(),
+    });
+  } catch (err) {
+    set({
+      studentsError: err instanceof Error ? err.message : "Unknown error",
+      studentsLoading: false,
+    });
+  }
+}
 
 async function apiJson<T>(
   url: string,
@@ -137,6 +183,8 @@ export const useFAStore = create<FAStore>()(
       studentsLoaded: false,
       studentsLoading: false,
       studentsError: null,
+      studentsReport: null,
+      studentsFetchedAt: null,
       eventsLoaded: false,
       eventsLoading: false,
       eventsError: null,
@@ -145,24 +193,16 @@ export const useFAStore = create<FAStore>()(
       logout: () => set({ currentUserId: null }),
 
       // ------- Student data loading -------
+      // Internal helper: actually hits the API. Both loadStudents and
+      // refreshStudents go through this so the in-flight guard and result
+      // handling stay identical.
       loadStudents: async () => {
+        if (get().studentsLoaded || get().studentsLoading) return;
+        await fetchAndStoreStudents(set, get);
+      },
+      refreshStudents: async () => {
         if (get().studentsLoading) return;
-        set({ studentsLoading: true, studentsError: null });
-        try {
-          const res = await fetch("/api/fa/students", { cache: "no-store" });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = (await res.json()) as { students: Student[] };
-          set({
-            students: data.students,
-            studentsLoaded: true,
-            studentsLoading: false,
-          });
-        } catch (err) {
-          set({
-            studentsError: err instanceof Error ? err.message : "Unknown error",
-            studentsLoading: false,
-          });
-        }
+        await fetchAndStoreStudents(set, get);
       },
 
       // ------- Event data loading (events + sessions + quotas + invitations) -------
@@ -300,6 +340,7 @@ export const useFAStore = create<FAStore>()(
         sessionId,
         studentId,
         branch,
+        targetGrade,
         invitedBy,
         initialStatus,
         allowOverQuota,
@@ -313,6 +354,7 @@ export const useFAStore = create<FAStore>()(
               sessionId,
               studentId,
               branch,
+              targetGrade,
               invitedBy,
               initialStatus,
               allowOverQuota,
@@ -337,9 +379,23 @@ export const useFAStore = create<FAStore>()(
         });
         if (!r.ok) throw new Error(`Update invitation failed (HTTP ${r.status})`);
         const updated = r.data;
-        set((s) => ({
-          invitations: s.invitations.map((i) => (i.id === id ? updated : i)),
-        }));
+        set((s) => {
+          const invitations = s.invitations.map((i) => (i.id === id ? updated : i));
+          // When attendance is marked, persist the picked grade onto the
+          // student's faHistory so the FA tick stays after the event.
+          if (status === "attended" && updated.targetGrade != null) {
+            const students = s.students.map((st) =>
+              st.id === updated.studentId
+                ? {
+                    ...st,
+                    faHistory: { ...st.faHistory, [updated.targetGrade]: true },
+                  }
+                : st
+            );
+            return { invitations, students };
+          }
+          return { invitations };
+        });
       },
 
       removeInvitation: async (id) => {
@@ -431,6 +487,8 @@ export const useFAStore = create<FAStore>()(
           students: [],
           studentsLoaded: false,
           studentsError: null,
+          studentsReport: null,
+          studentsFetchedAt: null,
           events: [],
           sessions: [],
           quotas: [],

@@ -5,15 +5,20 @@ import { Modal } from "@fa/_components/shared/Modal";
 import { Session } from "@fa/_types";
 
 export function SessionFormModal({
-  open, onClose, session, eventId, maxDays, existingSessions, onSave,
+  open, onClose, session, eventId, maxDays, existingSessions, defaultDayNumber, onSave,
 }: {
   open: boolean; onClose: () => void; session: Session | null;
   eventId: string; maxDays: number; existingSessions: Session[];
+  /** When opening to create a new session from a specific day's "+" button. */
+  defaultDayNumber?: 1 | 2 | 3;
   onSave: (data: Omit<Session, "id" | "eventId">) => void;
 }) {
   void eventId;
-  const [dayNumber,     setDayNumber]     = useState<1 | 2 | 3>(session?.dayNumber ?? 1);
-  const [sessionNumber, setSessionNumber] = useState<number>(session?.sessionNumber ?? (existingSessions.filter(s => s.dayNumber === 1).length + 1));
+  const initialDay = session?.dayNumber ?? defaultDayNumber ?? 1;
+  const [dayNumber,     setDayNumber]     = useState<1 | 2 | 3>(initialDay);
+  const [sessionNumber, setSessionNumber] = useState<number>(
+    session?.sessionNumber ?? (existingSessions.filter(s => s.dayNumber === initialDay).length + 1)
+  );
   const [startTime,     setStartTime]     = useState(session?.startTime ?? "09:00");
   const [endTime,       setEndTime]       = useState(session?.endTime ?? "10:00");
   const [label,         setLabel]         = useState(session?.label ?? "");

@@ -10,7 +10,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!user) {
-      router.replace("/fa-system/login");
+      router.replace("/login");
     } else if (user.role === "MKT") {
       router.replace("/fa-system/marketing");
     } else {

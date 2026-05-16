@@ -176,7 +176,7 @@ function SortableInvitationRow({
           {inv.branch}
         </span>
       </td>
-      <td className="font-mono text-sm">G{student.grade}·C{student.credit}</td>
+      <td className="font-mono text-sm">G{inv.targetGrade ?? student.grade}</td>
       <td>
         <div className="text-sm text-ink-900">{student.parentName}</div>
         <div className="text-xs text-ink-400 font-mono">{student.parentPhone}</div>

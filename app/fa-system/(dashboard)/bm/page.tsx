@@ -35,27 +35,32 @@ export default function BMEventsPage() {
     [visibleEvents]
   );
 
-  // For each event, compute this branch's quota & invite status
+  // For each event, compute branch-specific (BM) or aggregated (MKT-viewing) stats.
   const eventStats = useMemo(() => {
-    if (!user?.branch) return [];
+    if (!user) return [];
+    const isAggregate = user.role === "MKT";
     return visibleEvents.map(event => {
       const eventSessions = sessions.filter(s => s.eventId === event.id);
       const sessionIds = new Set(eventSessions.map(s => s.id));
-      const branchQuotas = quotas.filter(q => sessionIds.has(q.sessionId) && q.branch === user.branch);
-      const totalQuota = branchQuotas.reduce((sum, q) => sum + q.quota, 0);
-      const branchInvitations = invitations.filter(i => i.eventId === event.id && i.branch === user.branch);
-      const confirmedCount = branchInvitations.filter(
+      const scopedQuotas = quotas.filter(q =>
+        sessionIds.has(q.sessionId) && (isAggregate || q.branch === user.branch)
+      );
+      const totalQuota = scopedQuotas.reduce((sum, q) => sum + q.quota, 0);
+      const scopedInvitations = invitations.filter(i =>
+        i.eventId === event.id && (isAggregate || i.branch === user.branch)
+      );
+      const confirmedCount = scopedInvitations.filter(
         i => i.status === "confirmed" || i.status === "attended"
       ).length;
       return {
         event,
         totalQuota,
-        invited: branchInvitations.length,
+        invited: scopedInvitations.length,
         confirmed: confirmedCount,
-        remaining: totalQuota - branchInvitations.length,
+        remaining: totalQuota - scopedInvitations.length,
       };
     });
-  }, [visibleEvents, sessions, quotas, invitations, user?.branch]);
+  }, [visibleEvents, sessions, quotas, invitations, user]);
 
   const filtered = useMemo(() => {
     return eventStats
@@ -70,8 +75,10 @@ export default function BMEventsPage() {
       .sort((a, b) => b.event.startDate.localeCompare(a.event.startDate));
   }, [eventStats, yearFilter, statusFilter, search]);
 
-  if (!user || user.role !== "BM" || !user.branch) return null;
-  const branch = BRANCHES.find(b => b.code === user.branch);
+  if (!user || (user.role !== "BM" && user.role !== "MKT")) return null;
+  if (user.role === "BM" && !user.branch) return null;
+  const branch = user.branch ? BRANCHES.find(b => b.code === user.branch) : null;
+  const isMktView = user.role === "MKT";
 
   // Highlight events that need action
   const actionNeeded = filtered.filter(
@@ -84,11 +91,13 @@ export default function BMEventsPage() {
       <div className="flex items-start justify-between mb-8">
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-ink-400 mb-1">
-            FA · {branch?.name}
+            FA · {isMktView ? "All branches (Admin view)" : branch?.name}
           </div>
           <h1 className="fa-display text-4xl text-ink-900">Events</h1>
           <p className="text-ink-500 mt-1">
-            Foundation Appraisal events assigned to your branch.
+            {isMktView
+              ? "Read-only view of all branches' Foundation Appraisal activity."
+              : "Foundation Appraisal events assigned to your branch."}
           </p>
         </div>
       </div>
@@ -164,7 +173,7 @@ export default function BMEventsPage() {
             return (
               <Link
                 key={event.id}
-                href={`/fa-system/bm/events/${event.id}`}
+                href={isMktView ? `/fa-system/marketing/events/${event.id}` : `/fa-system/bm/events/${event.id}`}
                 className={`fa-card-hover p-5 block ${needsAction ? "border-warning/40" : ""}`}
               >
                 <div className="flex items-center gap-5">

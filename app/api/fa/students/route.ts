@@ -6,8 +6,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const students = await fetchAllStudents();
-    return NextResponse.json({ students });
+    const { students, report } = await fetchAllStudents();
+    return NextResponse.json({ students, report });
   } catch (err) {
     console.error("[/api/students] failed:", err);
     return NextResponse.json(
