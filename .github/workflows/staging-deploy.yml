@@ -22,6 +22,15 @@ jobs:
           # cleanup — npm ci has to redownload all deps from scratch.
           command_timeout: 90m
           script: |
+            # Force-remove any leftover containers from a prior compose run.
+            # `docker compose up -d --build` inside deploy.sh otherwise
+            # fails with "container name already in use" when its image-
+            # build path bumps a layer hash but doesn't trigger a clean
+            # recreate — exactly what bit the 2026-05-16 staging deploy.
+            # Errors swallowed so first-ever deploys (containers absent)
+            # don't fail this line.
+            docker rm -f ebright-osc-osc-1 ebright-osc-worker-1 2>/dev/null || true
+
             export NEXTAUTH_SECRET='${{ secrets.NEXTAUTH_SECRET }}'
             export BETTER_AUTH_SECRET='${{ secrets.BETTER_AUTH_SECRET }}'
             export ENCRYPTION_KEY='${{ secrets.ENCRYPTION_KEY }}'
