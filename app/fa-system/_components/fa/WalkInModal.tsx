@@ -59,15 +59,17 @@ export function WalkInModal({ open, onClose, event, preferredDay, onSuccess }: W
     onClose();
   }
 
-  // Step 2 data — active students from the chosen branch who aren't already
-  // invited to the event, optionally narrowed by the search box.
+  // Step 2 data — every student from the chosen branch (active OR inactive)
+  // who isn't already invited to the event, optionally narrowed by search.
+  // Inactive students stay in the list per Marketing's request; the row will
+  // wear an Inactive badge so it's obvious before adding the walk-in.
   const branchStudents = useMemo(() => {
     if (!branch) return [];
     const alreadyInvited = new Set(
       invitations.filter(i => i.eventId === event.id).map(i => i.studentId)
     );
     let list = allStudents
-      .filter(s => s.branch === branch && s.active)
+      .filter(s => s.branch === branch)
       .filter(s => !alreadyInvited.has(s.id));
     if (gradeFilter !== "all") list = list.filter(s => s.grade === gradeFilter);
     const q = search.trim().toLowerCase();
@@ -296,6 +298,11 @@ function StudentStep({
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-ink-900">{s.name}</span>
                   <span className="font-mono text-xs text-ink-400">G{s.grade}</span>
+                  {!s.active && (
+                    <span className="fa-mono text-[10px] uppercase px-1.5 py-0.5 rounded bg-danger-soft text-danger" style={{ letterSpacing: "0.06em" }}>
+                      Inactive
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-ink-400 mt-1 flex items-center gap-2">
                   <span>{s.parentName}</span>

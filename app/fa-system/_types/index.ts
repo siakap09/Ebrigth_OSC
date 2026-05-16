@@ -116,12 +116,14 @@ export interface Student {
   active: boolean;
 }
 
-/** Eligibility rule: any active student can be invited to FA. The dashboard
- *  tracks an FA-progress checkbox per grade up to and including the student's
- *  current grade, so the FA invite picker must match — a G1 student can be
- *  invited for G1 FA, a G2 student for G1 or G2, etc. */
+/** Eligibility rule: a student is eligible for FA when they have at least
+ *  one grade slot the system would accept right now (past grade with a
+ *  missed FA, or current grade after they hit C9 — see invitableGradesFor).
+ *  Active-vs-Inactive status is intentionally NOT part of this rule —
+ *  Marketing wants inactive students in the picker so they can still be
+ *  invited if needed (they'll show with an "Inactive" badge on the row). */
 export function isStudentEligible(student: Student): boolean {
-  return student.active;
+  return invitableGradesFor(student).length > 0;
 }
 
 /** Stats about a single `fetchAllStudents` call — populated by the API and
