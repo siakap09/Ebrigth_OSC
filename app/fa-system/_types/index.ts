@@ -28,6 +28,69 @@ export const BRANCHES = [
 
 export type BranchCode = typeof BRANCHES[number]["code"];
 
+/** Look up an FA branch by a raw `User.branchName` string, tolerant of
+ *  spelling/format drift between Heidi and the hardcoded BRANCHES list above.
+ *
+ *  Resolution order:
+ *    1. Exact match (case-insensitive, trimmed)                  — Setia Alam
+ *    2. Match by branch code in case the field stores the code   — "ST", " sa "
+ *    3. Curated alias map for known DB rows that don't match     — typos, suffixes
+ *    4. Substring containment (one contains the other)           — "Rimbayu" ↔ "Bandar Rimbayu"
+ *    5. Token-overlap ≥ 75% of the FA branch's tokens            — "Bandar Tun Huseein Onn"
+ *
+ *  Returns null only when the name genuinely doesn't look like any FA branch
+ *  (e.g. "00 Ebright OD" — that account should stay locked out). */
+export function matchBranchByName(raw: string | null | undefined): BranchCode | null {
+  if (!raw) return null;
+  const cleaned = raw.trim();
+  if (!cleaned) return null;
+  const norm = cleaned.toLowerCase().replace(/\s+/g, " ");
+
+  // 1. exact (case-insensitive)
+  for (const b of BRANCHES) {
+    if (b.name.toLowerCase() === norm) return b.code;
+  }
+  // 2. by code (e.g. "ST", "SA")
+  const upper = cleaned.toUpperCase();
+  for (const b of BRANCHES) {
+    if (b.code === upper) return b.code;
+  }
+  // 3. curated aliases — extend here when a new branch label drift appears.
+  const ALIASES: Record<string, BranchCode> = {
+    "rimbayu": "RBY",
+    "bandar rimbayu": "RBY",
+    "kajang ttdi groove": "KTG",
+    "ttdi groove": "KTG",
+    "bandar tun huseein onn": "BTHO", // common typo in Heidi
+    "bandar tun husein onn": "BTHO",  // another typo variant
+    "tun hussein onn": "BTHO",
+    "bth onn": "BTHO",
+  };
+  if (norm in ALIASES) return ALIASES[norm];
+
+  // 4. substring containment in either direction
+  for (const b of BRANCHES) {
+    const branchNorm = b.name.toLowerCase();
+    if (branchNorm.includes(norm) || norm.includes(branchNorm)) return b.code;
+  }
+
+  // 5. token-overlap (≥ 75% of the FA branch's tokens appear in the input)
+  const inputTokens = new Set(norm.split(" ").filter(Boolean));
+  let bestCode: BranchCode | null = null;
+  let bestScore = 0;
+  for (const b of BRANCHES) {
+    const branchTokens = b.name.toLowerCase().split(" ").filter(Boolean);
+    let hits = 0;
+    for (const t of branchTokens) if (inputTokens.has(t)) hits++;
+    const score = hits / branchTokens.length;
+    if (score >= 0.75 && score > bestScore) {
+      bestScore = score;
+      bestCode = b.code;
+    }
+  }
+  return bestCode;
+}
+
 // ----------------------------------------------------------------------------
 // Users & Auth
 // ----------------------------------------------------------------------------

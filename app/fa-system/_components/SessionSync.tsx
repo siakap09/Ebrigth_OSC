@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useFAStore } from "@fa/_lib/store";
-import { BRANCHES } from "@fa/_types";
+import { matchBranchByName } from "@fa/_types";
 import { useFATheme } from "@fa/_lib/theme";
 
 /** Bridges NextAuth (the real auth) to the FA system's zustand store.
@@ -60,10 +60,25 @@ export function SessionSync() {
     }
 
     if (role === "BRANCH_MANAGER" && branchName) {
-      const branch = BRANCHES.find(b => b.name === branchName);
-      const required = branch ? `u-bm-${branch.code.toLowerCase()}` : null;
-      if (required && currentUserId !== required) login(required);
-      else if (!required && currentUserId !== null) logout();
+      // Tolerant matcher handles DB labels that drift from FA's canonical
+      // list (typos like "Huseein", short forms like "Rimbayu", suffixes
+      // like "Kajang TTDI Groove"). See matchBranchByName for the resolution
+      // order.
+      const branchCode = matchBranchByName(branchName);
+      const required = branchCode ? `u-bm-${branchCode.toLowerCase()}` : null;
+      if (required && currentUserId !== required) {
+        login(required);
+      } else if (!required) {
+        // BM with a branchName we genuinely can't map → log them out so
+        // they don't get stuck on an FA page they can't read. Also surface
+        // a console warning so ops can add an alias for the unknown value.
+        console.warn(
+          `[FA SessionSync] BRANCH_MANAGER ${session.user.email ?? ""} has ` +
+          `branchName="${branchName}" which doesn't resolve to any FA branch. ` +
+          `Add it to the ALIASES map in _types/index.ts or fix the User row.`
+        );
+        if (currentUserId !== null) logout();
+      }
       return;
     }
 
