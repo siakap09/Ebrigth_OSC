@@ -97,6 +97,9 @@ model BranchStaff {
   updatedAt          DateTime? @updatedAt
   trainingStartDate  String?
   trainingEndDate    String?
+  // Weekly schedule for the Staff Directory working-hours panel.
+  // Shape: { Mon: { start: "09:00", end: "18:00" } | null, ..., Sun: ... }
+  workingHours       Json?
 
   @@map("BranchStaff")
 }

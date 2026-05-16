@@ -1,0 +1,91 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/nextauth";
+import { prisma } from "@/lib/prisma";
+import { ADMIN_ROLES, normalizeRole } from "@/lib/roles";
+
+export interface SaveResult {
+  ok: boolean;
+  error?: string;
+}
+
+interface DaySlot {
+  start: string;
+  end: string;
+}
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+type DayKey = (typeof DAYS)[number];
+
+const TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+
+function sanitize(input: unknown): Record<DayKey, DaySlot | null> | null {
+  if (!input || typeof input !== "object") return null;
+  const out = {} as Record<DayKey, DaySlot | null>;
+  for (const day of DAYS) {
+    const v = (input as Record<string, unknown>)[day];
+    if (v === null || v === undefined) {
+      out[day] = null;
+      continue;
+    }
+    if (typeof v !== "object") return null;
+    const slot = v as Record<string, unknown>;
+    const start = typeof slot.start === "string" ? slot.start.trim() : "";
+    const end = typeof slot.end === "string" ? slot.end.trim() : "";
+    if (!start && !end) { out[day] = null; continue; }
+    if (!TIME_RE.test(start) || !TIME_RE.test(end)) return null;
+    if (start >= end) return null;
+    out[day] = { start, end };
+  }
+  return out;
+}
+
+// v1 has no employment table; the BranchStaff.id maps 1:1 to the
+// DirectoryPerson.id passed back from the client. Permission is gated by
+// v1's role taxonomy — SUPER_ADMIN / ADMIN / HR (ADMIN_ROLES) can edit.
+export async function saveWorkingHours(
+  branchStaffId: number,
+  schedule: unknown,
+): Promise<SaveResult> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
+
+  const role = normalizeRole((session.user as { role?: string }).role);
+  if (!role || !ADMIN_ROLES.includes(role)) {
+    return { ok: false, error: "Not authorized to edit working hours." };
+  }
+
+  if (!Number.isInteger(branchStaffId) || branchStaffId <= 0) {
+    return { ok: false, error: "Invalid staff id." };
+  }
+
+  const sanitized = sanitize(schedule);
+  if (!sanitized) {
+    return { ok: false, error: "Invalid schedule. Use HH:MM format and ensure end > start." };
+  }
+
+  try {
+    // Raw write avoids depending on a freshly regenerated Prisma client —
+    // schema.prisma was just updated, and the typed client may lag until the
+    // dev server restarts and triggers `prisma generate`.
+    //
+    // Writing through `crm."BranchStaff"` works in both DBs: in ebright_hrfs
+    // it's a simple updatable view that forwards to public."BranchStaff"; in
+    // ebright_crm it's a postgres_fdw foreign table that forwards to the same
+    // remote table. Either way the underlying row is updated.
+    const affected = await prisma.$executeRaw`
+      UPDATE crm."BranchStaff"
+      SET "workingHours" = ${JSON.stringify(sanitized)}::jsonb,
+          "updatedAt"    = NOW()
+      WHERE id = ${branchStaffId}
+    `;
+    if (affected === 0) return { ok: false, error: "Staff record not found." };
+
+    revalidatePath("/staff-directory");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Failed to save." };
+  }
+}
