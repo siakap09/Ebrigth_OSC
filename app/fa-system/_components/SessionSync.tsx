@@ -10,17 +10,18 @@ import { useFATheme } from "@fa/_lib/theme";
  *
  *  Mapping rules by NextAuth role:
  *    SUPER_ADMIN / ADMIN / MARKETING / MKT
- *                         → if no FA user is set, default to FA Marketing
- *                           (u-mkt). If a FA user IS already set (because an
- *                           admin picked one via /fa-system/login), leave it
- *                           alone — admins can act as marketing OR any BM.
+ *                         → "back-office" roles. Default to FA Marketing
+ *                           (u-mkt) on first arrival but DO NOT override a
+ *                           manual pick from /fa-system/login, so all four
+ *                           can use the picker to switch between Marketing
+ *                           and any Branch Manager view.
  *                           MARKETING is the actual role value on the live
  *                           marketing user (marketing@ebright.my). MKT is
  *                           a defensive alias in case the role is stored in
  *                           that shorter form elsewhere.
  *    BRANCH_MANAGER       → forced to FA BM for the branch whose name matches
  *                           the User.branchName column. Re-asserted on every
- *                           render so a BM can never end up impersonating
+ *                           render so a real BM can never end up impersonating
  *                           marketing or a different branch.
  *    anything else        → no FA login.
  */
@@ -44,18 +45,16 @@ export function SessionSync() {
     const role = (session.user as { role?: string }).role;
     const branchName = (session.user as { branchName?: string }).branchName;
 
-    if (role === "SUPER_ADMIN" || role === "ADMIN") {
-      // Admins can pick — set once on first arrival, never override a
-      // manual pick from /fa-system/login.
+    if (
+      role === "SUPER_ADMIN" ||
+      role === "ADMIN" ||
+      role === "MARKETING" ||
+      role === "MKT"
+    ) {
+      // Back-office roles share the same rule: default to u-mkt on first
+      // arrival, then leave the FA store user alone so the picker at
+      // /fa-system/login can switch them into any Branch Manager view.
       if (currentUserId === null) login("u-mkt");
-      return;
-    }
-
-    if (role === "MARKETING" || role === "MKT") {
-      // Marketing role is locked to the Marketing FA user. If they navigate
-      // to /fa-system/login and try to pick a Branch Manager, this re-asserts
-      // u-mkt on the next render so they can't impersonate a branch.
-      if (currentUserId !== "u-mkt") login("u-mkt");
       return;
     }
 

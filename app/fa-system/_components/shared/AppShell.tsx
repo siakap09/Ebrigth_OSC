@@ -108,11 +108,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // a super admin is swapping views, so we can't infer admin-ness from it.
   const { data: session } = useSession();
   const authRole = (session?.user as { role?: string } | undefined)?.role;
-  // Only true admins can switch views via /fa-system/login. A MARKETING-
-  // role user is locked to marketing; a BRANCH_MANAGER is locked to their
-  // branch. SessionSync enforces that — this flag just controls whether
-  // the "Marketing View" switch-back link appears.
-  const canSwitchView = authRole === "SUPER_ADMIN" || authRole === "ADMIN";
+  // Back-office roles (admin + marketing) get the picker — they can switch
+  // between the Marketing view and any Branch Manager view via the door
+  // icon in the footer. BRANCH_MANAGER role is locked to their own branch;
+  // SessionSync enforces that. This flag controls whether the "Marketing
+  // View" switch-back link appears once the user has hopped into a branch.
+  const canSwitchView =
+    authRole === "SUPER_ADMIN" ||
+    authRole === "ADMIN" ||
+    authRole === "MARKETING" ||
+    authRole === "MKT";
 
   // Sidebar nav is driven by the *FA store* user role, not the NextAuth
   // role, so MARKETING-role NextAuth users (who SessionSync maps to u-mkt)
@@ -233,16 +238,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <ThemePicker />
             {/* The "exit" icon is repurposed as the view switcher — clicking
-                it opens the FA picker page so super admin can switch between
-                Marketing and Branch views. Sign-out lives in the top bar. */}
-            <button
-              onClick={() => router.push("/fa-system/login")}
-              className="p-1.5 text-ink-400 hover:text-gold-500 hover:bg-ivory-100 rounded-md flex-shrink-0 transition-colors duration-200"
-              title="Switch view"
-              aria-label="Switch view"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+                it opens the FA picker page so back-office roles (admin +
+                marketing) can switch between Marketing and Branch views.
+                Hidden for real branch managers — they're locked to their
+                own branch by SessionSync, so the button would just no-op
+                for them. Sign-out lives in the top bar. */}
+            {canSwitchView && (
+              <button
+                onClick={() => router.push("/fa-system/login")}
+                className="p-1.5 text-ink-400 hover:text-gold-500 hover:bg-ivory-100 rounded-md flex-shrink-0 transition-colors duration-200"
+                title="Switch view"
+                aria-label="Switch view"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </aside>
