@@ -8,12 +8,31 @@ declare global {
 }
 
 // FA System reads from a different DB than the rest of OSC (studentrecords
-// lives in ebrightleads_db, OSC uses ebright_hrfs). Use FA_DATABASE_URL when
-// present, else fall back to DATABASE_URL for environments where they happen
-// to be the same.
+// + fa_* tables live in `ebrightleads_db`; OSC main uses `ebright_hrfs`).
+// We try three env vars in order so deploys that already have any one of
+// them set Just Work:
+//
+//   FA_DATABASE_URL   — preferred, FA-specific name
+//   LEADS_DB_URL      — same database, used by the CRM lead-ingest worker.
+//                       Already set on staging/prod for CRM; FA can reuse it
+//                       so we don't have to maintain two identical env vars.
+//   DATABASE_URL      — last-resort fallback. Only correct if the OSC main
+//                       DB also happens to contain the FA tables (rarely
+//                       true) — kept for dev convenience.
+//
+// If none are set the boot fails loudly instead of silently connecting to
+// the wrong database.
 function makePool(): Pool {
-  const url = process.env.FA_DATABASE_URL || process.env.DATABASE_URL;
-  if (!url) throw new Error("FA_DATABASE_URL (or DATABASE_URL) is not set. Add it to .env / .env.local.");
+  const url =
+    process.env.FA_DATABASE_URL ||
+    process.env.LEADS_DB_URL ||
+    process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "FA database connection string is not set. Define one of " +
+      "FA_DATABASE_URL, LEADS_DB_URL, or DATABASE_URL in the environment."
+    );
+  }
   return new Pool({ connectionString: url, max: 5 });
 }
 
