@@ -78,12 +78,16 @@ export default function InventoryPage() {
       i => i.status === "confirmed" || i.status === "attended"
     );
 
-    // ── Grade counts (shared by medals + microphones).
+    // ── Grade counts (shared by medals + microphones). Uses the BM-picked
+    //    target grade (what the medal/mic will be engraved with), falling
+    //    back to the student's current grade for legacy invitations that
+    //    pre-date the targetGrade field.
     const gradeCounts = new Map<number, number>();
     for (const inv of expectedAttendees) {
       const student = students.find(s => s.id === inv.studentId);
       if (!student) continue;
-      gradeCounts.set(student.grade, (gradeCounts.get(student.grade) ?? 0) + 1);
+      const grade = inv.targetGrade && inv.targetGrade > 0 ? inv.targetGrade : student.grade;
+      gradeCounts.set(grade, (gradeCounts.get(grade) ?? 0) + 1);
     }
     const byGrade = Array.from(gradeCounts.entries())
       .sort((a, b) => a[0] - b[0])

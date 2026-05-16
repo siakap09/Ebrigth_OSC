@@ -5,7 +5,7 @@ import { useFAStore } from "@fa/_lib/store";
 import { EmptyState } from "@fa/_components/shared/EmptyState";
 import { StatusPill } from "@fa/_components/fa/StatusPill";
 import { InvitationStatusSelector } from "@fa/_components/fa/InvitationStatusSelector";
-import { AgeCategory, Invitation, InvitationStatus, Session, Student, hasBacklog } from "@fa/_types";
+import { Invitation, InvitationStatus, Session, Student, hasBacklog } from "@fa/_types";
 
 export function SessionInvitesPanel({
   session, quota, invitations, canInvite, onOpenInvite, onStatusChange, onRemove,
@@ -19,7 +19,9 @@ export function SessionInvitesPanel({
   onRemove: (inv: Invitation) => void;
 }) {
   const students = useFAStore(s => s.students);
-  const remaining = quota - invitations.length;
+  // `quota` from the page is marketing's confirm target. Invite cap is 3× that.
+  const inviteCap = quota * 3;
+  const remaining = inviteCap - invitations.length;
   const confirmed = invitations.filter(i => i.status === "confirmed" || i.status === "attended").length;
 
   function getStudent(id: string): Student | undefined {
@@ -43,8 +45,8 @@ export function SessionInvitesPanel({
             {session.label || `Session ${session.sessionNumber}`}
           </h2>
           <div className="text-sm text-ink-500 mt-1">
-            <strong className="text-ink-900">{invitations.length}</strong> of <strong className="text-ink-900">{quota}</strong> slots used ·
-            <strong className="text-ink-900 ml-1">{confirmed}</strong> confirmed
+            <strong className="text-ink-900">{invitations.length}</strong> of <strong className="text-ink-900">{inviteCap}</strong> invites used ·
+            <strong className="text-ink-900 ml-1">{confirmed}</strong> of <strong className="text-ink-900">{quota}</strong> confirmed
           </div>
         </div>
         {canInvite && remaining > 0 && (
@@ -58,7 +60,7 @@ export function SessionInvitesPanel({
         <EmptyState
           icon={UserPlus}
           title="No students invited yet"
-          description={`You have ${quota} slot${quota !== 1 ? "s" : ""} to fill for this session.`}
+          description={`You have ${inviteCap} invite slot${inviteCap !== 1 ? "s" : ""} to fill (target: ${quota} confirmed) for this session.`}
           action={canInvite ? (
             <button onClick={onOpenInvite} className="fa-btn-primary">
               <UserPlus className="w-4 h-4" /> Invite students
@@ -72,7 +74,6 @@ export function SessionInvitesPanel({
               <tr>
                 <th>Student</th>
                 <th>Grade</th>
-                <th>Category</th>
                 <th>Credit</th>
                 <th>Backlog</th>
                 <th>Parent</th>
@@ -92,13 +93,10 @@ export function SessionInvitesPanel({
                       <div className="text-xs text-ink-400">#{student.id}</div>
                     </td>
                     <td>
-                      <span className="font-mono text-sm">G{student.grade}</span>
+                      <span className="font-mono text-sm">G{inv.targetGrade ?? student.grade}</span>
                     </td>
                     <td>
-                      <CategoryBadge category={student.ageCategory} />
-                    </td>
-                    <td>
-                      <span className="font-mono text-sm">C{student.credit}</span>
+                      <span className="text-xs text-ink-400">—</span>
                     </td>
                     <td>
                       {backlog ? (
@@ -141,11 +139,3 @@ export function SessionInvitesPanel({
   );
 }
 
-// Pill colors per spec: Junior blue, Middler amber, Senior gold.
-function CategoryBadge({ category }: { category: AgeCategory }) {
-  const cls =
-    category === "Junior"  ? "bg-info-soft text-info" :
-    category === "Middler" ? "bg-warning-soft text-warning" :
-                              "bg-gold-100 text-gold-700";
-  return <span className={`fa-pill ${cls}`}>{category}</span>;
-}

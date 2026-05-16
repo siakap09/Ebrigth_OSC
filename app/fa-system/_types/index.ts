@@ -116,9 +116,35 @@ export interface Student {
   active: boolean;
 }
 
-/** Eligibility rule: a student is eligible for FA when they've earned 10 or 11 credits in their current grade. */
+/** Eligibility rule: any active student can be invited to FA. The dashboard
+ *  tracks an FA-progress checkbox per grade up to and including the student's
+ *  current grade, so the FA invite picker must match — a G1 student can be
+ *  invited for G1 FA, a G2 student for G1 or G2, etc. */
 export function isStudentEligible(student: Student): boolean {
-  return student.active && (student.credit === 10 || student.credit === 11);
+  return student.active;
+}
+
+/** Stats about a single `fetchAllStudents` call — populated by the API and
+ *  shipped to the client so the UI can surface dropped rows that need
+ *  fixing in Heidi. Lives in the shared types module so both the
+ *  server-only loader and the client store can reference it. */
+export interface StudentLoadReport {
+  loaded: number;
+  skipped: {
+    missing_branch: number;
+    unknown_branch: number;
+    missing_grade: number;
+    bad_grade_format: number;
+  };
+  samples: Array<{
+    id: number;
+    reason: "missing_branch" | "unknown_branch" | "missing_grade" | "bad_grade_format";
+    branch: string | null;
+    grade_chapter: string | null;
+  }>;
+  /** True if the `ade_group` join succeeded. When false, age-category labels
+   *  are still derived from grade as a fallback. */
+  ageGroupJoinAvailable: boolean;
 }
 
 /** Check if student has a backlog — any completed grade below current where FA was not done. */
@@ -127,6 +153,27 @@ export function hasBacklog(student: Student): boolean {
     if (student.faHistory[g] !== true) return true;
   }
   return false;
+}
+
+/** Chapter at which a student becomes eligible for their CURRENT-grade FA.
+ *  The classroom rule: a student must have progressed to C9 within their
+ *  current grade before they can sit for that grade's Foundation Appraisal.
+ *  Grades they've already completed (i.e., grades below current) are always
+ *  available — they've moved past, so the tickbox is just recording history. */
+export const FA_CURRENT_GRADE_MIN_CHAPTER = 9;
+
+/** The list of grades a student can be invited to appraise right now.
+ *    - All grades below current grade are always returned (past grades).
+ *    - The current grade is only returned if student.credit >= 9
+ *      (the C9 threshold for current-grade FA eligibility).
+ *  Returned in ascending order. */
+export function invitableGradesFor(student: Student): number[] {
+  const grades: number[] = [];
+  for (let g = 1; g < student.grade; g++) grades.push(g);
+  if (student.credit >= FA_CURRENT_GRADE_MIN_CHAPTER) {
+    grades.push(student.grade);
+  }
+  return grades;
 }
 
 // ----------------------------------------------------------------------------
@@ -145,6 +192,9 @@ export interface Invitation {
   sessionId: string;
   studentId: string;
   branch: BranchCode;
+  /** Grade the student is being appraised for in this invitation.
+   *  May differ from student.grade when clearing backlog. */
+  targetGrade: number;
   status: InvitationStatus;
   invitedBy: string;            // User id (BM)
   invitedAt: string;

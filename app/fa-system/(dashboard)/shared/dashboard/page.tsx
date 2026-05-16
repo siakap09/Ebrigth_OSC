@@ -103,19 +103,22 @@ export default function DashboardPage() {
     );
   }, [eventStats]);
 
-  // ── Absence rate widget data ──
-  // Denominator per spec: attended + no_show only (post-event marked).
+  // ── Attendance rate widget data ──
+  // Denominator per spec: attended + absent only (post-event marked).
   // Derived from `totals` so it follows the existing year + branch filter scope.
+  // Note: invitation status "no_show" is kept in the DB enum — only UI labels
+  // and the rate calculation flip from absence-oriented to attendance-oriented.
   const totalAttendanceMarked = totals.attended + totals.noShow;
-  const overallAbsenceRate = totalAttendanceMarked > 0
-    ? totals.noShow / totalAttendanceMarked
+  const overallAttendanceRate = totalAttendanceMarked > 0
+    ? totals.attended / totalAttendanceMarked
     : 0;
 
-  // Per-branch breakdown for the absence rate section. Visible to both roles —
-  // BM is locked to their branch via `effectiveBranch`, MKT respects the active
-  // branch filter. Branches with no post-event data are hidden in the all-
-  // branches view; in the single-branch view we always render that one row.
-  const absenceByBranch = useMemo(() => {
+  // Per-branch breakdown for the attendance rate section. Visible to both
+  // roles — BM is locked to their branch via `effectiveBranch`, MKT respects
+  // the active branch filter. Branches with no post-event data are hidden in
+  // the all-branches view; in the single-branch view we always render that
+  // one row.
+  const attendanceByBranch = useMemo(() => {
     const eventIds = new Set(
       events
         .filter(e => yearFilter === "all" || e.year === yearFilter)
@@ -137,11 +140,12 @@ export default function DashboardPage() {
         const attended = bInvs.filter(i => i.status === "attended").length;
         const absent = bInvs.filter(i => i.status === "no_show").length;
         const attendanceMarked = attended + absent;
-        const absenceRate = attendanceMarked > 0 ? absent / attendanceMarked : 0;
-        return { branch: b, invited, confirmed, attended, absent, attendanceMarked, absenceRate };
+        const attendanceRate = attendanceMarked > 0 ? attended / attendanceMarked : 0;
+        return { branch: b, invited, confirmed, attended, absent, attendanceMarked, attendanceRate };
       })
       .filter(row => effectiveBranch !== "all" || row.attendanceMarked > 0)
-      .sort((a, b) => b.absenceRate - a.absenceRate || b.invited - a.invited);
+      // Worst performers (lowest attendance) surface first, so MKT can act on them.
+      .sort((a, b) => a.attendanceRate - b.attendanceRate || b.invited - a.invited);
   }, [events, invitations, yearFilter, eventFilter, effectiveBranch]);
 
   // Breakdown by branch for the current filter (MKT only, when branch=all)
@@ -256,17 +260,17 @@ export default function DashboardPage() {
         />
         <KPICard
           icon={XCircle}
-          label="No shows"
+          label="Absent"
           value={totals.noShow}
           subtle={totals.confirmed > 0 ? `${Math.round(totals.noShow / totals.confirmed * 100)}% of confirmed` : undefined}
           accent="danger"
         />
       </div>
 
-      {/* Absence rate widget */}
+      {/* Attendance rate widget */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="fa-display text-2xl text-ink-900">Absence rate</h2>
+          <h2 className="fa-display text-2xl text-ink-900">Attendance rate</h2>
         </div>
 
         {totalAttendanceMarked === 0 ? (
@@ -278,14 +282,14 @@ export default function DashboardPage() {
             {/* Stat card */}
             <div className="fa-card p-6 mb-4">
               <div className="text-xs uppercase tracking-wider font-semibold text-ink-400">
-                Overall absence rate
+                Overall attendance rate
               </div>
               <div className="flex items-baseline gap-4 mt-2">
-                <div className={`fa-display text-5xl leading-none ${absenceRateColor(overallAbsenceRate)}`}>
-                  {(overallAbsenceRate * 100).toFixed(1)}%
+                <div className={`fa-display text-5xl leading-none ${attendanceRateColor(overallAttendanceRate)}`}>
+                  {(overallAttendanceRate * 100).toFixed(1)}%
                 </div>
                 <div className="text-sm text-ink-500">
-                  <span className="text-danger font-semibold">{totals.noShow}</span> absent of{" "}
+                  <span className="text-success font-semibold">{totals.attended}</span> attended of{" "}
                   <span className="text-ink-900 font-semibold">{totalAttendanceMarked}</span> marked
                 </div>
               </div>
@@ -301,11 +305,11 @@ export default function DashboardPage() {
                     <th className="text-center">Confirmed</th>
                     <th className="text-center">Attended</th>
                     <th className="text-center">Absent</th>
-                    <th className="text-center">Absence rate</th>
+                    <th className="text-center">Attendance rate</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {absenceByBranch.map(row => (
+                  {attendanceByBranch.map(row => (
                     <tr key={row.branch.code}>
                       <td>
                         <div className="flex items-center gap-2">
@@ -321,8 +325,8 @@ export default function DashboardPage() {
                       <td className="text-center font-mono text-danger font-medium">{row.absent}</td>
                       <td className="text-center font-mono">
                         {row.attendanceMarked > 0 ? (
-                          <span className={`font-semibold ${absenceRateColor(row.absenceRate)}`}>
-                            {(row.absenceRate * 100).toFixed(1)}%
+                          <span className={`font-semibold ${attendanceRateColor(row.attendanceRate)}`}>
+                            {(row.attendanceRate * 100).toFixed(1)}%
                           </span>
                         ) : (
                           <span className="text-ink-300">—</span>
@@ -396,7 +400,7 @@ export default function DashboardPage() {
                       <td className="text-center font-mono">{confirmed}</td>
                       <td className="text-center font-mono">
                         <span className="text-success font-medium">{attended}</span>
-                        {noShow > 0 && <span className="text-danger text-xs"> / {noShow} no-show</span>}
+                        {noShow > 0 && <span className="text-danger text-xs"> / {noShow} absent</span>}
                       </td>
                       <td className="text-center">
                         <FillRateBar rate={fillRate} />
@@ -499,9 +503,10 @@ function FillRateBar({ rate, tone = "brand" }: { rate: number; tone?: "brand" | 
   );
 }
 
-// Spec thresholds: <10% green, 10-25% (inclusive) amber, >25% red.
-function absenceRateColor(rate: number): string {
-  if (rate < 0.10) return "text-success";
-  if (rate <= 0.25) return "text-warning";
+// Attendance-rate thresholds (inverse of the old absence thresholds):
+// >90% green, 75–90% amber, <75% red.
+function attendanceRateColor(rate: number): string {
+  if (rate > 0.90) return "text-success";
+  if (rate >= 0.75) return "text-warning";
   return "text-danger";
 }
