@@ -13,11 +13,6 @@ export interface InvitePick {
   targetGrade: number;
 }
 
-export interface InvitePick {
-  studentId: string;
-  targetGrade: number;
-}
-
 export function InviteStudentsModal({
   open, onClose, session, quota, currentInvitations, allInvitationsForEvent, onInvite,
 }: {
@@ -178,7 +173,7 @@ export function InviteStudentsModal({
                         <StatusPill tone="success" showDot={false}>Eligible</StatusPill>
                       )}
                       {!eligible && (
-                        <StatusPill tone="neutral" showDot={false}>No prior FA</StatusPill>
+                        <StatusPill tone="neutral" showDot={false}>Inactive</StatusPill>
                       )}
                       {backlog && (
                         <StatusPill tone="warning" showDot={false}>Has backlog</StatusPill>
@@ -198,39 +193,49 @@ export function InviteStudentsModal({
                         <div className="text-[10px] uppercase tracking-wider text-ink-400 mb-1">
                           Pick grade to appraise
                         </div>
-                        {student.grade <= 1 ? (
-                          <div className="text-xs text-ink-400 italic">
-                            No prior grades to appraise.
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1 flex-wrap">
-                            {Array.from({ length: student.grade - 1 }, (_, i) => i + 1).map(g => {
-                              const done = student.faHistory[g] === true;
-                              const isPicked = pickedGrade === g;
-                              const disabled = capReached && !isPicked;
-                              const baseCls = isPicked
-                                ? "bg-brand-600 text-white border-brand-600 ring-2 ring-brand-200"
-                                : done
-                                  ? "bg-success-soft text-success border-success/30 hover:border-success"
-                                  : "bg-danger-soft text-danger border-danger/30 hover:border-danger";
-                              const marker = isPicked ? "✓" : done ? "✓" : "✗";
-                              return (
-                                <button
-                                  key={g}
-                                  type="button"
-                                  onClick={() => pickGrade(student.id, g)}
-                                  disabled={disabled}
-                                  title={`Grade ${g}: ${done ? "completed" : "missed"}`}
-                                  className={`text-[11px] font-mono px-2 py-1 rounded border transition-colors ${baseCls} ${
-                                    disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
-                                  }`}
-                                >
-                                  G{g} {marker}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
+                        {(() => {
+                          // Past grades are always invitable; the current
+                          // grade only joins the list once the student
+                          // reaches C9 (the classroom-side eligibility rule).
+                          const grades = invitableGradesFor(student);
+                          if (grades.length === 0) {
+                            return (
+                              <div className="text-[11px] text-ink-400 italic">
+                                Not yet at C{FA_CURRENT_GRADE_MIN_CHAPTER} of G{student.grade} —
+                                FA tickbox unlocks once the student reaches it.
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {grades.map(g => {
+                                const done = student.faHistory[g] === true;
+                                const isPicked = pickedGrade === g;
+                                const disabled = capReached && !isPicked;
+                                const baseCls = isPicked
+                                  ? "bg-brand-600 text-white border-brand-600 ring-2 ring-brand-200"
+                                  : done
+                                    ? "bg-success-soft text-success border-success/30 hover:border-success"
+                                    : "bg-danger-soft text-danger border-danger/30 hover:border-danger";
+                                const marker = isPicked ? "✓" : done ? "✓" : "✗";
+                                return (
+                                  <button
+                                    key={g}
+                                    type="button"
+                                    onClick={() => pickGrade(student.id, g)}
+                                    disabled={disabled}
+                                    title={`Grade ${g}: ${done ? "completed" : "not yet"}`}
+                                    className={`text-[11px] font-mono px-2 py-1 rounded border transition-colors ${baseCls} ${
+                                      disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                                    }`}
+                                  >
+                                    G{g} {marker}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

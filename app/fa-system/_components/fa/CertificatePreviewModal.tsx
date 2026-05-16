@@ -526,6 +526,10 @@ function moduleCodeForStudent(student: Student): string {
 function CertificateRender({
   student, grade, session, event,
 }: { student: Student; grade: number; session: Session; event: FAEvent }) {
+  // A4 landscape (1123 × 794 px @ 96dpi → aspect 1.414:1).
+  const completionDate = formatCertDate(event.endDate || event.startDate);
+  const moduleCode = moduleCodeForStudent(student);
+
   return (
     <div
       className="relative bg-white overflow-hidden mx-auto"
@@ -638,11 +642,51 @@ function CertificateRender({
         ebright
       </div>
 
-      <div className="text-sm text-ink-600 mb-2 italic">This is to certify that</div>
-      <div className="fa-display text-4xl text-ink-900 mb-3">{student.name}</div>
-      <div className="text-sm text-ink-600 mb-1">has successfully participated in the</div>
-      <div className="fa-display text-2xl text-gold-700 mb-6">
-        Grade {grade} Foundation Appraisal
+      {/* ── Main content area (left side, clear of the ribbon) ── */}
+      <div
+        className="absolute"
+        style={{
+          left: "7%",
+          right: "42%",
+          top: "26%",
+          bottom: "20%",
+          zIndex: 1,
+        }}
+      >
+        <div
+          className="fa-mono"
+          style={{
+            fontSize: "0.75rem",
+            letterSpacing: "0.22em",
+            textTransform: "uppercase",
+            color: "#9e2e26",
+            marginBottom: "0.8rem",
+            fontWeight: 600,
+          }}
+        >
+          This certificate is awarded to
+        </div>
+        <div
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 800,
+            fontSize: "2.6rem",
+            lineHeight: 1.05,
+            letterSpacing: "0.005em",
+            textTransform: "uppercase",
+            color: "#0c0a09",
+            marginBottom: "1.6rem",
+          }}
+        >
+          {student.name}
+        </div>
+        <div style={{ fontSize: "1rem", lineHeight: 1.6, color: "#1a1a1a" }}>
+          For completing&nbsp;
+          <span style={{ fontWeight: 800 }}>
+            {moduleCode} G{grade}
+          </span>
+          &nbsp;of public speaking classes conducted by {CERT_COMPANY}.
+        </div>
       </div>
 
       {/* ── Signatures (bottom-left) ── */}

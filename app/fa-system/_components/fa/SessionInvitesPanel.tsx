@@ -96,9 +96,6 @@ export function SessionInvitesPanel({
                       <span className="font-mono text-sm">G{inv.targetGrade ?? student.grade}</span>
                     </td>
                     <td>
-                      <CategoryBadge category={student.ageCategory} />
-                    </td>
-                    <td>
                       <span className="text-xs text-ink-400">—</span>
                     </td>
                     <td>
