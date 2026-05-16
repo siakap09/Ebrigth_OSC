@@ -142,7 +142,6 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
     "hrms.hr-dashboard",
     "hrms.manpower-cost",
     "hrms.fa-system",
-    "hrms.staff-directory",
     "hrms.account",
     "internal-dashboard",
     "library",
@@ -185,6 +184,17 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
 };
 
 // ─── Access check ──────────────────────────────────────────────────────────
+
+/**
+ * Keys that are visible to every role by default — no need to list them in
+ * each role's allowlist. Per-user DENIED overrides still hide them.
+ *
+ * Use sparingly: only add keys here that genuinely belong to "everyone in
+ * the company can see this" (e.g. the staff directory).
+ */
+const PUBLIC_KEYS: ReadonlySet<string> = new Set([
+  "hrms.staff-directory",
+]);
 
 /** Per-user override map. Missing key = no override; falls through to role default. */
 export type DashboardOverrides = Record<string, "ALLOWED" | "DENIED">;
@@ -230,7 +240,11 @@ export function canAccess(
     if (bestValue === "DENIED")  return false;
   }
 
-  // Step 3: role default
+  // Step 3: public keys — visible to every role. Skipped if either of the
+  // override steps above already returned (so a per-user DENIED still wins).
+  if (PUBLIC_KEYS.has(key)) return true;
+
+  // Step 4: role default
   return resolveRoleDefault(rawRole, key);
 }
 

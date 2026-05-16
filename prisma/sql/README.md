@@ -9,6 +9,7 @@ views, role-level settings.
 | File | Purpose |
 |---|---|
 | `2026-05-13-hr-fdw-views.sql` | Foreign tables in `hrfs_remote.*` and matching views in `crm.*` for 7 HR tables. Restores HR pages on the portal. Idempotent. |
+| `2026-05-16-branchstaff-working-hours.sql` | Refreshes `hrfs_remote."BranchStaff"` + `crm."BranchStaff"` so the new `workingHours` jsonb column (added to `ebright_hrfs.public."BranchStaff"`) is visible to Prisma. Required for Staff Directory. Idempotent. |
 
 ## How to apply
 
