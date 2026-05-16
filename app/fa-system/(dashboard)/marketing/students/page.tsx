@@ -29,7 +29,10 @@ export default function StudentListPage() {
   const [branchFilter, setBranchFilter] = useState<BranchCode | "all">("all");
   const [gradeFilter, setGradeFilter] = useState<number | "all">("all");
   const [progressFilter, setProgressFilter] = useState<"all" | "backlog" | "uptodate">("all");
-  const [activeOnly, setActiveOnly] = useState(true);
+  // Default: show every student (active + inactive). Marketing wants the
+  // total here to match the dashboard's "Total students" count, including
+  // Inactive rows. The checkbox is kept so it can be narrowed if needed.
+  const [activeOnly, setActiveOnly] = useState(false);
 
   // Build derived counts BEFORE the early-return guards so hook order is stable.
   const filtered = useMemo(() => {

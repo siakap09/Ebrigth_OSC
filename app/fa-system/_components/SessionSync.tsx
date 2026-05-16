@@ -3,16 +3,21 @@
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useFAStore } from "@fa/_lib/store";
-import { BRANCHES } from "@fa/_types";
+import { matchBranchByName } from "@fa/_types";
 import { useFATheme } from "@fa/_lib/theme";
 
 /** Bridges NextAuth (the real auth) to the FA system's zustand store.
  *
  *  Mapping rules by NextAuth role:
- *    SUPER_ADMIN / ADMIN  → if no FA user is set, default to FA Marketing
- *                           (u-mkt). If a FA user IS already set (because the
+ *    SUPER_ADMIN / ADMIN / MARKETING / MKT
+ *                         → if no FA user is set, default to FA Marketing
+ *                           (u-mkt). If a FA user IS already set (because an
  *                           admin picked one via /fa-system/login), leave it
  *                           alone — admins can act as marketing OR any BM.
+ *                           MARKETING is the actual role value on the live
+ *                           marketing user (marketing@ebright.my). MKT is
+ *                           a defensive alias in case the role is stored in
+ *                           that shorter form elsewhere.
  *    BRANCH_MANAGER       → forced to FA BM for the branch whose name matches
  *                           the User.branchName column. Re-asserted on every
  *                           render so a BM can never end up impersonating
@@ -40,16 +45,40 @@ export function SessionSync() {
     const branchName = (session.user as { branchName?: string }).branchName;
 
     if (role === "SUPER_ADMIN" || role === "ADMIN") {
-      // Default once on first arrival; never override a manual pick.
+      // Admins can pick — set once on first arrival, never override a
+      // manual pick from /fa-system/login.
       if (currentUserId === null) login("u-mkt");
       return;
     }
 
+    if (role === "MARKETING" || role === "MKT") {
+      // Marketing role is locked to the Marketing FA user. If they navigate
+      // to /fa-system/login and try to pick a Branch Manager, this re-asserts
+      // u-mkt on the next render so they can't impersonate a branch.
+      if (currentUserId !== "u-mkt") login("u-mkt");
+      return;
+    }
+
     if (role === "BRANCH_MANAGER" && branchName) {
-      const branch = BRANCHES.find(b => b.name === branchName);
-      const required = branch ? `u-bm-${branch.code.toLowerCase()}` : null;
-      if (required && currentUserId !== required) login(required);
-      else if (!required && currentUserId !== null) logout();
+      // Tolerant matcher handles DB labels that drift from FA's canonical
+      // list (typos like "Huseein", short forms like "Rimbayu", suffixes
+      // like "Kajang TTDI Groove"). See matchBranchByName for the resolution
+      // order.
+      const branchCode = matchBranchByName(branchName);
+      const required = branchCode ? `u-bm-${branchCode.toLowerCase()}` : null;
+      if (required && currentUserId !== required) {
+        login(required);
+      } else if (!required) {
+        // BM with a branchName we genuinely can't map → log them out so
+        // they don't get stuck on an FA page they can't read. Also surface
+        // a console warning so ops can add an alias for the unknown value.
+        console.warn(
+          `[FA SessionSync] BRANCH_MANAGER ${session.user.email ?? ""} has ` +
+          `branchName="${branchName}" which doesn't resolve to any FA branch. ` +
+          `Add it to the ALIASES map in _types/index.ts or fix the User row.`
+        );
+        if (currentUserId !== null) logout();
+      }
       return;
     }
 

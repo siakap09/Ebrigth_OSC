@@ -42,7 +42,12 @@ export function InviteStudentsModal({
   const alreadyInEvent = new Set(allInvitationsForEvent.map(i => i.studentId));
 
   const visibleStudents = useMemo(() => {
-    let list = students.filter(s => s.active);
+    // Inactive students stay in the picker — Marketing wanted the full
+    // studentrecords list (Active + Inactive) accessible so they can still
+    // invite a student even if their dashboard status is "Inactive". The
+    // row is badged so it's obvious. Eligibility / grade / search filters
+    // still apply on top.
+    let list = students;
     if (filterMode === "eligible") list = list.filter(s => isStudentEligible(s));
     if (gradeFilter !== "all") list = list.filter(s => s.grade === gradeFilter);
     if (search) {
@@ -169,11 +174,14 @@ export function InviteStudentsModal({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-ink-900">{student.name}</span>
                       <span className="font-mono text-xs text-ink-400">G{student.grade}·C{student.credit}</span>
+                      {!student.active && (
+                        <StatusPill tone="danger" showDot={false}>Inactive</StatusPill>
+                      )}
                       {eligible && !alreadyInvited && (
                         <StatusPill tone="success" showDot={false}>Eligible</StatusPill>
                       )}
-                      {!eligible && (
-                        <StatusPill tone="neutral" showDot={false}>Inactive</StatusPill>
+                      {!eligible && !backlog && (
+                        <StatusPill tone="neutral" showDot={false}>No grades to appraise</StatusPill>
                       )}
                       {backlog && (
                         <StatusPill tone="warning" showDot={false}>Has backlog</StatusPill>

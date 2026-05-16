@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { fetchAllStudents } from "@fa/_lib/students.server";
 
 export const runtime = "nodejs";

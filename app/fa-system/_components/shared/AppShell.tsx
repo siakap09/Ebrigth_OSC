@@ -108,22 +108,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // a super admin is swapping views, so we can't infer admin-ness from it.
   const { data: session } = useSession();
   const authRole = (session?.user as { role?: string } | undefined)?.role;
-  const isAdminViewer = authRole === "SUPER_ADMIN" || authRole === "ADMIN";
+  // Only true admins can switch views via /fa-system/login. A MARKETING-
+  // role user is locked to marketing; a BRANCH_MANAGER is locked to their
+  // branch. SessionSync enforces that — this flag just controls whether
+  // the "Marketing View" switch-back link appears.
+  const canSwitchView = authRole === "SUPER_ADMIN" || authRole === "ADMIN";
 
-  // Sidebar nav. Real branch managers always get BM_NAV (no switching).
-  // Super admins get MKT_NAV when their current FA user is Marketing, and
-  // BM_NAV_FOR_ADMIN (with the "Marketing View" entry that routes back to
-  // the picker) when they're acting as a branch manager.
-  const nav = isAdminViewer
-    ? (currentUser.role === "MKT" ? MKT_NAV : BM_NAV_FOR_ADMIN)
-    : BM_NAV;
+  // Sidebar nav is driven by the *FA store* user role, not the NextAuth
+  // role, so MARKETING-role NextAuth users (who SessionSync maps to u-mkt)
+  // correctly see the full Marketing nav. The BM_NAV_FOR_ADMIN variant
+  // (with the switch-back "Marketing View" link) is only used when a
+  // super admin is impersonating a branch.
+  let nav: NavItem[];
+  if (currentUser.role === "MKT") {
+    nav = MKT_NAV;
+  } else if (canSwitchView) {
+    nav = BM_NAV_FOR_ADMIN;
+  } else {
+    nav = BM_NAV;
+  }
 
   const branchName = currentUser.branch
     ? BRANCHES.find(b => b.code === currentUser.branch)?.name
     : null;
-  const roleLabel = isAdminViewer
-    ? (currentUser.role === "MKT" ? "Marketing" : `Branch · ${branchName ?? currentUser.branch ?? ""}`)
-    : (branchName ?? currentUser.branch ?? "");
+  const roleLabel =
+    currentUser.role === "MKT"
+      ? "Marketing"
+      : canSwitchView
+        ? `Branch · ${branchName ?? currentUser.branch ?? ""}`
+        : (branchName ?? currentUser.branch ?? "");
 
   return (
     <div className="h-screen flex">
