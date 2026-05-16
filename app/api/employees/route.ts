@@ -187,7 +187,12 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error('Error registering employee:', error);
-    return NextResponse.json({ error: 'Failed to register employee' }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    const code = (error as { code?: string })?.code;
+    return NextResponse.json(
+      { error: `Failed to register employee: ${code ? `[${code}] ` : ''}${message}` },
+      { status: 500 },
+    );
   }
 }
 

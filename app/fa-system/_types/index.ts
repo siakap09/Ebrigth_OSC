@@ -116,35 +116,10 @@ export interface Student {
   active: boolean;
 }
 
-/** Eligibility rule: any active student can be invited to FA. The dashboard
- *  tracks an FA-progress checkbox per grade up to and including the student's
- *  current grade, so the FA invite picker must match — a G1 student can be
- *  invited for G1 FA, a G2 student for G1 or G2, etc. */
+/** Eligibility rule: a student is eligible for FA when they have at least one
+ *  prior grade slot to appraise (grade >= 2 — G1 students have no FA history yet). */
 export function isStudentEligible(student: Student): boolean {
-  return student.active;
-}
-
-/** Stats about a single `fetchAllStudents` call — populated by the API and
- *  shipped to the client so the UI can surface dropped rows that need
- *  fixing in Heidi. Lives in the shared types module so both the
- *  server-only loader and the client store can reference it. */
-export interface StudentLoadReport {
-  loaded: number;
-  skipped: {
-    missing_branch: number;
-    unknown_branch: number;
-    missing_grade: number;
-    bad_grade_format: number;
-  };
-  samples: Array<{
-    id: number;
-    reason: "missing_branch" | "unknown_branch" | "missing_grade" | "bad_grade_format";
-    branch: string | null;
-    grade_chapter: string | null;
-  }>;
-  /** True if the `ade_group` join succeeded. When false, age-category labels
-   *  are still derived from grade as a fallback. */
-  ageGroupJoinAvailable: boolean;
+  return student.active && student.grade >= 2;
 }
 
 /** Check if student has a backlog — any completed grade below current where FA was not done. */
