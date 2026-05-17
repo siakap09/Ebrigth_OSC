@@ -33,6 +33,7 @@ export function WalkInModal({ open, onClose, event, preferredDay, onSuccess }: W
   const allSessions = useFAStore(s => s.sessions);
   const invitations = useFAStore(s => s.invitations);
   const quotas = useFAStore(s => s.quotas);
+  const overrides = useFAStore(s => s.eventBranchOverrides);
   const inviteStudent = useFAStore(s => s.inviteStudent);
 
   // Wizard state
@@ -59,18 +60,30 @@ export function WalkInModal({ open, onClose, event, preferredDay, onSuccess }: W
     onClose();
   }
 
-  // Step 2 data — every student from the chosen branch (active OR inactive)
-  // who isn't already invited to the event, optionally narrowed by search.
-  // Inactive students stay in the list per Marketing's request; the row will
-  // wear an Inactive badge so it's obvious before adding the walk-in.
+  // Is the chosen branch unlocked for multi-grade invites in this event?
+  const branchMultiGradeAllowed = useMemo(() => {
+    if (!branch) return false;
+    return overrides.some(o => o.eventId === event.id && o.branchCode === branch);
+  }, [overrides, event.id, branch]);
+
+  // Step 2 data — every student from the chosen branch (active OR inactive),
+  // optionally narrowed by search. Inactive students stay in the list per
+  // Marketing's request; the row wears an Inactive badge so it's obvious.
+  //
+  // When the branch has the multi-grade override, students who already have
+  // an invite in this event are KEPT in the list — they may legitimately
+  // need a walk-in for a different grade on the same day. The server
+  // validates same-day + unique-grade at insert and surfaces a clear error
+  // in step 4 if the pick is wrong.
   const branchStudents = useMemo(() => {
     if (!branch) return [];
-    const alreadyInvited = new Set(
-      invitations.filter(i => i.eventId === event.id).map(i => i.studentId)
-    );
-    let list = allStudents
-      .filter(s => s.branch === branch)
-      .filter(s => !alreadyInvited.has(s.id));
+    let list = allStudents.filter(s => s.branch === branch);
+    if (!branchMultiGradeAllowed) {
+      const alreadyInvited = new Set(
+        invitations.filter(i => i.eventId === event.id).map(i => i.studentId)
+      );
+      list = list.filter(s => !alreadyInvited.has(s.id));
+    }
     if (gradeFilter !== "all") list = list.filter(s => s.grade === gradeFilter);
     const q = search.trim().toLowerCase();
     if (q) {
@@ -80,7 +93,7 @@ export function WalkInModal({ open, onClose, event, preferredDay, onSuccess }: W
       );
     }
     return list.sort((a, b) => a.name.localeCompare(b.name));
-  }, [branch, allStudents, invitations, event.id, search, gradeFilter]);
+  }, [branch, branchMultiGradeAllowed, allStudents, invitations, event.id, search, gradeFilter]);
 
   // Step 3 data — sessions for this event in canonical order.
   const eventSessions = useMemo(
@@ -121,9 +134,15 @@ export function WalkInModal({ open, onClose, event, preferredDay, onSuccess }: W
         allowOverQuota: true,
       });
       if (!created) {
-        // The only remaining failure mode is the duplicate guard, which the
-        // student picker already filters against — show a defensive message.
-        setError("Could not add walk-in. The student may already be invited to this event.");
+        // Server rejected with a business-rule reason (already invited, wrong
+        // day, duplicate grade, etc.). When the branch is unlocked the most
+        // common case is "this student already booked on a different day" or
+        // "this grade is already taken" — surface a friendly hint.
+        setError(
+          branchMultiGradeAllowed
+            ? "Could not add walk-in — this student may already have an invite on another day, or already booked for this grade."
+            : "Could not add walk-in. The student may already be invited to this event."
+        );
         return;
       }
       const studentName = student.name;

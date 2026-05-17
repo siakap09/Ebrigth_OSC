@@ -4,6 +4,7 @@ import {
   createInvitationRow,
   getEventStatus,
   getQuotaForSessionBranch,
+  InvitationRejected,
 } from "@fa/_lib/events.server";
 import { BranchCode, InvitationStatus } from "@fa/_types";
 
@@ -11,9 +12,9 @@ export const dynamic = "force-dynamic";
 
 // POST /api/fa/invitations — create one invitation.
 // Returns { invitation: null, reason } when the create is rejected by a
-// business rule (already invited / quota full / event closed). The 409 code
-// signals "valid request but conflicts with current state" so the client can
-// distinguish from a real server error.
+// business rule (already invited / quota full / event closed / booked on
+// another day / etc.). The 409 code signals "valid request but conflicts
+// with current state" so the client can distinguish from a real server error.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -57,23 +58,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const created = await createInvitationRow({
-      eventId,
-      sessionId,
-      studentId,
-      branch: branch as BranchCode,
-      targetGrade,
-      status,
-      invitedBy,
-    });
-    if (!created) {
-      // Unique-violation: student already invited to this event.
-      return NextResponse.json(
-        { invitation: null, reason: "Already invited" },
-        { status: 409 }
-      );
+    try {
+      const created = await createInvitationRow({
+        eventId,
+        sessionId,
+        studentId,
+        branch: branch as BranchCode,
+        targetGrade,
+        status,
+        invitedBy,
+      });
+      return NextResponse.json({ invitation: created });
+    } catch (err) {
+      if (err instanceof InvitationRejected) {
+        // Multi-grade rules: already invited / wrong day / grade dup.
+        return NextResponse.json(
+          { invitation: null, reason: err.reason },
+          { status: 409 }
+        );
+      }
+      throw err;
     }
-    return NextResponse.json({ invitation: created });
   } catch (err) {
     console.error("[api/fa/invitations POST] failed:", err);
     return NextResponse.json({ error: "Failed to create invitation" }, { status: 500 });

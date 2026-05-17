@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Search, Check } from "lucide-react";
+import { Search, Check, KeyRound } from "lucide-react";
 import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
 import { Modal } from "@fa/_components/shared/Modal";
@@ -27,26 +27,59 @@ export function InviteStudentsModal({
 }) {
   const user = useCurrentUser();
   const allStudents = useFAStore(s => s.students);
+  const allSessions = useFAStore(s => s.sessions);
+  const overrides = useFAStore(s => s.eventBranchOverrides);
+
   const students = useMemo(
     () => allStudents.filter(st => st.branch === user?.branch),
     [allStudents, user?.branch]
   );
 
+  // Is this branch unlocked for multi-grade invites in this event?
+  const branchOverride = useMemo(() => {
+    if (!user?.branch) return undefined;
+    return overrides.find(
+      o => o.eventId === session.eventId && o.branchCode === user.branch
+    );
+  }, [overrides, session.eventId, user?.branch]);
+  const multiGradeAllowed = !!branchOverride;
+
   const [search, setSearch] = useState("");
-  const [picks, setPicks] = useState<Map<string, number>>(new Map());
+  // Pick map keyed by `${studentId}:${grade}` so multi-grade students can have
+  // multiple picks at once. Stored grade is the actual target grade.
+  const [picks, setPicks] = useState<Map<string, { studentId: string; grade: number }>>(new Map());
   const [filterMode, setFilterMode] = useState<"eligible" | "all">("eligible");
   const [gradeFilter, setGradeFilter] = useState<number | "all">("all");
 
   const inviteCap = quota * 3;
   const remaining = inviteCap - currentInvitations.length;
-  const alreadyInEvent = new Set(allInvitationsForEvent.map(i => i.studentId));
+
+  // Build per-student summary of existing invites in this event:
+  //   - bookedGrades: set of grades already invited for
+  //   - bookedDay:    the day they're scheduled on (all invites must share it)
+  // Used both for the visibility gate and to suppress "duplicate" grade pills.
+  const sessionById = useMemo(() => {
+    const m = new Map<string, Session>();
+    for (const s of allSessions) m.set(s.id, s);
+    return m;
+  }, [allSessions]);
+
+  const bookingByStudent = useMemo(() => {
+    const m = new Map<string, { day: number; grades: Set<number> }>();
+    for (const inv of allInvitationsForEvent) {
+      const sess = sessionById.get(inv.sessionId);
+      if (!sess) continue;
+      const existing = m.get(inv.studentId);
+      if (existing) {
+        existing.grades.add(inv.targetGrade);
+      } else {
+        m.set(inv.studentId, { day: sess.dayNumber, grades: new Set([inv.targetGrade]) });
+      }
+    }
+    return m;
+  }, [allInvitationsForEvent, sessionById]);
 
   const visibleStudents = useMemo(() => {
-    // Inactive students stay in the picker — Marketing wanted the full
-    // studentrecords list (Active + Inactive) accessible so they can still
-    // invite a student even if their dashboard status is "Inactive". The
-    // row is badged so it's obvious. Eligibility / grade / search filters
-    // still apply on top.
     let list = students;
     if (filterMode === "eligible") list = list.filter(s => isStudentEligible(s));
     if (gradeFilter !== "all") list = list.filter(s => s.grade === gradeFilter);
@@ -65,15 +98,15 @@ export function InviteStudentsModal({
     });
   }, [students, search, filterMode, gradeFilter]);
 
-  function pickGrade(studentId: string, grade: number) {
+  function toggleGrade(studentId: string, grade: number) {
+    const key = `${studentId}:${grade}`;
     setPicks(prev => {
       const next = new Map(prev);
-      const current = next.get(studentId);
-      if (current === grade) {
-        next.delete(studentId);
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        if (current === undefined && next.size >= remaining) return prev;
-        next.set(studentId, grade);
+        if (next.size >= remaining) return prev;
+        next.set(key, { studentId, grade });
       }
       return next;
     });
@@ -87,6 +120,28 @@ export function InviteStudentsModal({
       description={`${session.startTime}–${session.endTime}${session.label ? ` · ${session.label}` : ""} · ${remaining} of ${inviteCap} invite slots open (target: ${quota} confirmed)`}
       size="xl"
     >
+      {/* Multi-grade unlocked banner (only shown when Marketing unlocked this branch) */}
+      {multiGradeAllowed && branchOverride && (
+        <div className="mb-4 p-3 rounded-[10px] bg-gold-50 border border-gold-300 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-[8px] bg-gold-500 text-ivory-50 flex items-center justify-center flex-shrink-0">
+            <KeyRound className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="fa-mono text-[10px] uppercase text-gold-600 font-semibold" style={{ letterSpacing: "0.12em" }}>
+              Multi-Grade unlocked
+            </div>
+            <div className="text-xs text-ink-700 mt-0.5">
+              Your branch may invite the same student to multiple grades on this day.
+              <span className="text-ink-400 ml-1">
+                Granted by <span className="font-mono">{branchOverride.grantedBy}</span>
+                {" · "}
+                {new Date(branchOverride.grantedAt).toLocaleDateString()}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b border-ivory-300">
         <div className="flex-1 min-w-[200px] relative">
@@ -146,17 +201,37 @@ export function InviteStudentsModal({
             {visibleStudents.map(student => {
               const eligible = isStudentEligible(student);
               const backlog = hasBacklog(student);
-              const pickedGrade = picks.get(student.id);
-              const isSelected = pickedGrade !== undefined;
-              const alreadyInvited = alreadyInEvent.has(student.id);
-              const capReached = !isSelected && picks.size >= remaining;
+              const booking = bookingByStudent.get(student.id);
+              const hasPriorBookingInEvent = !!booking;
+
+              // Visibility / lock rules:
+              //   • No prior booking → eligible, all invitable grades pickable.
+              //   • Prior booking, toggle OFF → fully locked (old behaviour).
+              //   • Prior booking, prior day ≠ this session's day → fully locked
+              //     (rule: all of a student's invites must share one day).
+              //   • Prior booking, same day, toggle ON → pickable for any
+              //     invitable grade NOT already booked.
+              let lockReason: null | "already-invited" | string = null;
+              if (hasPriorBookingInEvent) {
+                if (!multiGradeAllowed) {
+                  lockReason = "already-invited";
+                } else if (booking!.day !== session.dayNumber) {
+                  lockReason = `Booked on day ${booking!.day}`;
+                }
+              }
+
+              // Per-student pick count (a student can be selected for multiple
+              // grades when multiGradeAllowed and the row is unlocked).
+              const studentPicks = Array.from(picks.values()).filter(p => p.studentId === student.id);
+              const isSelected = studentPicks.length > 0;
+
               return (
                 <div
                   key={student.id}
                   className={`w-full flex items-start gap-3 p-3 rounded-[10px] border text-left transition-all ${
                     isSelected
                       ? "border-brand-600 bg-brand-50"
-                      : alreadyInvited
+                      : lockReason
                         ? "border-ivory-300 bg-ivory-100 opacity-60"
                         : "border-ivory-300 bg-white"
                   }`}
@@ -177,7 +252,7 @@ export function InviteStudentsModal({
                       {!student.active && (
                         <StatusPill tone="danger" showDot={false}>Inactive</StatusPill>
                       )}
-                      {eligible && !alreadyInvited && (
+                      {eligible && !lockReason && !hasPriorBookingInEvent && (
                         <StatusPill tone="success" showDot={false}>Eligible</StatusPill>
                       )}
                       {!eligible && !backlog && (
@@ -186,8 +261,17 @@ export function InviteStudentsModal({
                       {backlog && (
                         <StatusPill tone="warning" showDot={false}>Has backlog</StatusPill>
                       )}
-                      {alreadyInvited && (
+                      {lockReason === "already-invited" && (
                         <StatusPill tone="info" showDot={false}>Already invited</StatusPill>
+                      )}
+                      {lockReason && lockReason !== "already-invited" && (
+                        <StatusPill tone="info" showDot={false}>{lockReason}</StatusPill>
+                      )}
+                      {/* Booked grades pill — only visible when row is pickable */}
+                      {!lockReason && hasPriorBookingInEvent && booking!.grades.size > 0 && (
+                        <StatusPill tone="info" showDot={false}>
+                          Already: {Array.from(booking!.grades).sort((a,b)=>a-b).map(g=>`G${g}`).join(", ")}
+                        </StatusPill>
                       )}
                     </div>
                     <div className="text-xs text-ink-400 mt-1 flex items-center gap-2">
@@ -196,15 +280,12 @@ export function InviteStudentsModal({
                       <span className="font-mono">{student.parentPhone}</span>
                     </div>
 
-                    {!alreadyInvited && (
+                    {!lockReason && (
                       <div className="mt-2">
                         <div className="text-[10px] uppercase tracking-wider text-ink-400 mb-1">
-                          Pick grade to appraise
+                          {multiGradeAllowed && backlog ? "Pick one or more grades" : "Pick grade to appraise"}
                         </div>
                         {(() => {
-                          // Past grades are always invitable; the current
-                          // grade only joins the list once the student
-                          // reaches C9 (the classroom-side eligibility rule).
                           const grades = invitableGradesFor(student);
                           if (grades.length === 0) {
                             return (
@@ -218,21 +299,29 @@ export function InviteStudentsModal({
                             <div className="flex items-center gap-1 flex-wrap">
                               {grades.map(g => {
                                 const done = student.faHistory[g] === true;
-                                const isPicked = pickedGrade === g;
-                                const disabled = capReached && !isPicked;
+                                const alreadyBooked = booking?.grades.has(g) ?? false;
+                                const isPicked = picks.has(`${student.id}:${g}`);
+                                const capReached = !isPicked && picks.size >= remaining;
+                                const disabled = capReached || alreadyBooked;
                                 const baseCls = isPicked
                                   ? "bg-brand-600 text-white border-brand-600 ring-2 ring-brand-200"
-                                  : done
-                                    ? "bg-success-soft text-success border-success/30 hover:border-success"
-                                    : "bg-danger-soft text-danger border-danger/30 hover:border-danger";
-                                const marker = isPicked ? "✓" : done ? "✓" : "✗";
+                                  : alreadyBooked
+                                    ? "bg-ivory-200 text-ink-400 border-ivory-300 line-through"
+                                    : done
+                                      ? "bg-success-soft text-success border-success/30 hover:border-success"
+                                      : "bg-danger-soft text-danger border-danger/30 hover:border-danger";
+                                const marker = isPicked ? "✓" : alreadyBooked ? "✓" : done ? "✓" : "✗";
                                 return (
                                   <button
                                     key={g}
                                     type="button"
-                                    onClick={() => pickGrade(student.id, g)}
+                                    onClick={() => toggleGrade(student.id, g)}
                                     disabled={disabled}
-                                    title={`Grade ${g}: ${done ? "completed" : "not yet"}`}
+                                    title={
+                                      alreadyBooked
+                                        ? `Already invited for G${g} in this event`
+                                        : `Grade ${g}: ${done ? "completed" : "not yet"}`
+                                    }
                                     className={`text-[11px] font-mono px-2 py-1 rounded border transition-colors ${baseCls} ${
                                       disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
                                     }`}
@@ -264,9 +353,9 @@ export function InviteStudentsModal({
           <button
             onClick={() =>
               onInvite(
-                Array.from(picks.entries()).map(([studentId, targetGrade]) => ({
+                Array.from(picks.values()).map(({ studentId, grade }) => ({
                   studentId,
-                  targetGrade,
+                  targetGrade: grade,
                 }))
               )
             }
@@ -280,4 +369,3 @@ export function InviteStudentsModal({
     </Modal>
   );
 }
-

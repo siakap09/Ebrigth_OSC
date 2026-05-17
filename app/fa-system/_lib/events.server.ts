@@ -2,6 +2,7 @@ import "server-only";
 import { pool } from "./db";
 import {
   BranchCode,
+  EventBranchOverride,
   EventStatus,
   FAEvent,
   Invitation,
@@ -11,6 +12,16 @@ import {
 } from "@fa/_types";
 
 const TENANT = "ebright";
+
+// Sentinels used by createInvitationRow to distinguish business-rule rejects
+// from real DB errors. The route translates these to 409 responses with a
+// descriptive `reason` string.
+export class InvitationRejected extends Error {
+  constructor(public reason: string) {
+    super(reason);
+    this.name = "InvitationRejected";
+  }
+}
 
 // ----------------------------------------------------------------------------
 // Row shapes (snake_case from postgres) and mappers
@@ -66,6 +77,14 @@ interface InvitationRow {
   notes: string | null;
 }
 
+interface EventBranchOverrideRow {
+  event_id: string;
+  branch_code: string;
+  granted_by: string;
+  granted_at: Date | string;
+  reason: string | null;
+}
+
 function isoDate(d: Date | string): string {
   if (d instanceof Date) return d.toISOString().split("T")[0];
   return String(d).split("T")[0];
@@ -117,6 +136,16 @@ function rowToQuota(r: QuotaRow): SessionQuota {
   };
 }
 
+function rowToOverride(r: EventBranchOverrideRow): EventBranchOverride {
+  return {
+    eventId: r.event_id,
+    branchCode: r.branch_code as BranchCode,
+    grantedBy: r.granted_by,
+    grantedAt: isoTimestamp(r.granted_at) ?? new Date().toISOString(),
+    reason: r.reason ?? undefined,
+  };
+}
+
 function rowToInvitation(r: InvitationRow): Invitation {
   return {
     id: r.id,
@@ -144,8 +173,9 @@ export async function fetchAllEventData(): Promise<{
   sessions: Session[];
   quotas: SessionQuota[];
   invitations: Invitation[];
+  overrides: EventBranchOverride[];
 }> {
-  const [eventsRes, sessionsRes, quotasRes, invitationsRes] = await Promise.all([
+  const [eventsRes, sessionsRes, quotasRes, invitationsRes, overridesRes] = await Promise.all([
     pool.query<EventRow>(
       `SELECT id, name, month, year, venue, start_date, end_date, number_of_days,
               invitation_open_date, invitation_close_date, status, created_by, created_at, notes
@@ -173,6 +203,19 @@ export async function fetchAllEventData(): Promise<{
         WHERE tenant_id = $1`,
       [TENANT]
     ),
+    // Per-event per-branch multi-grade overrides. The fa_event_branch_overrides
+    // table may not exist on older deploys yet — wrap in a try so the FA
+    // dashboard still loads if the migration hasn't been applied.
+    pool.query<EventBranchOverrideRow>(
+      `SELECT event_id, branch_code, granted_by, granted_at, reason
+         FROM fa_event_branch_overrides`,
+    ).catch((err) => {
+      if ((err as { code?: string }).code === "42P01") {
+        // undefined_table — migration not applied yet
+        return { rows: [] as EventBranchOverrideRow[] };
+      }
+      throw err;
+    }),
   ]);
 
   return {
@@ -180,6 +223,7 @@ export async function fetchAllEventData(): Promise<{
     sessions: sessionsRes.rows.map(rowToSession),
     quotas: quotasRes.rows.map(rowToQuota),
     invitations: invitationsRes.rows.map(rowToInvitation),
+    overrides: overridesRes.rows.map(rowToOverride),
   };
 }
 
@@ -347,8 +391,77 @@ export async function createInvitationRow(args: {
   targetGrade: number;
   status: InvitationStatus;
   invitedBy: string;
-}): Promise<Invitation | null> {
-  // Returns null if the (event, student) unique constraint trips (already invited)
+}): Promise<Invitation> {
+  // Multi-step business-rule check, run as one logical transaction:
+  //   1. Is this (event, branch) opted into multi-grade invites?
+  //   2. Look up existing invitations for this (event, student).
+  //      • If none → free to insert.
+  //      • If toggle OFF → reject (any prior invite blocks).
+  //      • If toggle ON → must be (a) same dayNumber as the new session and
+  //        (b) different target_grade.
+  //   3. INSERT. The DB still has a final UNIQUE on (event, student, grade)
+  //      as a race-condition safety net (23505 trips → "duplicate grade").
+  //
+  // All rejects surface as InvitationRejected — the route catches it and
+  // returns 409 with a descriptive reason.
+
+  // 1. Override check
+  const overrideRes = await pool.query<{ branch_code: string }>(
+    `SELECT branch_code
+       FROM fa_event_branch_overrides
+      WHERE event_id = $1 AND branch_code = $2
+      LIMIT 1`,
+    [args.eventId, args.branch],
+  ).catch((err) => {
+    // If the migration hasn't been applied, treat as no overrides.
+    if ((err as { code?: string }).code === "42P01") return { rows: [] };
+    throw err;
+  });
+  const multiGradeAllowed = overrideRes.rows.length > 0;
+
+  // 2. Look up prior invites + the new session's day number in one query
+  const priorRes = await pool.query<{
+    target_grade: number | null;
+    day_number: number;
+    new_day_number: number;
+  }>(
+    `SELECT i.target_grade,
+            s_existing.day_number,
+            s_new.day_number AS new_day_number
+       FROM fa_sessions s_new
+       LEFT JOIN fa_invitations i
+         ON i.event_id = $1 AND i.student_id = $2 AND i.tenant_id = $3
+       LEFT JOIN fa_sessions s_existing
+         ON s_existing.id = i.session_id
+      WHERE s_new.id = $4 AND s_new.tenant_id = $3`,
+    [args.eventId, args.studentId, TENANT, args.sessionId],
+  );
+
+  if (priorRes.rows.length === 0) {
+    throw new InvitationRejected("Session not found");
+  }
+  const newDayNumber = priorRes.rows[0].new_day_number;
+  const priorInvites = priorRes.rows
+    .filter((r) => r.target_grade != null)
+    .map((r) => ({ grade: r.target_grade as number, day: r.day_number }));
+
+  if (priorInvites.length > 0) {
+    // Toggle off → first prior invite wins, reject any second.
+    if (!multiGradeAllowed) {
+      throw new InvitationRejected("Already invited");
+    }
+    // Toggle on → enforce same-day + different-grade.
+    const otherDay = priorInvites.find((p) => p.day !== newDayNumber);
+    if (otherDay) {
+      throw new InvitationRejected(`Booked on day ${otherDay.day}`);
+    }
+    const dupGrade = priorInvites.some((p) => p.grade === args.targetGrade);
+    if (dupGrade) {
+      throw new InvitationRejected(`Already invited for grade ${args.targetGrade}`);
+    }
+  }
+
+  // 3. INSERT — final DB safety net via UNIQUE(event, student, target_grade).
   try {
     const { rows } = await pool.query<InvitationRow>(
       `INSERT INTO fa_invitations
@@ -361,7 +474,10 @@ export async function createInvitationRow(args: {
     return rowToInvitation(rows[0]);
   } catch (err) {
     const code = (err as { code?: string }).code;
-    if (code === "23505") return null; // unique_violation
+    if (code === "23505") {
+      // Race condition: another concurrent insert beat us to this grade.
+      throw new InvitationRejected(`Already invited for grade ${args.targetGrade}`);
+    }
     throw err;
   }
 }
@@ -458,6 +574,39 @@ export async function getEventStatus(eventId: string): Promise<EventStatus | nul
     [eventId, TENANT]
   );
   return rows[0] ? (rows[0].status as EventStatus) : null;
+}
+
+// ----------------------------------------------------------------------------
+// Event branch overrides (multi-grade exception per event per branch)
+// ----------------------------------------------------------------------------
+
+export async function upsertEventBranchOverrideRow(args: {
+  eventId: string;
+  branchCode: BranchCode;
+  grantedBy: string;
+  reason?: string;
+}): Promise<EventBranchOverride> {
+  const { rows } = await pool.query<EventBranchOverrideRow>(
+    `INSERT INTO fa_event_branch_overrides (event_id, branch_code, granted_by, reason)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (event_id, branch_code) DO UPDATE
+       SET granted_by = EXCLUDED.granted_by,
+           granted_at = now(),
+           reason     = EXCLUDED.reason
+     RETURNING event_id, branch_code, granted_by, granted_at, reason`,
+    [args.eventId, args.branchCode, args.grantedBy, args.reason ?? null]
+  );
+  return rowToOverride(rows[0]);
+}
+
+export async function deleteEventBranchOverrideRow(
+  eventId: string,
+  branchCode: BranchCode
+): Promise<void> {
+  await pool.query(
+    `DELETE FROM fa_event_branch_overrides WHERE event_id = $1 AND branch_code = $2`,
+    [eventId, branchCode]
+  );
 }
 
 export async function getQuotaForSessionBranch(

@@ -12,6 +12,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
+  EventBranchOverride,
   FAEvent,
   Invitation,
   InvitationStatus,
@@ -32,6 +33,10 @@ interface FAStore {
   sessions: Session[];
   quotas: SessionQuota[];
   invitations: Invitation[];
+  /** Per-event per-branch toggles allowing multi-grade invitations of the
+   *  same student (one row per granted branch per event). Marketing/Admin
+   *  only — see /api/fa/event-overrides. */
+  eventBranchOverrides: EventBranchOverride[];
 
   // ------- Auth -------
   currentUserId: string | null;
@@ -94,6 +99,14 @@ interface FAStore {
   updateInvitationStatus: (id: string, status: InvitationStatus, by?: string) => Promise<void>;
   removeInvitation: (id: string) => Promise<void>;
   moveInvitationToSession: (invitationId: string, targetSessionId: string) => Promise<void>;
+
+  // ------- Multi-grade override toggles (Marketing/Admin only) -------
+  grantEventBranchOverride: (args: {
+    eventId: string;
+    branchCode: BranchCode;
+    reason?: string;
+  }) => Promise<EventBranchOverride>;
+  revokeEventBranchOverride: (eventId: string, branchCode: BranchCode) => Promise<void>;
 
   // ------- Display order (per session) — local-only -------
   sessionOrder: Record<string, string[]>;
@@ -176,6 +189,7 @@ export const useFAStore = create<FAStore>()(
       sessions: [],
       quotas: [],
       invitations: [],
+      eventBranchOverrides: [],
       sessionOrder: {},
       packedItems: {},
       walkInBuffer: {},
@@ -217,12 +231,14 @@ export const useFAStore = create<FAStore>()(
             sessions: Session[];
             quotas: SessionQuota[];
             invitations: Invitation[];
+            overrides?: EventBranchOverride[];
           };
           set({
             events: data.events,
             sessions: data.sessions,
             quotas: data.quotas,
             invitations: data.invitations,
+            eventBranchOverrides: data.overrides ?? [],
             eventsLoaded: true,
             eventsLoading: false,
           });
@@ -275,6 +291,8 @@ export const useFAStore = create<FAStore>()(
           sessions: s.sessions.filter((ss) => ss.eventId !== id),
           quotas: s.quotas.filter((q) => !sessionIds.includes(q.sessionId)),
           invitations: s.invitations.filter((i) => i.eventId !== id),
+          // The DB cascades the override rows via FK; mirror locally.
+          eventBranchOverrides: s.eventBranchOverrides.filter((o) => o.eventId !== id),
         }));
       },
 
@@ -411,6 +429,46 @@ export const useFAStore = create<FAStore>()(
         }));
       },
 
+      // ------- Multi-grade override toggles -------
+      grantEventBranchOverride: async ({ eventId, branchCode, reason }) => {
+        const r = await apiJson<{ override: EventBranchOverride }>(
+          "/api/fa/event-overrides",
+          {
+            method: "POST",
+            body: JSON.stringify({ eventId, branchCode, reason }),
+          }
+        );
+        if (!r.ok) {
+          const status = r.status;
+          const detail = (r.body as { error?: string })?.error ?? `HTTP ${status}`;
+          throw new Error(`Grant override failed: ${detail}`);
+        }
+        const override = r.data.override;
+        set((s) => {
+          const without = s.eventBranchOverrides.filter(
+            (o) => !(o.eventId === eventId && o.branchCode === branchCode)
+          );
+          return { eventBranchOverrides: [...without, override] };
+        });
+        return override;
+      },
+
+      revokeEventBranchOverride: async (eventId, branchCode) => {
+        const r = await apiJson<{ ok: true }>("/api/fa/event-overrides", {
+          method: "DELETE",
+          body: JSON.stringify({ eventId, branchCode }),
+        });
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error ?? `HTTP ${r.status}`;
+          throw new Error(`Revoke override failed: ${detail}`);
+        }
+        set((s) => ({
+          eventBranchOverrides: s.eventBranchOverrides.filter(
+            (o) => !(o.eventId === eventId && o.branchCode === branchCode)
+          ),
+        }));
+      },
+
       moveInvitationToSession: async (invitationId, targetSessionId) => {
         const inv = get().invitations.find((i) => i.id === invitationId);
         if (!inv) return;
@@ -493,6 +551,7 @@ export const useFAStore = create<FAStore>()(
           sessions: [],
           quotas: [],
           invitations: [],
+          eventBranchOverrides: [],
           eventsLoaded: false,
           eventsError: null,
           sessionOrder: {},
