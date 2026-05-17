@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Search, Check } from "lucide-react";
+import { Plus, Search, Check, KeyRound } from "lucide-react";
 import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
 import { AppShell } from "@fa/_components/shared/AppShell";
@@ -12,6 +12,7 @@ import { PreviewEventModal } from "@fa/_components/fa/PreviewEventModal";
 import { HeroCard } from "@fa/_components/fa/HeroCard";
 import { EventRow } from "@fa/_components/fa/EventRow";
 import { ArchiveRow } from "@fa/_components/fa/ArchiveRow";
+import { MultiGradeManagerModal } from "@fa/_components/fa/MultiGradeManagerModal";
 import { Z } from "@fa/_lib/zIndex";
 import { EventStatus, FAEvent } from "@fa/_types";
 
@@ -28,6 +29,13 @@ export default function MarketingEventsPage() {
   const [previewEvent, setPreviewEvent] = useState<FAEvent | null>(null);
   const [editEvent,    setEditEvent]    = useState<FAEvent | null>(null);
   const [savedToast,   setSavedToast]   = useState(false);
+  const [multiGradeOpen, setMultiGradeOpen] = useState(false);
+
+  // Total branches currently unlocked across all events — surfaced as a
+  // counter pip on the "Multi-Grade" button so Marketing notices at a
+  // glance how many overrides are active.
+  const overrides = useFAStore(s => s.eventBranchOverrides);
+  const totalUnlocked = overrides.length;
 
   function handleSaveEdit(patch: EditEventPatch) {
     if (!editEvent) return;
@@ -136,6 +144,25 @@ export default function MarketingEventsPage() {
               </button>
             ))}
           </div>
+
+          {/* Push the multi-grade button to the right end of the filter row. */}
+          <div className="ml-auto flex items-center">
+            <button
+              type="button"
+              onClick={() => setMultiGradeOpen(true)}
+              title="Unlock specific branches to invite the same student to multiple grades on one day (different sessions)."
+              className="inline-flex items-center gap-1.5 fa-mono text-[10px] uppercase px-3 py-1.5 rounded-[6px] border border-gold-300 bg-gold-50 text-gold-700 hover:bg-gold-100 hover:border-gold-500 transition-all"
+              style={{ letterSpacing: "0.06em" }}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              Multi-Grade
+              {totalUnlocked > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-gold-500 text-ivory-50 text-[10px] font-semibold leading-none">
+                  {totalUnlocked}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -243,6 +270,12 @@ export default function MarketingEventsPage() {
           onSave={handleSaveEdit}
         />
       )}
+
+      {/* ── Multi-Grade exceptions manager ─────────────────────────── */}
+      <MultiGradeManagerModal
+        open={multiGradeOpen}
+        onClose={() => setMultiGradeOpen(false)}
+      />
 
       {/* ── Save toast ──────────────────────────────────────────────── */}
       {savedToast && typeof document !== "undefined" && createPortal(

@@ -291,6 +291,20 @@ export interface Invitation {
 }
 
 // ----------------------------------------------------------------------------
+// Event branch overrides — per-event, per-branch toggle that lets a single
+// branch invite the same student to multiple grades within one event (all
+// on the same day, different sessions). Defaults to OFF for every branch on
+// every event. Only Marketing/Admin can toggle it.
+// ----------------------------------------------------------------------------
+export interface EventBranchOverride {
+  eventId: string;
+  branchCode: BranchCode;
+  grantedBy: string;            // email of the Marketing/Admin user who toggled it on
+  grantedAt: string;            // ISO timestamp
+  reason?: string;              // optional free-text audit note
+}
+
+// ----------------------------------------------------------------------------
 // Derived / view-model types (used by pages, not stored)
 // ----------------------------------------------------------------------------
 export interface SessionWithDetails extends Session {
