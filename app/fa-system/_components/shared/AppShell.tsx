@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
-import { BRANCHES } from "@fa/_types";
+import { BRANCHES, isBackOfficeRole } from "@fa/_types";
 import { ThemePicker } from "@fa/_components/shared/ThemePicker";
 import { Modal } from "@fa/_components/shared/Modal";
 import type { LucideIcon } from "lucide-react";
@@ -108,16 +108,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // a super admin is swapping views, so we can't infer admin-ness from it.
   const { data: session } = useSession();
   const authRole = (session?.user as { role?: string } | undefined)?.role;
-  // Back-office roles (admin + marketing) get the picker — they can switch
-  // between the Marketing view and any Branch Manager view via the door
-  // icon in the footer. BRANCH_MANAGER role is locked to their own branch;
-  // SessionSync enforces that. This flag controls whether the "Marketing
-  // View" switch-back link appears once the user has hopped into a branch.
-  const canSwitchView =
-    authRole === "SUPER_ADMIN" ||
-    authRole === "ADMIN" ||
-    authRole === "MARKETING" ||
-    authRole === "MKT";
+  // Back-office roles (admin / marketing / academy) get the picker — they
+  // can switch between the Marketing view and any Branch Manager view via
+  // the door icon in the footer. BRANCH_MANAGER is locked to their own
+  // branch; SessionSync enforces that. The set lives in @fa/_types so the
+  // two files (this + SessionSync) can't drift.
+  const canSwitchView = isBackOfficeRole(authRole);
 
   // Sidebar nav is driven by the *FA store* user role, not the NextAuth
   // role, so MARKETING-role NextAuth users (who SessionSync maps to u-mkt)

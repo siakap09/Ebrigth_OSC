@@ -3,22 +3,18 @@
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useFAStore } from "@fa/_lib/store";
-import { matchBranchByName } from "@fa/_types";
+import { matchBranchByName, isBackOfficeRole } from "@fa/_types";
 import { useFATheme } from "@fa/_lib/theme";
 
 /** Bridges NextAuth (the real auth) to the FA system's zustand store.
  *
  *  Mapping rules by NextAuth role:
- *    SUPER_ADMIN / ADMIN / MARKETING / MKT
+ *    SUPER_ADMIN / ADMIN / MARKETING / MKT / ACADEMY
  *                         → "back-office" roles. Default to FA Marketing
  *                           (u-mkt) on first arrival but DO NOT override a
- *                           manual pick from /fa-system/login, so all four
- *                           can use the picker to switch between Marketing
- *                           and any Branch Manager view.
- *                           MARKETING is the actual role value on the live
- *                           marketing user (marketing@ebright.my). MKT is
- *                           a defensive alias in case the role is stored in
- *                           that shorter form elsewhere.
+ *                           manual pick from /fa-system/login, so all of
+ *                           them can use the picker to switch between
+ *                           Marketing and any Branch Manager view.
  *    BRANCH_MANAGER       → forced to FA BM for the branch whose name matches
  *                           the User.branchName column. Re-asserted on every
  *                           render so a real BM can never end up impersonating
@@ -45,12 +41,7 @@ export function SessionSync() {
     const role = (session.user as { role?: string }).role;
     const branchName = (session.user as { branchName?: string }).branchName;
 
-    if (
-      role === "SUPER_ADMIN" ||
-      role === "ADMIN" ||
-      role === "MARKETING" ||
-      role === "MKT"
-    ) {
+    if (isBackOfficeRole(role)) {
       // Back-office roles share the same rule: default to u-mkt on first
       // arrival, then leave the FA store user alone so the picker at
       // /fa-system/login can switch them into any Branch Manager view.

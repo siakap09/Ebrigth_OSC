@@ -28,6 +28,27 @@ export const BRANCHES = [
 
 export type BranchCode = typeof BRANCHES[number]["code"];
 
+/** NextAuth roles that count as "back-office" — they default to the FA
+ *  Marketing view but can switch into any Branch Manager view through the
+ *  /fa-system/login picker. Add a new role here when an HQ-side
+ *  department should reach FA. BRANCH_MANAGER is intentionally NOT here —
+ *  those users are locked to their own branch.
+ *
+ *  Both SessionSync (which maps NextAuth → FA store user) and AppShell
+ *  (which decides whether the switch-view affordances render) read this
+ *  set, so the two stay in lock-step. */
+const BACK_OFFICE_ROLES: ReadonlySet<string> = new Set([
+  "SUPER_ADMIN",
+  "ADMIN",
+  "MARKETING",
+  "MKT",       // defensive alias in case the DB ever stores the short form
+  "ACADEMY",
+]);
+
+export function isBackOfficeRole(role: string | null | undefined): boolean {
+  return !!role && BACK_OFFICE_ROLES.has(role);
+}
+
 /** Look up an FA branch by a raw `User.branchName` string, tolerant of
  *  spelling/format drift between Heidi and the hardcoded BRANCHES list above.
  *
