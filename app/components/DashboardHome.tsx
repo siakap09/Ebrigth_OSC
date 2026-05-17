@@ -90,6 +90,16 @@ const dashboards: DashboardCard[] = [
       { name: "Courses", href: "#", icon: "📖" },
     ],
   },
+  {
+    // FA System lives as its own top-level tile (was previously buried as
+    // a sub-item under HRMS in DashboardDetail). The inner /fa-system
+    // route handles its own role-based nav, so we don't list children.
+    id: "fa-system",
+    title: "FA System",
+    icon: "🎗️",
+    color: "bg-rose-500",
+    items: [],
+  },
 ];
 
 export default function DashboardHome({ userRole }: { userRole?: string; userEmail?: string }) {
@@ -117,6 +127,7 @@ export default function DashboardHome({ userRole }: { userRole?: string; userEma
 const targetHref =
   dashboard.id === "academy" ? "/academy" :
   dashboard.id === "inventory" ? "/api/launch-inventory" :
+  dashboard.id === "fa-system" ? "/fa-system" :
   `/dashboards/${dashboard.id}`;
 
 const href = isDisabled ? "#" : targetHref;

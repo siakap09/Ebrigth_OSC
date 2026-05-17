@@ -63,7 +63,6 @@ export const DASHBOARD_TREE: DashboardNode[] = [
       { key: "hrms.offboarding",      label: "Offboarding",          href: "/offboarding" },
       { key: "hrms.hr-dashboard",     label: "HR Dashboard",         href: "/hr-dashboard" },
       { key: "hrms.manpower-cost",    label: "Manpower Cost Report", href: "/manpower-cost-report" },
-      { key: "hrms.fa-system",        label: "FA System",            href: "/fa-system" },
       { key: "hrms.staff-directory",  label: "Staff Directory",      href: "/staff-directory" },
       { key: "hrms.account",          label: "Account Management",   href: "/account-management" },
     ],
@@ -112,6 +111,16 @@ export const DASHBOARD_TREE: DashboardNode[] = [
       { key: "academy.courses", label: "Courses",          href: "#" },
     ],
   },
+
+  // FA System lives as its own top-level tile on the home dashboard (was
+  // previously a sub-item under HRMS). The internal route /fa-system has
+  // its own SessionSync-driven nav so we don't list children here.
+  {
+    key: "fa-system",
+    label: "FA System",
+    href: "/fa-system",
+    icon: "🎗️",
+  },
 ];
 
 // ─── Role allowlists ────────────────────────────────────────────────────────
@@ -141,7 +150,7 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
     "hrms.offboarding",
     "hrms.hr-dashboard",
     "hrms.manpower-cost",
-    "hrms.fa-system",
+    "fa-system",
     "hrms.account",
     "internal-dashboard",
     "library",
@@ -150,6 +159,7 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
   [ROLES.HOD]: [
     "home",
     "hrms",                       // HODs see the whole HRMS branch
+    "fa-system",                  // explicit since fa-system is now top-level
     "library",
   ],
 
@@ -158,7 +168,7 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
   [ROLES.BRANCH_MANAGER]: [
     "home",
     "hrms.manpower-planning",
-    "hrms.fa-system",
+    "fa-system",
     "crm",
     "inventory",
     "sms",
@@ -176,11 +186,21 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
     "hrms.employee",
     "inventory",
     "academy",
+    "fa-system",                  // Academy has full FA access (matches SessionSync)
   ],
 
   [ROLES.INTERN]:    ["home", "hrms.attendance", "hrms.claims", "library"],
   [ROLES.FULL_TIME]: ["home", "hrms.manpower-cost"],
   [ROLES.PART_TIME]: ["home", "hrms.manpower-cost"],
+
+  // Marketing department — full FA access (matches SessionSync's back-office
+  // role rule). Same baseline tiles as Academy until requirements diverge.
+  [ROLES.MARKETING]: [
+    "home",
+    "fa-system",
+    "crm",
+    "inventory",
+  ],
 };
 
 // ─── Access check ──────────────────────────────────────────────────────────
