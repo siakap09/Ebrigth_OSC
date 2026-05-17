@@ -118,9 +118,18 @@ export default function BMEventDetailPage() {
   // Marketing sets a confirm target (quota). BMs may invite up to 3× that
   // because we expect ~1 in 3 students to actually confirm.
   const totalBranchInviteCap = totalBranchQuota * 3;
-  const totalBranchInvitations = invitations.filter(i => i.branch === user.branch).length;
+  // Only count invitations in sessions this BM can actually see (i.e.
+  // sessions where their branch has a quota). Walk-ins or legacy invites
+  // tied to a session whose quota was later removed would otherwise inflate
+  // the "Invited" stat above what the per-session breakdown sums to.
+  const bmSessionIds = useMemo(() => new Set(bmSessions.map(s => s.id)), [bmSessions]);
+  const totalBranchInvitations = invitations.filter(
+    i => i.branch === user.branch && bmSessionIds.has(i.sessionId)
+  ).length;
   const totalBranchConfirmed = invitations.filter(
-    i => i.branch === user.branch && (i.status === "confirmed" || i.status === "attended")
+    i => i.branch === user.branch
+      && bmSessionIds.has(i.sessionId)
+      && (i.status === "confirmed" || i.status === "attended")
   ).length;
 
   const canInvite = event.status === "open";
