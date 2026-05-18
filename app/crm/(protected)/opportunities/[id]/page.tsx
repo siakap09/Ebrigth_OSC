@@ -54,8 +54,10 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
     childAge1:          string | null
     externalSourceTable: string | null
     externalSourceId:    string | null
+    appointments?:      Array<{ id: string; startAt: Date }>
   }
   const cExt = contact as CExt
+  const trialAppointment = cExt.appointments?.[0] ?? null
   const isChild = !!cExt.parentFullName
   const parentDisplay = isChild ? (cExt.parentFullName ?? '—') : childOwnName
   const studentName = isChild
@@ -208,6 +210,25 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
               {' · '}
               Pipeline: <span className="text-slate-700 dark:text-slate-200">{opp.pipeline.name}</span>
             </p>
+            {/* Trial timeslot pill — surfaced as soon as the lead has a
+                booked Trial Class appointment (i.e. after a CT move). */}
+            {trialAppointment && (
+              <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                <Clock className="h-3.5 w-3.5" />
+                Trial:{' '}
+                {new Date(trialAppointment.startAt).toLocaleDateString('en-GB', {
+                  weekday: 'short',
+                  day:     '2-digit',
+                  month:   'short',
+                  year:    'numeric',
+                })}
+                {' @ '}
+                {new Date(trialAppointment.startAt).toLocaleTimeString('en-GB', {
+                  hour:   '2-digit',
+                  minute: '2-digit',
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

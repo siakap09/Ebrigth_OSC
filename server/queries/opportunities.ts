@@ -35,6 +35,14 @@ export type OpportunityCard = {
     contactTags: {
       tag: { id: string; name: string; color: string }
     }[]
+    /** Latest "Trial Class" appointment for this contact — surfaced on the
+     *  kanban card + lead detail so BMs can see the booked timeslot at a
+     *  glance without clicking through to the modal. Empty when the lead
+     *  hasn't been moved to CT yet. */
+    appointments: {
+      id:      string
+      startAt: Date
+    }[]
   }
   assignedUser: {
     id: string
@@ -142,6 +150,13 @@ export async function getAllBranchesKanban(
           contactTags: {
             include: { tag: { select: { id: true, name: true, color: true } } },
           },
+          // Latest Trial Class appointment for the kanban card timeslot pill.
+          appointments: {
+            where: { title: 'Trial Class' },
+            orderBy: { startAt: 'desc' },
+            take: 1,
+            select: { id: true, startAt: true },
+          },
         },
       },
       assignedUser: { select: { id: true, name: true, email: true, image: true } },
@@ -230,6 +245,14 @@ export async function getPipelineKanban(
                   },
                 },
               },
+              // Latest Trial Class appointment so the kanban card can show
+              // the booked timeslot at a glance.
+              appointments: {
+                where: { title: 'Trial Class' },
+                orderBy: { startAt: 'desc' },
+                take: 1,
+                select: { id: true, startAt: true },
+              },
             },
           },
           assignedUser: {
@@ -300,6 +323,14 @@ export async function getOpportunityById(
             include: {
               user: { select: { id: true, name: true, email: true } },
             },
+          },
+          // Latest Trial Class appointment surfaced as a "timeslot" pill
+          // on the lead detail page + the kanban detail modal.
+          appointments: {
+            where: { title: 'Trial Class' },
+            orderBy: { startAt: 'desc' },
+            take: 1,
+            select: { id: true, startAt: true },
           },
         },
       },

@@ -358,35 +358,36 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
 }
 
 // ─── Refresh button ───────────────────────────────────────────────────────────
-// Sits to the LEFT of the search bar. Click → invalidate every React Query
-// cache + soft-refresh the server components. Spins for a beat so the user
-// gets visual confirmation that something happened (the polling-based
-// queries refetch on a 30s interval anyway, this is the manual override).
+// Sits to the LEFT of the search bar. Click → hard reload of the current
+// page. We used to call queryClient.invalidateQueries() + router.refresh()
+// here, but invalidateQueries only refetches ACTIVE queries (mounted
+// observers) — anything on a tab the user isn't currently viewing stayed
+// stale, and server-component pages didn't visibly update either. A plain
+// reload is what users expect from a "Refresh" button anyway, so we just
+// do that. The icon spins for a beat before the reload kicks in so the
+// click registers visually.
 
 function RefreshButton() {
-  const router = useRouter()
-  const queryClient = useQueryClient()
   const [spinning, setSpinning] = useState(false)
 
-  async function handleRefresh() {
+  function handleRefresh() {
     if (spinning) return
     setSpinning(true)
-    try {
-      await queryClient.invalidateQueries()
-      router.refresh()
-    } finally {
-      // Brief minimum spin so the icon doesn't flash too fast to register.
-      setTimeout(() => setSpinning(false), 600)
-    }
+    // Tiny delay so the spinner has a chance to paint before we navigate.
+    // 250ms is enough to register the click without making the user wait.
+    setTimeout(() => {
+      window.location.reload()
+    }, 250)
   }
 
   return (
     <button
       type="button"
       onClick={handleRefresh}
-      title="Refresh data"
-      aria-label="Refresh data"
-      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-slate-800 dark:hover:text-indigo-300 transition-colors"
+      disabled={spinning}
+      title="Refresh page"
+      aria-label="Refresh page"
+      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-60 dark:hover:bg-slate-800 dark:hover:text-indigo-300 transition-colors"
     >
       <RefreshCw className={cn('h-4 w-4', spinning && 'animate-spin')} />
     </button>

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { GripVertical, User } from 'lucide-react'
+import { GripVertical, User, Calendar } from 'lucide-react'
 import { cn, formatMYR, formatDate } from '@/lib/crm/utils'
 import { getAgeCategory, ageCategoryClasses } from '@/lib/crm/age-category'
 import type { OpportunityCard } from '@/server/queries/opportunities'
@@ -70,6 +70,21 @@ function LeadSourceIcon({ name }: { name: string }) {
     <span title={name} className="inline-flex h-5 w-5 items-center justify-center text-slate-700 dark:text-slate-300">
       <GlobeMark className="h-5 w-5" />
     </span>
+  )
+}
+
+// ─── KL same-day helper ──────────────────────────────────────────────────────
+// Compare two dates in Asia/Kuala_Lumpur wall-clock terms (fixed +8 offset,
+// no DST in KL). Used to detect "trial is today" so the card can light up.
+
+const KL_OFFSET_MS = 8 * 3600 * 1000
+function isSameKLDay(a: Date, b: Date): boolean {
+  const wa = new Date(a.getTime() + KL_OFFSET_MS)
+  const wb = new Date(b.getTime() + KL_OFFSET_MS)
+  return (
+    wa.getUTCFullYear() === wb.getUTCFullYear() &&
+    wa.getUTCMonth()    === wb.getUTCMonth() &&
+    wa.getUTCDate()     === wb.getUTCDate()
   )
 }
 
@@ -195,6 +210,14 @@ export function KanbanCard({
     addSuffix: true,
   })
 
+  // Is this lead's trial scheduled for today (Asia/Kuala_Lumpur wall-clock)?
+  // Compared in KL so a lead booked for "23 May 19:00" doesn't accidentally
+  // light up on the 22nd just because the browser is in a behind-KL TZ.
+  const trialStartAt = contact.appointments?.[0]?.startAt
+    ? new Date(contact.appointments[0].startAt)
+    : null
+  const isTrialToday = trialStartAt ? isSameKLDay(trialStartAt, new Date()) : false
+
   return (
     <div
       className={cn(
@@ -204,6 +227,9 @@ export function KanbanCard({
         ageColor,
         isDragging && 'shadow-xl rotate-1 opacity-90 scale-[1.02]',
         isSelected && 'ring-2 ring-indigo-500 ring-offset-1',
+        // "Popped" treatment when today is the lead's trial date — amber
+        // glow + thicker ring so the card stands out in the CT column.
+        isTrialToday && !isSelected && 'ring-2 ring-amber-400 ring-offset-1 shadow-md shadow-amber-100 dark:shadow-amber-900/20',
         'hover:shadow-md cursor-pointer',
       )}
       onClick={(e) => {
@@ -300,6 +326,34 @@ export function KanbanCard({
                 ? contact.parentFullName
                 : `${contact.firstName} ${contact.lastName ?? ''}`}
             </p>
+          )}
+
+          {/* Trial timeslot — surfaced whenever a Trial Class appointment
+              exists for this lead (i.e. after the BM moved it to CT).
+              Always rendered (not gated by Manage Fields) because the slot
+              is critical context once a lead is past CT. When today is the
+              trial date, the pill flips to an amber "TODAY" treatment so
+              the lead pops out of the column. */}
+          {trialStartAt && (
+            <div
+              className={cn(
+                'inline-flex items-center gap-1 self-start rounded-md px-1.5 py-0.5 text-[10px] font-semibold',
+                isTrialToday
+                  ? 'bg-amber-500 text-white shadow-sm'
+                  : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+              )}
+              title={`Trial: ${trialStartAt.toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+            >
+              <Calendar className="h-3 w-3" />
+              {isTrialToday && (
+                <span className="rounded bg-white/20 px-1 text-[9px] font-bold tracking-wider">
+                  TODAY
+                </span>
+              )}
+              {trialStartAt.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
+              {' · '}
+              {trialStartAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            </div>
           )}
 
           {/* Tags */}

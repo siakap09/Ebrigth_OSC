@@ -13,7 +13,7 @@ import {
   Draggable,
   type DropResult,
 } from '@hello-pangea/dnd'
-import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, AlertTriangle, ArrowRight, MoveRight, PenLine, Settings2 } from 'lucide-react'
+import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, CalendarDays, AlertTriangle, ArrowRight, MoveRight, PenLine, Settings2 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CustomiseCardDrawer } from './customise-card-drawer'
 import { loadCardPrefs, saveCardPrefs, type CardPrefs, DEFAULT_CARD_PREFS } from '@/lib/crm/kanban-card-prefs'
@@ -546,26 +546,6 @@ function FiltersBar({
         <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
       </div>
 
-      {/* Tag refinement */}
-      <div className="relative">
-        <select
-          value={tagFilter}
-          onChange={(e) => onTagFilterChange(e.target.value)}
-          className={cn(
-            'appearance-none rounded-lg border border-slate-300 dark:border-slate-600',
-            'bg-white dark:bg-slate-800 pl-3 pr-8 py-1.5 text-sm text-slate-900 dark:text-white',
-            'focus:outline-none focus:ring-2 focus:ring-indigo-500',
-          )}
-          title="Filter by tag"
-        >
-          <option value="">All tags</option>
-          {tagOptions.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-      </div>
-
       {/* Spacer pushes Manage Fields to the right edge, GHL-style. */}
       <div className="ml-auto" />
 
@@ -738,6 +718,18 @@ export function KanbanBoard({
     fromStageName: string
     toStageName: string
     previousStages: KanbanStage[]
+    /** Lead display name + cursor — shown as a badge in the modal when the
+     *  user is walking through a bulk-move queue. Absent for normal single
+     *  moves so the modal stays clean. */
+    bulkProgress?: { leadName: string; current: number; total: number }
+  } | null>(null)
+  // Pending bulk-move queue — non-null while the user is walking through the
+  // per-lead modal flow that bulk-Move all kicks off for CT/ENR/RSD/CL.
+  const [bulkQueue, setBulkQueue] = useState<{
+    remaining: string[]    // opportunity ids still to prompt for
+    toStageId: string
+    completed: number
+    total: number
   } | null>(null)
   // Blocked move (for invalid-transition popup — non-admins only)
   const [blockedMove, setBlockedMove] = useState<{
@@ -1009,10 +1001,14 @@ export function KanbanBoard({
     [stages, moveMutation],
   )
 
-  // Confirm move
+  // Confirm move. When this is part of a bulk queue, the post-success branch
+  // advances to the next lead's modal instead of closing the dialog.
   async function confirmMove() {
     if (!pendingMove || isConfirming) return
     setIsConfirming(true)
+
+    const wasBulk = !!pendingMove.bulkProgress
+    let moveSucceeded = false
 
     try {
       await moveMutation.mutateAsync({
@@ -1024,43 +1020,177 @@ export function KanbanBoard({
         enrollmentMonths,
         rescheduleDate: rescheduleDate || undefined,
       })
-      toast.success('Opportunity moved')
+      moveSucceeded = true
+      if (!wasBulk) toast.success('Opportunity moved')
     } catch {
-      // Rollback
       setLocalStages(pendingMove.previousStages)
       toast.error('Failed to move opportunity')
     } finally {
       setIsConfirming(false)
+    }
+
+    if (!moveSucceeded) {
+      // Single-move failure or bulk-step failure — clear the modal but ALSO
+      // abort any remaining bulk queue, since the user just saw an error.
+      setPendingMove(null)
+      if (wasBulk) {
+        setBulkQueue(null)
+      }
+      resetStageExtras()
+      return
+    }
+
+    if (!wasBulk || !bulkQueue) {
       setPendingMove(null)
       resetStageExtras()
+      return
+    }
+
+    // Bulk step succeeded — advance to the next lead, or finish the queue.
+    const [nextId, ...rest] = bulkQueue.remaining
+    const completed = bulkQueue.completed + 1
+    if (!nextId) {
+      setPendingMove(null)
+      setBulkQueue(null)
+      setSelectedIds(new Set())
+      resetStageExtras()
+      toast.success(`Moved ${completed} opportunit${completed === 1 ? 'y' : 'ies'}`)
+      void refetch()
+      return
+    }
+
+    // Reset extras + open the modal for the next lead before clearing
+    // pendingMove, so the modal stays mounted (no flicker) and just gets
+    // a new payload + bulk-progress badge.
+    resetStageExtras()
+    setBulkQueue({
+      remaining: rest,
+      toStageId: bulkQueue.toStageId,
+      completed,
+      total: bulkQueue.total,
+    })
+    const opened = openBulkPendingFor(nextId, bulkQueue.toStageId, {
+      current: completed + 1,
+      total: bulkQueue.total,
+    })
+    if (!opened) {
+      setPendingMove(null)
+      setBulkQueue(null)
+      toast.error('Bulk move aborted — could not locate the next lead')
     }
   }
 
-  // Cancel move (rollback)
+  // Cancel move (rollback). Cancelling mid-bulk-queue stops the whole
+  // sequence — any leads already moved stay moved, the rest are dropped.
   function cancelMove() {
     if (pendingMove) {
       setLocalStages(pendingMove.previousStages)
+    }
+    if (bulkQueue) {
+      const moved = bulkQueue.completed
+      setBulkQueue(null)
+      setSelectedIds(new Set())
+      if (moved > 0) {
+        toast.success(`Moved ${moved} opportunit${moved === 1 ? 'y' : 'ies'} (cancelled rest)`)
+        void refetch()
+      } else {
+        toast('Bulk move cancelled')
+      }
     }
     setPendingMove(null)
     resetStageExtras()
   }
 
-  // Bulk move
+  // Open the stage-change modal for one specific opportunity inside a
+  // bulk-move queue. Splits the snapshot/optimistic-update logic out so
+  // both handleBulkMove (start) and confirmMove (advance) can call it.
+  function openBulkPendingFor(opportunityId: string, toStageId: string, progress: { current: number; total: number }) {
+    const fromStage = stages.find((s) => s.opportunities.some((o) => o.id === opportunityId))
+    const toStage   = stages.find((s) => s.id === toStageId)
+    if (!fromStage || !toStage) return false
+    const card = fromStage.opportunities.find((o) => o.id === opportunityId)
+    if (!card) return false
+
+    const previousStages = JSON.parse(JSON.stringify(stages)) as KanbanStage[]
+    // Optimistically pull the card out of its current column so the user can
+    // see the progress visibly. The actual API call happens on confirm.
+    setLocalStages((prev) => {
+      if (!prev) return prev
+      return prev.map((stage) => {
+        if (stage.id === fromStage.id) {
+          return { ...stage, opportunities: stage.opportunities.filter((o) => o.id !== opportunityId) }
+        }
+        if (stage.id === toStage.id) {
+          return {
+            ...stage,
+            opportunities: [
+              { ...card, stageId: toStage.id, lastStageChangeAt: new Date() },
+              ...stage.opportunities,
+            ],
+          }
+        }
+        return stage
+      })
+    })
+
+    const leadName = `${card.contact.firstName}${card.contact.lastName ? ' ' + card.contact.lastName : ''}`.trim() || '(No name)'
+    setPendingMove({
+      opportunityId,
+      branchId: card.branchId,
+      fromStageId: fromStage.id,
+      toStageId,
+      fromStageName: fromStage.name,
+      toStageName: toStage.name,
+      previousStages,
+      bulkProgress: { leadName, current: progress.current, total: progress.total },
+    })
+    resetStageExtras()
+    return true
+  }
+
+  // Bulk move. Stages that need extras (CT / Enrolled / Reschedule / Cold
+  // Lead) route through the per-lead modal queue so each lead gets its own
+  // date / slot / package / reason. Other stages take the fast bulk-endpoint
+  // path because no extras are needed.
   async function handleBulkMove(toStageId: string) {
     const ids = Array.from(selectedIds)
-    try {
-      const res = await fetch('/api/crm/opportunities/bulk/move', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opportunityIds: ids, toStageId }),
-      })
-      if (!res.ok) throw new Error('Bulk move failed')
-      const data = (await res.json()) as { moved: number }
-      toast.success(`Moved ${data.moved} opportunities`)
-      setSelectedIds(new Set())
-      void refetch()
-    } catch {
-      toast.error('Bulk move failed')
+    if (ids.length === 0) return
+
+    const toStage = stages.find((s) => s.id === toStageId)
+    const normalized = toStage?.name.trim().toLowerCase() ?? ''
+    const requiresModal =
+      normalized === 'confirmed for trial' ||
+      normalized === 'enrolled' ||
+      normalized === 'reschedule' ||
+      normalized === 'cold lead'
+
+    if (!requiresModal) {
+      try {
+        const res = await fetch('/api/crm/opportunities/bulk/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ opportunityIds: ids, toStageId }),
+        })
+        if (!res.ok) throw new Error('Bulk move failed')
+        const data = (await res.json()) as { moved: number }
+        toast.success(`Moved ${data.moved} opportunities`)
+        setSelectedIds(new Set())
+        void refetch()
+      } catch {
+        toast.error('Bulk move failed')
+      }
+      return
+    }
+
+    // Modal-required path: walk through each selected lead sequentially.
+    const remaining = [...ids]
+    const firstId = remaining.shift()
+    if (!firstId) return
+    setBulkQueue({ remaining, toStageId, completed: 0, total: ids.length })
+    const opened = openBulkPendingFor(firstId, toStageId, { current: 1, total: ids.length })
+    if (!opened) {
+      setBulkQueue(null)
+      toast.error('Could not open bulk move')
     }
   }
 
@@ -1243,6 +1373,7 @@ export function KanbanBoard({
           onConfirm={confirmMove}
           onCancel={cancelMove}
           isPending={isConfirming}
+          bulkProgress={pendingMove.bulkProgress}
         />
       )}
 
@@ -1337,6 +1468,8 @@ type HistoryEntry = {
   changedAt: string | Date
   toStage: StageLite | null
   fromStage: StageLite | null
+  /** Stage-change remark / note text recorded by the BM at move time. */
+  note?: string | null
 }
 
 /**
@@ -1427,11 +1560,32 @@ function OpportunityDetailModal({
           createdAt: string | Date
           user: { id: string; name: string | null; email: string } | null
         }>
+        /** Latest Trial Class appointment surfaced as a timeslot pill. */
+        appointments?: Array<{ id: string; startAt: string | Date }>
       }
     } | undefined
     isLoading: boolean
   }
   const notes = full?.contact?.notes ?? []
+  // Trial timeslot — prefer the detail-API copy, fall back to the kanban-card
+  // copy already on `opportunity.contact.appointments` so the pill renders
+  // immediately on first paint even before the detail fetch settles.
+  const trialAppt =
+    full?.contact?.appointments?.[0] ??
+    (opportunity.contact as unknown as { appointments?: Array<{ id: string; startAt: string | Date }> })
+      .appointments?.[0] ??
+    null
+  // Stage remarks history — every prior stage move with a non-empty note.
+  // Newest-first so the most recent context is at the top of the section.
+  const stageRemarks = (full?.stageHistory ?? [])
+    .filter((h) => !!h.note && h.note.trim().length > 0)
+    .map((h) => ({
+      id:        h.id,
+      changedAt: h.changedAt,
+      note:      h.note ?? '',
+      toStage:   h.toStage,
+      fromStage: h.fromStage,
+    }))
   // Prefer the detail API's stage — in the "All Branches" aggregate view the
   // parent's stage lookup uses reference-pipeline IDs that won't match the
   // opportunity's own stageId.
@@ -1583,6 +1737,18 @@ function OpportunityDetailModal({
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Stage: {displayStageName || (loadingFull ? 'Loading…' : '—')}
             </p>
+            {/* Trial timeslot pill — only shown once a CT appointment exists. */}
+            {trialAppt && (() => {
+              const startAt = new Date(trialAppt.startAt)
+              return (
+                <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                  <CalendarDays className="h-3 w-3" />
+                  Trial: {startAt.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
+                  {' @ '}
+                  {startAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              )
+            })()}
           </div>
           <button
             onClick={onClose}
@@ -1634,6 +1800,41 @@ function OpportunityDetailModal({
               </div>
             )}
           </section>
+
+          {/* Stage Remarks — every prior stage move with a non-empty note.
+              Lets a BM scan past context (why the lead was dropped, what the
+              trial outcome was, etc.) without leaving the modal. */}
+          {!loadingFull && stageRemarks.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Stage remarks ({stageRemarks.length})
+              </h3>
+              <ul className="space-y-1.5">
+                {stageRemarks.map((r) => (
+                  <li
+                    key={r.id}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/50"
+                  >
+                    <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      {r.fromStage && (
+                        <>
+                          <span>{r.fromStage.shortCode}</span>
+                          <ArrowRight className="h-2.5 w-2.5" />
+                        </>
+                      )}
+                      {r.toStage && <span className="text-indigo-600 dark:text-indigo-300">{r.toStage.shortCode}</span>}
+                      <span className="ml-auto normal-case tracking-normal text-slate-400">
+                        {new Date(r.changedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm text-slate-900 dark:text-slate-100">
+                      {r.note}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* Move to stage — rule-filtered picker. Hidden when the modal is
               still loading the full opportunity (so we don't pre-fill from

@@ -51,6 +51,9 @@ const PREVIEW_OPP: OpportunityCard = {
       { tag: { id: 't1', name: 'Hot', color: '#ef4444' } },
       { tag: { id: 't2', name: 'Trial Booked', color: '#10b981' } },
     ],
+    // Required by the OpportunityCard type after the trial-timeslot field
+    // was added. Empty here so the preview card doesn't render a fake pill.
+    appointments: [],
   },
   assignedUser: {
     id: 'preview-user',

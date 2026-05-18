@@ -23,6 +23,10 @@ interface StageChangeModalProps {
   onConfirm: () => void
   onCancel: () => void
   isPending?: boolean
+  /** When the modal is opened as part of a bulk-move queue, show a "Lead
+   *  N of M: <name>" badge in the header so the BM knows where they are
+   *  in the sequence. Absent for single-lead moves. */
+  bulkProgress?: { leadName: string; current: number; total: number }
 }
 
 /** "07:15 PM" → "19:15" (the key format the availability API returns). */
@@ -95,6 +99,7 @@ export function StageChangeModal({
   onConfirm,
   onCancel,
   isPending = false,
+  bulkProgress,
 }: StageChangeModalProps) {
   const normalized = toStageName.trim().toLowerCase()
   const isTrial = normalized === 'confirmed for trial'
@@ -167,21 +172,35 @@ export function StageChangeModal({
 
       <div className="relative z-10 w-full max-w-md rounded-xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700 max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 px-5 py-4 shrink-0">
-          <h2 id="stage-change-title" className="text-base font-semibold text-slate-900 dark:text-white">
-            {isTrial
-              ? 'Schedule Trial Class'
-              : isEnrolled
-                ? 'Select Enrollment Package'
-                : isReschedule
-                  ? 'Pick Reschedule Follow-up Date'
-                  : isColdLead
-                    ? 'Drop Lead — Cold Lead'
-                    : 'Move Opportunity'}
-          </h2>
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-700 px-5 py-4 shrink-0">
+          <div className="min-w-0 flex-1">
+            <h2 id="stage-change-title" className="text-base font-semibold text-slate-900 dark:text-white">
+              {isTrial
+                ? 'Schedule Trial Class'
+                : isEnrolled
+                  ? 'Select Enrollment Package'
+                  : isReschedule
+                    ? 'Pick Reschedule Follow-up Date'
+                    : isColdLead
+                      ? 'Drop Lead — Cold Lead'
+                      : 'Move Opportunity'}
+            </h2>
+            {/* Bulk-move progress badge — only when this dialog is being
+                walked through as part of a queued bulk action. */}
+            {bulkProgress && (
+              <div className="mt-1 flex items-center gap-2 text-xs">
+                <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">
+                  Lead {bulkProgress.current} of {bulkProgress.total}
+                </span>
+                <span className="truncate text-slate-600 dark:text-slate-300">
+                  {bulkProgress.leadName}
+                </span>
+              </div>
+            )}
+          </div>
           <button
             onClick={onCancel}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             <X className="h-4 w-4" />
           </button>
