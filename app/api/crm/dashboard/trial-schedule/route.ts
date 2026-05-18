@@ -16,7 +16,6 @@ import { resolveBranchAccess } from '@/lib/crm/branch-access'
 import {
   TRIAL_DAY_ORDER,
   TRIAL_ALL_SLOTS,
-  formatSlotLabel,
 } from '@/lib/crm/trial-config'
 
 const KL_OFFSET_MS = 8 * 3600 * 1000
@@ -145,20 +144,20 @@ export async function GET(req: NextRequest) {
   }
 
   for (const a of appointments) {
-    const wall = new Date(a.startAt.getTime() + KL_OFFSET_MS)
-    const dow = wall.getUTCDay()
+    // moveOpportunity stores trial times as "naive-KL-as-UTC": the user
+    // picks 06:00 PM and the row's startAt has UTC hour = 18. So we read
+    // back via getUTCHours / getUTCDay directly — adding KL_OFFSET_MS
+    // here would double-shift and bump every appointment off the grid.
+    // (This relies on the existing storage convention; if a future fix
+    // stores real UTC, both the storage and read sides change together.)
+    const dow = a.startAt.getUTCDay()
     const dayMeta = TRIAL_DAY_ORDER.find((d) => d.dayIndex === dow)
     if (!dayMeta) continue
-    // Use the KL wall-clock fields when formatting so the slot label always
-    // matches what was originally picked by the BM, regardless of the
-    // server's local timezone.
-    const slotLabel = formatSlotLabel(new Date(Date.UTC(
-      wall.getUTCFullYear(),
-      wall.getUTCMonth(),
-      wall.getUTCDate(),
-      wall.getUTCHours(),
-      wall.getUTCMinutes(),
-    )))
+    const h24 = a.startAt.getUTCHours()
+    const mm  = String(a.startAt.getUTCMinutes()).padStart(2, '0')
+    const period = h24 >= 12 ? 'PM' : 'AM'
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+    const slotLabel = `${String(h12).padStart(2, '0')}:${mm} ${period}`
     const bucket = grid[dayMeta.key]?.[slotLabel]
     if (!bucket) continue
     const name = `${a.contact.firstName}${a.contact.lastName ? ' ' + a.contact.lastName : ''}`.trim()
