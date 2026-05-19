@@ -19,7 +19,7 @@ import { useFATheme } from "@pcm/_lib/theme";
  *                           matches the User.branchName column. Re-asserted
  *                           on every render so a real BM can never end up
  *                           impersonating Academy or a different branch.
- *    anything else (incl. MARKETING) → no PCM login. Marketing belongs to
+ *    anything else (incl. MARKETING) → no PCM login. Academy belongs to
  *                           FA System, not PCM.
  */
 export function SessionSync() {

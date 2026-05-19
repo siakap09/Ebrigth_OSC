@@ -68,7 +68,7 @@ export function WalkInModal({ open, onClose, event, preferredDay, onSuccess }: W
 
   // Step 2 data — every student from the chosen branch (active OR inactive),
   // optionally narrowed by search. Inactive students stay in the list per
-  // Marketing's request; the row wears an Inactive badge so it's obvious.
+  // Academy's request; the row wears an Inactive badge so it's obvious.
   //
   // When the branch has the multi-grade override, students who already have
   // an invite in this event are KEPT in the list — they may legitimately

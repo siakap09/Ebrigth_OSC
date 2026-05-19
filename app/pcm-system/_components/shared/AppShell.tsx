@@ -13,7 +13,6 @@ import {
   CalendarDays,
   ClipboardList,
   ChartBar,
-  Package,
   Building2,
   LogOut,
   Home,
@@ -36,7 +35,6 @@ interface NavItem {
 
 const MKT_NAV: NavItem[] = [
   { href: "/pcm-system/academy", label: "Events", icon: CalendarDays },
-  { href: "/pcm-system/academy/inventory", label: "Inventory", icon: Package },
   { href: "/pcm-system/academy/students", label: "Student List", icon: Users },
   { href: "/pcm-system/shared/attendance", label: "Attendance", icon: ClipboardList },
   { href: "/pcm-system/shared/dashboard", label: "Dashboard", icon: ChartBar },
@@ -49,10 +47,10 @@ const BM_NAV: NavItem[] = [
 ];
 
 // Mirror nav for super admin while they're acting as a branch manager —
-// "Marketing View" pops them back to the Marketing user with one click.
+// "Academy View" pops them back to the Academy user with one click.
 const BM_NAV_FOR_ADMIN: NavItem[] = [
   { href: "/pcm-system/bm", label: "Events", icon: CalendarDays },
-  { action: "switchToMarketing", label: "Marketing View", icon: Building2 },
+  { action: "switchToMarketing", label: "Academy View", icon: Building2 },
   { href: "/pcm-system/shared/attendance", label: "Attendance", icon: ClipboardList },
   { href: "/pcm-system/shared/dashboard", label: "Dashboard", icon: ChartBar },
 ];
@@ -103,13 +101,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!currentUser) return null;
 
   // "Is this NextAuth user a super admin / admin?" — this is what gives them
-  // access to the picker (BM View / Marketing View entries). The FA store
+  // access to the picker (BM View / Academy View entries). The FA store
   // user (currentUser) can be either u-mkt OR a specific u-bm-<branch> while
   // a super admin is swapping views, so we can't infer admin-ness from it.
   const { data: session } = useSession();
   const authRole = (session?.user as { role?: string } | undefined)?.role;
   // Back-office roles (admin / marketing / academy) get the picker — they
-  // can switch between the Marketing view and any Branch Manager view via
+  // can switch between the Academy view and any Branch Manager view via
   // the door icon in the footer. BRANCH_MANAGER is locked to their own
   // branch; SessionSync enforces that. The set lives in @pcm/_types so the
   // two files (this + SessionSync) can't drift.
@@ -117,8 +115,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Sidebar nav is driven by the *FA store* user role, not the NextAuth
   // role, so MARKETING-role NextAuth users (who SessionSync maps to u-mkt)
-  // correctly see the full Marketing nav. The BM_NAV_FOR_ADMIN variant
-  // (with the switch-back "Marketing View" link) is only used when a
+  // correctly see the full Academy nav. The BM_NAV_FOR_ADMIN variant
+  // (with the switch-back "Academy View" link) is only used when a
   // super admin is impersonating a branch.
   let nav: NavItem[];
   if (currentUser.role === "MKT") {
@@ -134,7 +132,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     : null;
   const roleLabel =
     currentUser.role === "MKT"
-      ? "Marketing"
+      ? "Academy"
       : canSwitchView
         ? `Branch · ${branchName ?? currentUser.branch ?? ""}`
         : (branchName ?? currentUser.branch ?? "");
@@ -235,7 +233,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ThemePicker />
             {/* The "exit" icon is repurposed as the view switcher — clicking
                 it opens the FA picker page so back-office roles (admin +
-                marketing) can switch between Marketing and Branch views.
+                marketing) can switch between Academy and Branch views.
                 Hidden for real branch managers — they're locked to their
                 own branch by SessionSync, so the button would just no-op
                 for them. Sign-out lives in the top bar. */}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteInvitationRow, updateInvitationRow } from "@pcm/_lib/events.server";
-import { InvitationStatus } from "@pcm/_types";
+import { InvitationStatus, InviteType } from "@pcm/_types";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,11 @@ export async function PATCH(
       status: body.status as InvitationStatus | undefined,
       sessionId: body.sessionId,
       markedBy: body.markedBy,
+      coachId: body.coachId === undefined ? undefined : (body.coachId ?? null),
+      coachName: body.coachName === undefined ? undefined : (body.coachName ?? null),
+      inviteType: body.inviteType === "progress" || body.inviteType === "renewal"
+        ? (body.inviteType as InviteType)
+        : undefined,
     });
     if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(updated);

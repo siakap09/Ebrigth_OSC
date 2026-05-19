@@ -7,6 +7,7 @@ import {
   FAEvent,
   Invitation,
   InvitationStatus,
+  InviteType,
   Session,
   SessionQuota,
 } from "@pcm/_types";
@@ -75,6 +76,9 @@ interface InvitationRow {
   attendance_marked_at: Date | string | null;
   attendance_marked_by: string | null;
   notes: string | null;
+  invite_type: string;
+  coach_id: string | null;
+  coach_name: string | null;
 }
 
 interface EventBranchOverrideRow {
@@ -105,7 +109,7 @@ function rowToEvent(r: EventRow): FAEvent {
     venue: r.venue,
     startDate: isoDate(r.start_date),
     endDate: isoDate(r.end_date),
-    numberOfDays: (r.number_of_days as 1 | 2 | 3),
+    numberOfDays: r.number_of_days,
     invitationOpenDate: isoDate(r.invitation_open_date),
     invitationCloseDate: isoDate(r.invitation_close_date),
     status: r.status as EventStatus,
@@ -119,7 +123,7 @@ function rowToSession(r: SessionRow): Session {
   return {
     id: r.id,
     eventId: r.event_id,
-    dayNumber: r.day_number as 1 | 2 | 3,
+    dayNumber: r.day_number,
     sessionNumber: r.session_number,
     startTime: r.start_time,
     endTime: r.end_time,
@@ -155,6 +159,9 @@ function rowToInvitation(r: InvitationRow): Invitation {
     branch: r.branch as BranchCode,
     targetGrade: r.target_grade ?? 0,
     status: r.status as InvitationStatus,
+    inviteType: (r.invite_type === "renewal" ? "renewal" : "progress") as InviteType,
+    coachId: r.coach_id ?? undefined,
+    coachName: r.coach_name ?? undefined,
     invitedBy: r.invited_by ?? "",
     invitedAt: isoTimestamp(r.invited_at) ?? new Date().toISOString(),
     confirmedAt: isoTimestamp(r.confirmed_at),
@@ -198,7 +205,7 @@ export async function fetchAllEventData(): Promise<{
     ),
     pool.query<InvitationRow>(
       `SELECT id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-              invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes
+              invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name
          FROM pcm_invitations
         WHERE tenant_id = $1`,
       [TENANT]
@@ -391,6 +398,8 @@ export async function createInvitationRow(args: {
   targetGrade: number;
   status: InvitationStatus;
   invitedBy: string;
+  /** "progress" (default) or "renewal". Set by the BM at invite time. */
+  inviteType?: InviteType;
 }): Promise<Invitation> {
   // Multi-step business-rule check, run as one logical transaction:
   //   1. Is this (event, branch) opted into multi-grade invites?
@@ -462,14 +471,15 @@ export async function createInvitationRow(args: {
   }
 
   // 3. INSERT — final DB safety net via UNIQUE(event, student, target_grade).
+  const inviteType: InviteType = args.inviteType === "renewal" ? "renewal" : "progress";
   try {
     const { rows } = await pool.query<InvitationRow>(
       `INSERT INTO pcm_invitations
-         (tenant_id, event_id, session_id, student_id, branch, target_grade, status, invited_by, invited_at, confirmed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $7 = 'confirmed' THEN now() ELSE NULL END)
+         (tenant_id, event_id, session_id, student_id, branch, target_grade, status, invited_by, invited_at, confirmed_at, invite_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $7 = 'confirmed' THEN now() ELSE NULL END, $9)
        RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-                 invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes`,
-      [TENANT, args.eventId, args.sessionId, args.studentId, args.branch, args.targetGrade, args.status, args.invitedBy]
+                 invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name`,
+      [TENANT, args.eventId, args.sessionId, args.studentId, args.branch, args.targetGrade, args.status, args.invitedBy, inviteType]
     );
     return rowToInvitation(rows[0]);
   } catch (err) {
@@ -484,7 +494,17 @@ export async function createInvitationRow(args: {
 
 export async function updateInvitationRow(
   id: string,
-  patch: { status?: InvitationStatus; sessionId?: string; markedBy?: string }
+  patch: {
+    status?: InvitationStatus;
+    sessionId?: string;
+    markedBy?: string;
+    /** When the BM assigns/changes the coach for this invitation. Pass
+     *  `null` (for coachId) to clear the assignment. */
+    coachId?: string | null;
+    coachName?: string | null;
+    /** Allow the BM to flip Progress ↔ Renewal after the fact. */
+    inviteType?: InviteType;
+  }
 ): Promise<Invitation | null> {
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -507,29 +527,45 @@ export async function updateInvitationRow(
     fields.push(`session_id = $${i++}`);
     values.push(patch.sessionId);
   }
+  if (patch.coachId !== undefined) {
+    fields.push(`coach_id = $${i++}`);
+    values.push(patch.coachId);
+  }
+  if (patch.coachName !== undefined) {
+    fields.push(`coach_name = $${i++}`);
+    values.push(patch.coachName);
+  }
+  if (patch.inviteType !== undefined) {
+    fields.push(`invite_type = $${i++}`);
+    values.push(patch.inviteType);
+  }
   if (fields.length === 0) return null;
   fields.push(`updated_at = now()`);
   values.push(id, TENANT);
   const { rows } = await pool.query<InvitationRow>(
     `UPDATE pcm_invitations SET ${fields.join(", ")} WHERE id = $${i++} AND tenant_id = $${i}
      RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-               invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes`,
+               invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name`,
     values
   );
   if (!rows[0]) return null;
   const invitation = rowToInvitation(rows[0]);
   // When attendance is marked, persist the picked grade onto the student's
-  // pcm_progress_json so the FA tick stays after the event.
+  // pcm_progress_json so the box-checklist on the BM invite modal updates
+  // immediately and the change survives a full page reload.
   if (patch.status === "attended" && invitation.targetGrade > 0) {
-    await markFaProgressForStudent(invitation.studentId, invitation.targetGrade);
+    await markPcmProgressForStudent(invitation.studentId, invitation.targetGrade);
   }
   return invitation;
 }
 
 /** Mark grade `grade` as completed in a student's pcm_progress_json array.
+ *  Called from updateInvitationRow whenever an invitation is marked
+ *  `attended`, so the student's PCM box-checklist (rendered in the invite
+ *  modal and on the Student List page) reflects the new completion.
  *  The array is indexed 0-based (index `grade-1` = entry for grade `grade`).
  *  Read-modify-write so we handle shorter/null arrays defensively. */
-export async function markFaProgressForStudent(
+export async function markPcmProgressForStudent(
   studentId: string,
   grade: number,
 ): Promise<void> {

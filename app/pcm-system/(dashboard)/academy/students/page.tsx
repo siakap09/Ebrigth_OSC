@@ -9,7 +9,7 @@ import { BRANCHES, BranchCode, hasBacklog, invitableGradesFor, FA_CURRENT_GRADE_
 import { downloadCSV } from "@pcm/_lib/csv";
 import { RegistrationCrossCheck } from "@pcm/_components/fa/RegistrationCrossCheck";
 
-/** Marketing-side student list: every student across every branch, with
+/** Academy-side student list: every student across every branch, with
  *  per-grade FA-progress boxes that mirror the dashboard's checkbox column.
  *  Same data source as the BM-side invite picker (studentrecords), same box
  *  count per student (= current grade), so what shows here matches Heidi. */
@@ -29,7 +29,7 @@ export default function StudentListPage() {
   const [branchFilter, setBranchFilter] = useState<BranchCode | "all">("all");
   const [gradeFilter, setGradeFilter] = useState<number | "all">("all");
   const [progressFilter, setProgressFilter] = useState<"all" | "backlog" | "uptodate">("all");
-  // Default: show every student (active + inactive). Marketing wants the
+  // Default: show every student (active + inactive). Academy wants the
   // total here to match the dashboard's "Total students" count, including
   // Inactive rows. The checkbox is kept so it can be narrowed if needed.
   const [activeOnly, setActiveOnly] = useState(false);

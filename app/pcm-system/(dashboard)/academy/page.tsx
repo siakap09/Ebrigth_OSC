@@ -32,7 +32,7 @@ export default function MarketingEventsPage() {
   const [multiGradeOpen, setMultiGradeOpen] = useState(false);
 
   // Total branches currently unlocked across all events — surfaced as a
-  // counter pip on the "Multi-Grade" button so Marketing notices at a
+  // counter pip on the "Multi-Grade" button so Academy notices at a
   // glance how many overrides are active.
   const overrides = useFAStore(s => s.eventBranchOverrides);
   const totalUnlocked = overrides.length;

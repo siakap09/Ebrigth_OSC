@@ -10,12 +10,12 @@ export function SessionFormModal({
   open: boolean; onClose: () => void; session: Session | null;
   eventId: string; maxDays: number; existingSessions: Session[];
   /** When opening to create a new session from a specific day's "+" button. */
-  defaultDayNumber?: 1 | 2 | 3;
+  defaultDayNumber?: number;
   onSave: (data: Omit<Session, "id" | "eventId">) => void;
 }) {
   void eventId;
   const initialDay = session?.dayNumber ?? defaultDayNumber ?? 1;
-  const [dayNumber,     setDayNumber]     = useState<1 | 2 | 3>(initialDay);
+  const [dayNumber,     setDayNumber]     = useState<number>(initialDay);
   const [sessionNumber, setSessionNumber] = useState<number>(
     session?.sessionNumber ?? (existingSessions.filter(s => s.dayNumber === initialDay).length + 1)
   );
@@ -59,7 +59,7 @@ export function SessionFormModal({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="fa-label">Day</label>
-            <select className="fa-input" value={dayNumber} onChange={e => setDayNumber(Number(e.target.value) as 1 | 2 | 3)}>
+            <select className="fa-input" value={dayNumber} onChange={e => setDayNumber(Number(e.target.value))}>
               {Array.from({ length: maxDays }, (_, i) => i + 1).map(d => (
                 <option key={d} value={d}>Day {d}</option>
               ))}

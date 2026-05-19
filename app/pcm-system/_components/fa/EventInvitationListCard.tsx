@@ -13,6 +13,7 @@ const STATUS_TONE: Record<InvitationStatus, "neutral" | "info" | "success" | "wa
   attended: "success",
   declined: "danger",
   no_show: "warning",
+  rescheduled: "warning",
 };
 
 const STATUS_LABEL: Record<InvitationStatus, string> = {
@@ -21,6 +22,7 @@ const STATUS_LABEL: Record<InvitationStatus, string> = {
   attended: "Attended",
   declined: "Declined",
   no_show: "Absent",
+  rescheduled: "Reschedule",
 };
 
 type StatusGroup = "confirmed" | "all";

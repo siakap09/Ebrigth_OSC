@@ -136,13 +136,15 @@ export type EventStatus =
 
 export interface FAEvent {
   id: string;
-  name: string;                 // e.g. "April 2026 Pro-Class Mastery"
-  month: number;                // 1–12
+  name: string;                 // e.g. "PCM Week 21 (May 26)"
+  month: number;                // 1–12 (derived from start date)
   year: number;
   venue: string;                // Free text — e.g. "eBright HQ Subang"
-  startDate: string;            // ISO date
-  endDate: string;              // ISO date (== startDate for 1-day events)
-  numberOfDays: 1 | 2 | 3;
+  startDate: string;            // ISO date — for PCM this is always a Monday
+  endDate: string;              // ISO date — for PCM, Sunday (Monday + 6)
+  /** Number of days the event spans. PCM uses 7 (full week);
+   *  the type stays as a plain `number` so any week length works. */
+  numberOfDays: number;
   invitationOpenDate: string;   // When BMs can start inviting
   invitationCloseDate: string;  // Deadline for invitations
   status: EventStatus;
@@ -157,7 +159,9 @@ export interface FAEvent {
 export interface Session {
   id: string;
   eventId: string;
-  dayNumber: 1 | 2 | 3;         // Which day of the event
+  /** Which day of the event. 1-indexed (1 = startDate). For PCM weekly
+   *  events this can be 1–7 (Mon–Sun). FA events use 1–3. */
+  dayNumber: number;
   sessionNumber: number;        // 1, 2, 3... within the day
   startTime: string;            // "09:00"
   endTime: string;              // "10:00"
@@ -202,7 +206,7 @@ export interface Student {
  *  one grade slot the system would accept right now (past grade with a
  *  missed FA, or current grade after they hit C9 — see invitableGradesFor).
  *  Active-vs-Inactive status is intentionally NOT part of this rule —
- *  Marketing wants inactive students in the picker so they can still be
+ *  Academy wants inactive students in the picker so they can still be
  *  invited if needed (they'll show with an "Inactive" badge on the row). */
 export function isStudentEligible(student: Student): boolean {
   return invitableGradesFor(student).length > 0;
@@ -268,7 +272,13 @@ export type InvitationStatus =
   | "confirmed"     // Parent confirmed attendance
   | "declined"      // Parent declined
   | "attended"      // Student showed up on the day
-  | "no_show";      // Student did not show up
+  | "no_show"       // Student did not show up
+  | "rescheduled";  // Parent wants to push to a later session/week
+
+/** Whether this PCM invitation is a forward "Progress" attempt
+ *  (the normal flow, moving the student up a grade in pcm_progress_json)
+ *  or a "Renewal" repeat for a grade the student has already passed. */
+export type InviteType = "progress" | "renewal";
 
 export interface Invitation {
   id: string;
@@ -280,6 +290,14 @@ export interface Invitation {
    *  May differ from student.grade when clearing backlog. */
   targetGrade: number;
   status: InvitationStatus;
+  /** Progress (default) or Renewal. BM picks at invite time. */
+  inviteType: InviteType;
+  /** Coach (branchstaff) assigned to the student for this slot.
+   *  `coachId` references branchstaff.id (in the main OSC DB);
+   *  `coachName` is cached at assignment time so the UI doesn't have
+   *  to do a cross-DB join. Both null until the BM picks a coach. */
+  coachId?: string;
+  coachName?: string;
   invitedBy: string;            // User id (BM)
   invitedAt: string;
   confirmedAt?: string;
@@ -292,12 +310,12 @@ export interface Invitation {
 // Event branch overrides — per-event, per-branch toggle that lets a single
 // branch invite the same student to multiple grades within one event (all
 // on the same day, different sessions). Defaults to OFF for every branch on
-// every event. Only Marketing/Admin can toggle it.
+// every event. Only Academy/Admin can toggle it.
 // ----------------------------------------------------------------------------
 export interface EventBranchOverride {
   eventId: string;
   branchCode: BranchCode;
-  grantedBy: string;            // email of the Marketing/Admin user who toggled it on
+  grantedBy: string;            // email of the Academy/Admin user who toggled it on
   grantedAt: string;            // ISO timestamp
   reason?: string;              // optional free-text audit note
 }

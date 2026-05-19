@@ -61,7 +61,7 @@ export default function MarketingEventDetailPage() {
 
   const [sessionModalOpen,  setSessionModalOpen]  = useState(false);
   const [editingSession,    setEditingSession]     = useState<Session | null>(null);
-  const [defaultDayForNew,  setDefaultDayForNew]   = useState<1 | 2 | 3 | undefined>(undefined);
+  const [defaultDayForNew,  setDefaultDayForNew]   = useState<number | undefined>(undefined);
   const [bulkModalOpen,     setBulkModalOpen]     = useState(false);
   const [editingEventOpen,  setEditingEventOpen]   = useState(false);
   const [deleteEventOpen,   setDeleteEventOpen]    = useState(false);
@@ -96,7 +96,7 @@ export default function MarketingEventDetailPage() {
   // editor instead of the single-session form. The per-day "+ Add to Day N"
   // shortcut still uses the single-session form for quick one-off adds.
   function openCreateSession() { setBulkModalOpen(true); }
-  function openCreateSessionForDay(day: 1 | 2 | 3) {
+  function openCreateSessionForDay(day: number) {
     setEditingSession(null);
     setDefaultDayForNew(day);
     setSessionModalOpen(true);
@@ -127,7 +127,7 @@ export default function MarketingEventDetailPage() {
 
         const created = await createSession({
           eventId,
-          dayNumber: toDay as 1 | 2 | 3,
+          dayNumber: toDay,
           sessionNumber: nextNumber++,
           startTime: src.startTime,
           endTime: src.endTime,
@@ -341,7 +341,7 @@ export default function MarketingEventDetailPage() {
                     )}
                     <button
                       type="button"
-                      onClick={() => openCreateSessionForDay(dayNum as 1 | 2 | 3)}
+                      onClick={() => openCreateSessionForDay(dayNum)}
                       className="fa-btn-ghost text-xs"
                     >
                       <Plus className="w-3.5 h-3.5" /> Add to Day {dayNum}

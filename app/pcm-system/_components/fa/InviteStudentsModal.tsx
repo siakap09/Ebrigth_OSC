@@ -6,11 +6,14 @@ import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { Modal } from "@pcm/_components/shared/Modal";
 import { StatusPill } from "@pcm/_components/fa/StatusPill";
-import { Invitation, Session, isStudentEligible, hasBacklog, invitableGradesFor, FA_CURRENT_GRADE_MIN_CHAPTER } from "@pcm/_types";
+import { Invitation, InviteType, Session, isStudentEligible, hasBacklog, invitableGradesFor, FA_CURRENT_GRADE_MIN_CHAPTER } from "@pcm/_types";
 
 export interface InvitePick {
   studentId: string;
   targetGrade: number;
+  /** Progress (the normal forward attempt) or Renewal (replay a grade
+   *  already passed). Applies to all picks in this submission. */
+  inviteType: InviteType;
 }
 
 export function InviteStudentsModal({
@@ -19,7 +22,7 @@ export function InviteStudentsModal({
   open: boolean;
   onClose: () => void;
   session: Session;
-  /** Marketing-set confirm target for this session/branch. Invite cap is 3× this. */
+  /** Academy-set confirm target for this session/branch. Invite cap is 3× this. */
   quota: number;
   currentInvitations: Invitation[];
   allInvitationsForEvent: Invitation[];
@@ -45,6 +48,10 @@ export function InviteStudentsModal({
   const multiGradeAllowed = !!branchOverride;
 
   const [search, setSearch] = useState("");
+  // Progress (default) vs Renewal — applies to all picks in this submission.
+  // Academy can split a session into multiple invite rounds if they need to
+  // mix types (one round of Progress invites, one of Renewal).
+  const [inviteType, setInviteType] = useState<InviteType>("progress");
   // Pick map keyed by `${studentId}:${grade}` so multi-grade students can have
   // multiple picks at once. Stored grade is the actual target grade.
   const [picks, setPicks] = useState<Map<string, { studentId: string; grade: number }>>(new Map());
@@ -120,7 +127,46 @@ export function InviteStudentsModal({
       description={`${session.startTime}–${session.endTime}${session.label ? ` · ${session.label}` : ""} · ${remaining} of ${inviteCap} invite slots open (target: ${quota} confirmed)`}
       size="xl"
     >
-      {/* Multi-grade unlocked banner (only shown when Marketing unlocked this branch) */}
+      {/* Progress / Renewal type toggle — applies to every pick in this submission. */}
+      <div className="mb-4 flex items-center gap-3 flex-wrap">
+        <span
+          className="fa-mono text-[10px] uppercase text-ink-500"
+          style={{ letterSpacing: "0.12em" }}
+        >
+          Invite type
+        </span>
+        <div className="inline-flex p-1 rounded-xl bg-ivory-200 border border-ivory-300">
+          <button
+            type="button"
+            onClick={() => setInviteType("progress")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              inviteType === "progress"
+                ? "bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-sm"
+                : "text-ink-600 hover:text-ink-900"
+            }`}
+          >
+            Progress
+          </button>
+          <button
+            type="button"
+            onClick={() => setInviteType("renewal")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              inviteType === "renewal"
+                ? "bg-gradient-to-r from-cyan-500 to-teal-500 text-white shadow-sm"
+                : "text-ink-600 hover:text-ink-900"
+            }`}
+          >
+            Renewal
+          </button>
+        </div>
+        <span className="text-[11px] text-ink-400 leading-tight">
+          {inviteType === "progress"
+            ? "Normal flow — moves the student forward on their PCM map."
+            : "Replay a grade the student has already passed."}
+        </span>
+      </div>
+
+      {/* Multi-grade unlocked banner (only shown when Academy unlocked this branch) */}
       {multiGradeAllowed && branchOverride && (
         <div className="mb-4 p-3 rounded-[10px] bg-gold-50 border border-gold-300 flex items-center gap-3">
           <div className="w-8 h-8 rounded-[8px] bg-gold-500 text-ivory-50 flex items-center justify-center flex-shrink-0">
@@ -356,6 +402,7 @@ export function InviteStudentsModal({
                 Array.from(picks.values()).map(({ studentId, grade }) => ({
                   studentId,
                   targetGrade: grade,
+                  inviteType,
                 }))
               )
             }

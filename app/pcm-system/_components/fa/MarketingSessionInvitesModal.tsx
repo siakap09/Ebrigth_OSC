@@ -18,6 +18,7 @@ const STATUS_TONE: Record<InvitationStatus, "neutral" | "info" | "success" | "wa
   attended: "success",
   declined: "danger",
   no_show: "warning",
+  rescheduled: "warning",
 };
 
 const STATUS_LABEL: Record<InvitationStatus, string> = {
@@ -26,6 +27,7 @@ const STATUS_LABEL: Record<InvitationStatus, string> = {
   attended: "Attended",
   declined: "Declined",
   no_show: "No show",
+  rescheduled: "Reschedule",
 };
 
 export function MarketingSessionInvitesModal({
@@ -77,7 +79,7 @@ export function MarketingSessionInvitesModal({
   );
 
   // Group invitations by branch. Branches with a quota but no invites still
-  // show as a row so Marketing can see who hasn't started inviting yet.
+  // show as a row so Academy can see who hasn't started inviting yet.
   const groupedByBranch = useMemo(() => {
     const branchSet = new Set<string>();
     sessionInvites.forEach(i => branchSet.add(i.branch));

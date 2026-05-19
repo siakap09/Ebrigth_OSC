@@ -16,6 +16,7 @@ import {
   FAEvent,
   Invitation,
   InvitationStatus,
+  InviteType,
   Session,
   SessionQuota,
   Student,
@@ -34,7 +35,7 @@ interface FAStore {
   quotas: SessionQuota[];
   invitations: Invitation[];
   /** Per-event per-branch toggles allowing multi-grade invitations of the
-   *  same student (one row per granted branch per event). Marketing/Admin
+   *  same student (one row per granted branch per event). Academy/Admin
    *  only — see /api/pcm/event-overrides. */
   eventBranchOverrides: EventBranchOverride[];
 
@@ -49,7 +50,7 @@ interface FAStore {
   studentsError: string | null;
   /** Stats about which studentrecords rows were skipped during the last
    *  load (e.g. unknown branch, missing grade). Surfaced in the UI so
-   *  Marketing can see exactly which records need fixing in Heidi. */
+   *  Academy can see exactly which records need fixing in Heidi. */
   studentsReport: StudentLoadReport | null;
   /** Epoch ms of the last successful student fetch. Lets the UI show
    *  "synced 2 min ago" and decide whether a refresh is overdue. */
@@ -95,12 +96,24 @@ interface FAStore {
     invitedBy: string;
     initialStatus?: InvitationStatus;
     allowOverQuota?: boolean;
+    /** "progress" (default) or "renewal" — picked by the BM. */
+    inviteType?: InviteType;
   }) => Promise<Invitation | null>;
   updateInvitationStatus: (id: string, status: InvitationStatus, by?: string) => Promise<void>;
   removeInvitation: (id: string) => Promise<void>;
   moveInvitationToSession: (invitationId: string, targetSessionId: string) => Promise<void>;
+  /** Assign or clear the coach (branchstaff) on an existing invitation. Pass
+   *  `null` to clear. coachName is cached so the UI doesn't have to round-trip
+   *  to the main OSC DB every render. */
+  assignCoachToInvitation: (
+    invitationId: string,
+    coachId: string | null,
+    coachName: string | null,
+  ) => Promise<void>;
+  /** Flip an existing invitation between Progress and Renewal. */
+  updateInviteType: (invitationId: string, inviteType: InviteType) => Promise<void>;
 
-  // ------- Multi-grade override toggles (Marketing/Admin only) -------
+  // ------- Multi-grade override toggles (Academy/Admin only) -------
   grantEventBranchOverride: (args: {
     eventId: string;
     branchCode: BranchCode;
@@ -362,6 +375,7 @@ export const useFAStore = create<FAStore>()(
         invitedBy,
         initialStatus,
         allowOverQuota,
+        inviteType,
       }) => {
         const r = await apiJson<{ invitation: Invitation | null; reason?: string }>(
           "/api/pcm/invitations",
@@ -376,6 +390,7 @@ export const useFAStore = create<FAStore>()(
               invitedBy,
               initialStatus,
               allowOverQuota,
+              inviteType,
             }),
           }
         );
@@ -414,6 +429,36 @@ export const useFAStore = create<FAStore>()(
           }
           return { invitations };
         });
+      },
+
+      updateInviteType: async (id, inviteType) => {
+        const r = await apiJson<Invitation>(
+          `/api/pcm/invitations/${encodeURIComponent(id)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ inviteType }),
+          }
+        );
+        if (!r.ok) throw new Error(`Update invite type failed (HTTP ${r.status})`);
+        const updated = r.data;
+        set((s) => ({
+          invitations: s.invitations.map((i) => (i.id === id ? updated : i)),
+        }));
+      },
+
+      assignCoachToInvitation: async (id, coachId, coachName) => {
+        const r = await apiJson<Invitation>(
+          `/api/pcm/invitations/${encodeURIComponent(id)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ coachId, coachName }),
+          }
+        );
+        if (!r.ok) throw new Error(`Assign coach failed (HTTP ${r.status})`);
+        const updated = r.data;
+        set((s) => ({
+          invitations: s.invitations.map((i) => (i.id === id ? updated : i)),
+        }));
       },
 
       removeInvitation: async (id) => {

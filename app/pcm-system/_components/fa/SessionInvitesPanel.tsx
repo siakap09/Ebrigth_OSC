@@ -1,11 +1,18 @@
-﻿"use client";
+"use client";
 
+import { useEffect, useState, useMemo } from "react";
 import { Clock, X, Phone, UserPlus } from "lucide-react";
 import { useFAStore } from "@pcm/_lib/store";
 import { EmptyState } from "@pcm/_components/shared/EmptyState";
 import { StatusPill } from "@pcm/_components/fa/StatusPill";
 import { InvitationStatusSelector } from "@pcm/_components/fa/InvitationStatusSelector";
 import { Invitation, InvitationStatus, Session, Student, hasBacklog } from "@pcm/_types";
+
+interface Coach {
+  id: string;
+  name: string;
+  role: string | null;
+}
 
 export function SessionInvitesPanel({
   session, quota, invitations, canInvite, onOpenInvite, onStatusChange, onRemove,
@@ -19,14 +26,47 @@ export function SessionInvitesPanel({
   onRemove: (inv: Invitation) => void;
 }) {
   const students = useFAStore(s => s.students);
-  // `quota` from the page is marketing's confirm target. Invite cap is 3× that.
+  const assignCoach = useFAStore(s => s.assignCoachToInvitation);
+  const updateInviteType = useFAStore(s => s.updateInviteType);
+  // Branch of the first invitation — every invitation in a per-branch
+  // session comes from the same branch, so this is safe even before the
+  // student lookup. Used to scope the coach picker to the BM's branch.
+  const branch = invitations[0]?.branch;
+
+  const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [coachesError, setCoachesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!branch) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/pcm/coaches?branch=${encodeURIComponent(branch)}`, { cache: "no-store" });
+        if (!res.ok) {
+          setCoachesError(`Could not load coaches (HTTP ${res.status})`);
+          return;
+        }
+        const data = (await res.json()) as { coaches: Coach[] };
+        if (!cancelled) setCoaches(data.coaches);
+      } catch (err) {
+        if (!cancelled) setCoachesError(err instanceof Error ? err.message : "load failed");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [branch]);
+
+  // pcm-style quota math
   const inviteCap = quota * 3;
   const remaining = inviteCap - invitations.length;
   const confirmed = invitations.filter(i => i.status === "confirmed" || i.status === "attended").length;
+  const progressCount = invitations.filter(i => i.inviteType === "progress").length;
+  const renewalCount  = invitations.filter(i => i.inviteType === "renewal").length;
 
-  function getStudent(id: string): Student | undefined {
-    return students.find(s => s.id === id);
-  }
+  const studentsById = useMemo(() => {
+    const m = new Map<string, Student>();
+    for (const s of students) m.set(s.id, s);
+    return m;
+  }, [students]);
 
   return (
     <div>
@@ -44,9 +84,27 @@ export function SessionInvitesPanel({
           <h2 className="fa-display text-2xl text-ink-900">
             {session.label || `Session ${session.sessionNumber}`}
           </h2>
-          <div className="text-sm text-ink-500 mt-1">
-            <strong className="text-ink-900">{invitations.length}</strong> of <strong className="text-ink-900">{inviteCap}</strong> invites used ·
-            <strong className="text-ink-900 ml-1">{confirmed}</strong> of <strong className="text-ink-900">{quota}</strong> confirmed
+          <div className="text-sm text-ink-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              <strong className="text-ink-900">{invitations.length}</strong> of <strong className="text-ink-900">{inviteCap}</strong> invites
+            </span>
+            <span className="text-ink-300">·</span>
+            <span>
+              <strong className="text-ink-900">{confirmed}</strong> of <strong className="text-ink-900">{quota}</strong> confirmed
+            </span>
+            {invitations.length > 0 && (
+              <>
+                <span className="text-ink-300">·</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-gradient-to-r from-violet-500 to-fuchsia-500">
+                    PROG {progressCount}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-gradient-to-r from-cyan-500 to-teal-500">
+                    RENEW {renewalCount}
+                  </span>
+                </span>
+              </>
+            )}
           </div>
         </div>
         {canInvite && remaining > 0 && (
@@ -55,6 +113,12 @@ export function SessionInvitesPanel({
           </button>
         )}
       </div>
+
+      {coachesError && (
+        <div className="mb-3 rounded-[8px] bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2">
+          {coachesError}. Coach selection will be unavailable until this resolves.
+        </div>
+      )}
 
       {invitations.length === 0 ? (
         <EmptyState
@@ -74,8 +138,8 @@ export function SessionInvitesPanel({
               <tr>
                 <th>Student</th>
                 <th>Grade</th>
-                <th>Credit</th>
-                <th>Backlog</th>
+                <th>Type</th>
+                <th>Coach</th>
                 <th>Parent</th>
                 <th>Status</th>
                 <th></th>
@@ -83,27 +147,60 @@ export function SessionInvitesPanel({
             </thead>
             <tbody>
               {invitations.map(inv => {
-                const student = getStudent(inv.studentId);
+                const student = studentsById.get(inv.studentId);
                 if (!student) return null;
                 const backlog = hasBacklog(student);
+                const isProgress = inv.inviteType === "progress";
                 return (
                   <tr key={inv.id}>
                     <td>
-                      <div className="font-medium text-ink-900">{student.name}</div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-ink-900">{student.name}</span>
+                        {backlog && (
+                          <StatusPill tone="warning" showDot={false}>backlog</StatusPill>
+                        )}
+                      </div>
                       <div className="text-xs text-ink-400">#{student.id}</div>
                     </td>
                     <td>
                       <span className="font-mono text-sm">G{inv.targetGrade ?? student.grade}</span>
                     </td>
                     <td>
-                      <span className="text-xs text-ink-400">—</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void updateInviteType(inv.id, isProgress ? "renewal" : "progress")
+                        }
+                        title="Click to flip between Progress and Renewal"
+                        className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase text-white cursor-pointer transition-transform hover:scale-105 ${
+                          isProgress
+                            ? "bg-gradient-to-r from-violet-500 to-fuchsia-500"
+                            : "bg-gradient-to-r from-cyan-500 to-teal-500"
+                        }`}
+                        style={{ letterSpacing: "0.06em" }}
+                      >
+                        {isProgress ? "Progress" : "Renewal"}
+                      </button>
                     </td>
                     <td>
-                      {backlog ? (
-                        <StatusPill tone="warning" showDot={false}>Has backlog</StatusPill>
-                      ) : (
-                        <span className="text-xs text-ink-400">On time</span>
-                      )}
+                      <select
+                        className="fa-input text-xs"
+                        style={{ minWidth: "140px", paddingTop: "0.35rem", paddingBottom: "0.35rem" }}
+                        value={inv.coachId ?? ""}
+                        onChange={(e) => {
+                          const id = e.target.value || null;
+                          const coach = id ? coaches.find(c => c.id === id) : null;
+                          void assignCoach(inv.id, id, coach ? coach.name : null);
+                        }}
+                        disabled={coaches.length === 0}
+                      >
+                        <option value="">— Unassigned —</option>
+                        {coaches.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}{c.role ? ` · ${c.role}` : ""}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td>
                       <div className="text-sm text-ink-900">{student.parentName}</div>
@@ -138,4 +235,3 @@ export function SessionInvitesPanel({
     </div>
   );
 }
-

@@ -1,176 +1,197 @@
-﻿"use client";
+"use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { AppShell } from "@pcm/_components/shared/AppShell";
-import { ArrowLeft, CalendarDays, MapPin, Users, Info } from "lucide-react";
-import { addDays, format } from "date-fns";
+import { ArrowLeft, CalendarDays, Sparkles, Megaphone, Users, FileText } from "lucide-react";
+import { addDays, format, parseISO, differenceInCalendarDays } from "date-fns";
+import { BRANCHES, BranchCode } from "@pcm/_types";
 
-import { MONTHS } from "@pcm/_lib/constants";
+// PCM events can run for any number of days (1–14). Capped so the visual
+// day strip doesn't get out of hand.
+const MAX_DAYS = 14;
+
+function fmtIso(d: Date): string {
+  return format(d, "yyyy-MM-dd");
+}
 
 export default function NewEventPage() {
   const router = useRouter();
   const user = useCurrentUser();
   const createEvent = useFAStore(s => s.createEvent);
+  const createSession = useFAStore(s => s.createSession);
+  const setQuota = useFAStore(s => s.setQuota);
 
-  const today = new Date().toISOString().split("T")[0];
+  // Default: next Monday → next Friday (academy can change anything).
+  const defaultStart = useMemo(() => {
+    const today = new Date();
+    const wd = today.getDay() === 0 ? 7 : today.getDay();
+    const offset = ((8 - wd) % 7) || 7;
+    return fmtIso(addDays(today, offset));
+  }, []);
+  const defaultEnd = useMemo(
+    () => fmtIso(addDays(parseISO(defaultStart), 4)),
+    [defaultStart],
+  );
 
-  const [form, setForm] = useState({
-    name: "",
-    venue: "",
-    startDate: "",
-    endDate: "",
-    numberOfDays: 2 as 1 | 2 | 3,
-    invitationOpenDate: "",
-    invitationCloseDate: "",
-    notes: "",
+  const [name, setName]             = useState("");
+  const [startDate, setStartDate]   = useState(defaultStart);
+  const [endDate, setEndDate]       = useState(defaultEnd);
+  const [invOpen, setInvOpen]       = useState("");
+  const [invClose, setInvClose]     = useState("");
+  const [notes, setNotes]           = useState("");
+  const [skipQuotas, setSkipQuotas] = useState(false);
+  // Default session window (used for the auto-created first session)
+  const [sessionStart, setSessionStart] = useState("18:00");
+  const [sessionEnd,   setSessionEnd]   = useState("19:00");
+  const [sessionDay,   setSessionDay]   = useState(1);
+  const [quotas, setQuotas] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const b of BRANCHES) init[b.code] = "";
+    return init;
   });
-
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   if (!user || user.role !== "MKT") return null;
 
-  // Derived — month/year from start date
-  const startD = form.startDate ? new Date(form.startDate) : null;
-  const month = startD ? startD.getMonth() + 1 : 0;
-  const year = startD ? startD.getFullYear() : 0;
+  // Derived values
+  const startD = startDate ? parseISO(startDate) : null;
+  const endD   = endDate   ? parseISO(endDate)   : null;
+  const numberOfDays =
+    startD && endD ? Math.max(1, differenceInCalendarDays(endD, startD) + 1) : 1;
+  const tooManyDays = numberOfDays > MAX_DAYS;
+  const datesValid =
+    startD && endD && endD.getTime() >= startD.getTime() && !tooManyDays;
 
-  // Auto-suggest event name when start date changes
-  function handleStartDateChange(v: string) {
-    const d = new Date(v);
-    const autoName = `${MONTHS[d.getMonth()]} ${d.getFullYear()} Pro-Class Mastery`;
-    setForm(f => ({
-      ...f,
-      startDate: v,
-      name: f.name || autoName,
-      // auto-adjust endDate based on numberOfDays
-      endDate: f.numberOfDays === 1
-        ? v
-        : format(addDays(d, f.numberOfDays - 1), "yyyy-MM-dd"),
-    }));
-  }
+  // Visual day strip cells (cap to MAX_DAYS so we don't blow out the layout)
+  const stripDays = useMemo(() => {
+    if (!datesValid || !startD) return [];
+    return Array.from({ length: Math.min(numberOfDays, MAX_DAYS) }, (_, i) => addDays(startD, i));
+  }, [datesValid, startD, numberOfDays]);
 
-  function handleDaysChange(n: 1 | 2 | 3) {
-    setForm(f => {
-      let endDate = f.endDate;
-      if (f.startDate) {
-        const d = new Date(f.startDate);
-        endDate = format(addDays(d, n - 1), "yyyy-MM-dd");
-      }
-      return { ...f, numberOfDays: n, endDate };
-    });
-  }
+  const totalQuota = Object.values(quotas).reduce(
+    (sum, v) => sum + (Number(v) || 0), 0
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    // Validation
-    if (!form.name.trim())       return setError("Event name is required.");
-    if (!form.venue.trim())      return setError("Venue is required.");
-    if (!form.startDate)         return setError("Start date is required.");
-    if (!form.endDate)           return setError("End date is required.");
-    if (!form.invitationOpenDate)  return setError("Invitation open date is required.");
-    if (!form.invitationCloseDate) return setError("Invitation close date is required.");
+    if (!name.trim())            return setError("Event name is required.");
+    if (!startDate || !endDate)  return setError("Start and end dates are required.");
+    if (!datesValid)             return setError(
+      tooManyDays
+        ? `Events can span at most ${MAX_DAYS} days.`
+        : "End date must be on or after start date.",
+    );
+    if (!invOpen || !invClose)   return setError("Invitation open and close dates are required.");
+    if (new Date(invClose) < new Date(invOpen))   return setError("Invitation close must be on or after open.");
+    if (new Date(invClose) > new Date(startDate)) return setError("Invitations must close before the event starts.");
+    if (!skipQuotas && sessionStart >= sessionEnd) return setError("Default session end time must be after start.");
 
-    if (new Date(form.endDate) < new Date(form.startDate)) {
-      return setError("End date must be on or after start date.");
-    }
-    if (new Date(form.invitationCloseDate) < new Date(form.invitationOpenDate)) {
-      return setError("Invitation close date must be after open date.");
-    }
-    if (new Date(form.invitationCloseDate) > new Date(form.startDate)) {
-      return setError("Invitations must close before the event starts.");
-    }
+    if (!startD || !endD || !user) return;
 
-    if (!user) return;
-
+    setSubmitting(true);
     try {
       const created = await createEvent({
-        name: form.name.trim(),
-        month,
-        year,
-        venue: form.venue.trim(),
-        startDate: form.startDate,
-        endDate: form.endDate,
-        numberOfDays: form.numberOfDays,
-        invitationOpenDate: form.invitationOpenDate,
-        invitationCloseDate: form.invitationCloseDate,
+        name: name.trim(),
+        month: startD.getMonth() + 1,
+        year: startD.getFullYear(),
+        venue: "",   // PCM doesn't use venue — kept blank for schema compat
+        startDate,
+        endDate,
+        numberOfDays,
+        invitationOpenDate: invOpen,
+        invitationCloseDate: invClose,
         status: "draft",
         createdBy: user.id,
-        notes: form.notes.trim() || undefined,
+        notes: notes.trim() || undefined,
       });
+
+      // If the academy didn't skip the quick-quota step, auto-create one
+      // default session and apply the per-branch quotas in one go.
+      if (!skipQuotas && totalQuota > 0) {
+        const session = await createSession({
+          eventId: created.id,
+          dayNumber: sessionDay,
+          sessionNumber: 1,
+          startTime: sessionStart,
+          endTime: sessionEnd,
+        });
+        for (const b of BRANCHES) {
+          const n = Number(quotas[b.code]) || 0;
+          if (n > 0) await setQuota(session.id, b.code as BranchCode, n);
+        }
+      }
+
       router.push(`/pcm-system/academy/events/${created.id}`);
     } catch (err) {
-      console.error("[new event] failed:", err);
+      console.error("[new pcm event] failed:", err);
       setError("Could not create event. Try again.");
+      setSubmitting(false);
     }
   }
 
   return (
     <AppShell>
-      {/* Breadcrumb */}
-      <Link href="/pcm-system/academy" className="inline-flex items-center gap-1.5 text-sm text-ink-600 hover:text-ink-900 mb-6">
+      <Link
+        href="/pcm-system/academy"
+        className="inline-flex items-center gap-1.5 text-sm text-ink-600 hover:text-ink-900 mb-6"
+      >
         <ArrowLeft className="w-4 h-4" /> Back to events
       </Link>
 
-      <div className="mb-8 fa-enter">
+      {/* ── Hero header with gradient ────────────────────────────── */}
+      <div className="mb-8 relative overflow-hidden rounded-3xl p-8 shadow-lg
+                      bg-gradient-to-br from-violet-600 via-fuchsia-600 to-pink-600">
+        <Sparkles className="absolute -right-6 -top-6 w-40 h-40 text-white/10" aria-hidden="true" />
         <div
-          className="fa-mono text-[10px] uppercase text-gold-600 mb-3"
-          style={{ letterSpacing: "0.12em" }}
+          className="fa-mono text-[10px] uppercase text-white/80 mb-2"
+          style={{ letterSpacing: "0.14em" }}
         >
-          New event
+          New PCM event
         </div>
-        <h1 className="fa-display-italic text-6xl text-ink-900">Create Pro-Class Mastery</h1>
-        <hr className="border-0 border-t border-gold-200 mt-5 mb-4" />
-        <p className="text-sm text-ink-500">
-          Fill in the event details. You&apos;ll add sessions and branch quotas on the next screen.
+        <h1 className="text-5xl font-black text-white tracking-tight leading-tight">
+          Schedule a PCM week
+        </h1>
+        <p className="text-white/80 text-sm mt-3 max-w-xl">
+          Pick the dates, set how long invitations stay open, then assign
+          quotas per branch — all in one go.
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="grid lg:grid-cols-3 gap-6">
-        {/* Left: form */}
-        <div className="lg:col-span-2 space-y-5">
-          <section className="fa-card p-6">
-            <div className="mb-5">
-              <div
-                className="fa-mono text-[10px] uppercase text-gold-600 mb-1.5"
-                style={{ letterSpacing: "0.12em" }}
-              >
-                Event details
+        <div className="lg:col-span-2 space-y-6">
+
+          {/* ── Section 1: When? ────────────────────────────────── */}
+          <section className="rounded-2xl bg-white shadow-md overflow-hidden border border-violet-100">
+            <div className="bg-gradient-to-r from-violet-500 to-fuchsia-500 px-6 py-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+                <CalendarDays className="w-5 h-5 text-white" />
               </div>
-              <div className="flex items-center gap-2">
-                <CalendarDays className="w-4 h-4 text-gold-500" />
-                <h2 className="fa-display text-2xl text-ink-900">Event details</h2>
+              <div>
+                <div
+                  className="fa-mono text-[10px] uppercase text-white/80"
+                  style={{ letterSpacing: "0.14em" }}
+                >
+                  Step 1
+                </div>
+                <h2 className="text-xl font-bold text-white">When &amp; what</h2>
               </div>
             </div>
-
-            <div className="space-y-4">
+            <div className="p-6 space-y-4">
               <div>
                 <label className="fa-label">Event name</label>
                 <input
                   className="fa-input"
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. April 2026 Pro-Class Mastery"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="e.g. PCM Week 21 — Junior Showcase"
                 />
-                <p className="text-xs text-ink-400 mt-1">Auto-generated from start date, but you can edit it.</p>
-              </div>
-
-              <div>
-                <label className="fa-label">Venue</label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
-                  <input
-                    className="fa-input fa-input-icon-left"
-                    value={form.venue}
-                    onChange={e => setForm(f => ({ ...f, venue: e.target.value }))}
-                    placeholder="e.g. eBright HQ Subang"
-                  />
-                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -179,9 +200,8 @@ export default function NewEventPage() {
                   <input
                     type="date"
                     className="fa-input"
-                    value={form.startDate}
-                    min={today}
-                    onChange={e => handleStartDateChange(e.target.value)}
+                    value={startDate}
+                    onChange={e => setStartDate(e.target.value)}
                   />
                 </div>
                 <div>
@@ -189,148 +209,340 @@ export default function NewEventPage() {
                   <input
                     type="date"
                     className="fa-input"
-                    value={form.endDate}
-                    min={form.startDate || today}
-                    onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
+                    value={endDate}
+                    min={startDate}
+                    onChange={e => setEndDate(e.target.value)}
                   />
                 </div>
               </div>
 
+              {datesValid && (
+                <div>
+                  <div
+                    className="fa-mono text-[10px] uppercase text-violet-600 mb-2"
+                    style={{ letterSpacing: "0.1em" }}
+                  >
+                    {numberOfDays} day{numberOfDays !== 1 ? "s" : ""} scheduled
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {stripDays.map((d, i) => {
+                      const dow = d.getDay();
+                      const isWeekend = dow === 0 || dow === 6;
+                      return (
+                        <div
+                          key={i}
+                          className={`px-3 py-2 rounded-xl border-2 text-center transition-all ${
+                            isWeekend
+                              ? "border-pink-200 bg-pink-50 text-pink-700"
+                              : "border-violet-200 bg-violet-50 text-violet-700"
+                          }`}
+                          style={{ minWidth: "62px" }}
+                        >
+                          <div
+                            className="fa-mono text-[9px] uppercase font-bold"
+                            style={{ letterSpacing: "0.08em" }}
+                          >
+                            {format(d, "EEE")}
+                          </div>
+                          <div className="text-lg font-black leading-none mt-0.5">
+                            {format(d, "d")}
+                          </div>
+                          <div className="fa-mono text-[9px] mt-0.5 opacity-70">
+                            {format(d, "MMM")}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {tooManyDays && (
+                <p className="text-xs text-rose-600">
+                  PCM events are capped at {MAX_DAYS} days. Shorten the range.
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* ── Section 2: Invitations ─────────────────────────── */}
+          <section className="rounded-2xl bg-white shadow-md overflow-hidden border border-cyan-100">
+            <div className="bg-gradient-to-r from-cyan-500 to-teal-500 px-6 py-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+                <Megaphone className="w-5 h-5 text-white" />
+              </div>
               <div>
-                <label className="fa-label">Number of days</label>
-                <div className="flex gap-2">
-                  {[1, 2, 3].map(n => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => handleDaysChange(n as 1 | 2 | 3)}
-                      className={`flex-1 px-4 py-2.5 rounded-[10px] border text-sm font-medium transition-all ${
-                        form.numberOfDays === n
-                          ? "bg-ink-900 text-ivory-50 border-ink-900"
-                          : "bg-ivory-50 text-ink-700 border-ink-200 hover:border-gold-400"
-                      }`}
-                    >
-                      {n} day{n > 1 ? "s" : ""}
-                    </button>
-                  ))}
+                <div
+                  className="fa-mono text-[10px] uppercase text-white/80"
+                  style={{ letterSpacing: "0.14em" }}
+                >
+                  Step 2
+                </div>
+                <h2 className="text-xl font-bold text-white">Invitation window</h2>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-ink-500 mb-4">
+                When Branch Managers can invite their students.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="fa-label">Open</label>
+                  <input
+                    type="date"
+                    className="fa-input"
+                    value={invOpen}
+                    onChange={e => setInvOpen(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="fa-label">Close</label>
+                  <input
+                    type="date"
+                    className="fa-input"
+                    value={invClose}
+                    min={invOpen}
+                    max={startDate}
+                    onChange={e => setInvClose(e.target.value)}
+                  />
                 </div>
               </div>
             </div>
           </section>
 
-          <section className="fa-card p-6">
-            <div className="mb-5">
-              <div
-                className="fa-mono text-[10px] uppercase text-gold-600 mb-1.5"
-                style={{ letterSpacing: "0.12em" }}
-              >
-                Invitation window
+          {/* ── Section 3: Quotas ─────────────────────────────── */}
+          <section className="rounded-2xl bg-white shadow-md overflow-hidden border border-rose-100">
+            <div className="bg-gradient-to-r from-rose-500 to-orange-500 px-6 py-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+                  <Users className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <div
+                    className="fa-mono text-[10px] uppercase text-white/80"
+                    style={{ letterSpacing: "0.14em" }}
+                  >
+                    Step 3
+                  </div>
+                  <h2 className="text-xl font-bold text-white">Branch quotas</h2>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-gold-500" />
-                <h2 className="fa-display text-2xl text-ink-900">Invitation window</h2>
-              </div>
-            </div>
-            <p className="text-sm text-ink-500 mb-4">
-              The period when Branch Managers can invite their students to this event.
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="fa-label">Open date</label>
+              <label className="flex items-center gap-2 text-xs text-white/90 cursor-pointer">
                 <input
-                  type="date"
-                  className="fa-input"
-                  value={form.invitationOpenDate}
-                  onChange={e => setForm(f => ({ ...f, invitationOpenDate: e.target.value }))}
+                  type="checkbox"
+                  checked={skipQuotas}
+                  onChange={e => setSkipQuotas(e.target.checked)}
+                  className="rounded"
                 />
-              </div>
-              <div>
-                <label className="fa-label">Close date</label>
-                <input
-                  type="date"
-                  className="fa-input"
-                  value={form.invitationCloseDate}
-                  min={form.invitationOpenDate}
-                  max={form.startDate}
-                  onChange={e => setForm(f => ({ ...f, invitationCloseDate: e.target.value }))}
-                />
-              </div>
+                Skip — set later
+              </label>
             </div>
+            {!skipQuotas && (
+              <div className="p-6 space-y-5">
+                {/* Default session window */}
+                <div className="rounded-xl bg-gradient-to-r from-amber-50 to-rose-50 border border-rose-200 p-4">
+                  <div
+                    className="fa-mono text-[10px] uppercase text-rose-600 mb-2"
+                    style={{ letterSpacing: "0.1em" }}
+                  >
+                    These quotas apply to one default session
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="fa-label">On day</label>
+                      <select
+                        className="fa-input"
+                        value={sessionDay}
+                        onChange={e => setSessionDay(Number(e.target.value))}
+                      >
+                        {Array.from({ length: numberOfDays }, (_, i) => i + 1).map(d => (
+                          <option key={d} value={d}>
+                            Day {d}{stripDays[d - 1] ? ` (${format(stripDays[d - 1], "EEE d MMM")})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="fa-label">Start</label>
+                      <input
+                        type="time"
+                        className="fa-input"
+                        value={sessionStart}
+                        onChange={e => setSessionStart(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="fa-label">End</label>
+                      <input
+                        type="time"
+                        className="fa-input"
+                        value={sessionEnd}
+                        onChange={e => setSessionEnd(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-rose-700 mt-2">
+                    You can add more sessions, edit times, and change quotas after the event is created.
+                  </p>
+                </div>
+
+                {/* Per-branch quota inputs */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  {BRANCHES.map((b, idx) => {
+                    // Slight color rotation so the grid feels alive instead of monochrome
+                    const palettes = [
+                      "border-violet-200 focus-within:border-violet-500 bg-violet-50/40",
+                      "border-cyan-200   focus-within:border-cyan-500   bg-cyan-50/40",
+                      "border-rose-200   focus-within:border-rose-500   bg-rose-50/40",
+                      "border-emerald-200 focus-within:border-emerald-500 bg-emerald-50/40",
+                      "border-amber-200  focus-within:border-amber-500  bg-amber-50/40",
+                    ];
+                    const cls = palettes[idx % palettes.length];
+                    return (
+                      <label
+                        key={b.code}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-colors ${cls}`}
+                      >
+                        <span
+                          className="fa-mono text-[10px] uppercase font-bold text-ink-700 flex-shrink-0"
+                          style={{ minWidth: "32px", letterSpacing: "0.06em" }}
+                        >
+                          {b.code}
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          inputMode="numeric"
+                          className="fa-input flex-1 text-center"
+                          style={{ paddingLeft: "0.5rem", paddingRight: "0.5rem" }}
+                          value={quotas[b.code]}
+                          onChange={e =>
+                            setQuotas(q => ({ ...q, [b.code]: e.target.value.replace(/[^0-9]/g, "") }))
+                          }
+                          placeholder="0"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="text-right">
+                  <span
+                    className="fa-mono text-[11px] uppercase text-rose-600 font-bold"
+                    style={{ letterSpacing: "0.08em" }}
+                  >
+                    Total · {totalQuota} student{totalQuota !== 1 ? "s" : ""}
+                  </span>
+                </div>
+              </div>
+            )}
           </section>
 
-          <section className="fa-card p-6">
-            <div className="mb-4">
-              <div
-                className="fa-mono text-[10px] uppercase text-gold-600 mb-1.5"
-                style={{ letterSpacing: "0.12em" }}
-              >
-                Notes
+          {/* ── Section 4: Notes ──────────────────────────────── */}
+          <section className="rounded-2xl bg-white shadow-md overflow-hidden border border-emerald-100">
+            <div className="bg-gradient-to-r from-emerald-500 to-lime-500 px-6 py-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+                <FileText className="w-5 h-5 text-white" />
               </div>
-              <h2 className="fa-display text-2xl text-ink-900">Notes</h2>
+              <div>
+                <div
+                  className="fa-mono text-[10px] uppercase text-white/80"
+                  style={{ letterSpacing: "0.14em" }}
+                >
+                  Optional
+                </div>
+                <h2 className="text-xl font-bold text-white">Notes</h2>
+              </div>
             </div>
-            <label className="fa-label">Internal notes (optional)</label>
-            <textarea
-              className="fa-input min-h-[80px] resize-y"
-              value={form.notes}
-              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              placeholder="Internal notes about this event…"
-            />
+            <div className="p-6">
+              <textarea
+                className="fa-input min-h-[80px] resize-y"
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="Anything the team should know about this week…"
+              />
+            </div>
           </section>
 
           {error && (
-            <div className="rounded-[10px] bg-danger-soft text-danger px-4 py-3 text-sm">
+            <div className="rounded-xl bg-rose-50 border-2 border-rose-200 text-rose-700 px-4 py-3 text-sm font-medium">
               {error}
             </div>
           )}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-3 pt-2">
             <Link href="/pcm-system/academy" className="fa-btn-secondary">Cancel</Link>
-            <button type="submit" className="fa-btn-primary">
-              Create event
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-6 py-3 rounded-xl text-white font-bold shadow-lg
+                         bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-600
+                         hover:from-violet-700 hover:via-fuchsia-700 hover:to-pink-700
+                         disabled:opacity-50 disabled:cursor-not-allowed
+                         transition-all"
+            >
+              {submitting ? "Creating…" : "Create event"}
             </button>
           </div>
         </div>
 
-        {/* Right: preview */}
-        <div className="space-y-4">
-          <div className="fa-card p-5 sticky top-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Info className="w-4 h-4 text-ink-500" />
-              <h3 className="fa-display text-base text-ink-900">Preview</h3>
+        {/* ── Right: live preview ──────────────────────────────── */}
+        <aside className="space-y-4">
+          <div className="rounded-2xl bg-white shadow-md overflow-hidden border border-indigo-100 sticky top-4">
+            <div className="bg-gradient-to-r from-indigo-500 to-violet-500 px-5 py-3">
+              <h3 className="text-sm font-bold text-white">Preview</h3>
             </div>
-            <dl className="space-y-3">
+            <dl className="p-5 space-y-3">
               <div>
-                <dt className="fa-mono text-[10px] uppercase text-gold-600" style={{ letterSpacing: "0.12em" }}>Name</dt>
-                <dd className="fa-display text-base text-ink-900 mt-0.5">{form.name || "—"}</dd>
+                <dt
+                  className="fa-mono text-[10px] uppercase text-violet-600 font-bold"
+                  style={{ letterSpacing: "0.12em" }}
+                >
+                  Name
+                </dt>
+                <dd className="font-bold text-ink-900 mt-0.5">{name || "—"}</dd>
               </div>
               <div>
-                <dt className="fa-mono text-[10px] uppercase text-gold-600" style={{ letterSpacing: "0.12em" }}>When</dt>
+                <dt
+                  className="fa-mono text-[10px] uppercase text-cyan-600 font-bold"
+                  style={{ letterSpacing: "0.12em" }}
+                >
+                  Dates
+                </dt>
                 <dd className="fa-mono text-sm text-ink-800 mt-0.5">
-                  {form.startDate && form.endDate
-                    ? `${form.startDate} → ${form.endDate} (${form.numberOfDays} day${form.numberOfDays > 1 ? "s" : ""})`
+                  {datesValid && startD && endD
+                    ? `${format(startD, "d MMM")} → ${format(endD, "d MMM yyyy")} (${numberOfDays} day${numberOfDays !== 1 ? "s" : ""})`
                     : "—"}
                 </dd>
               </div>
               <div>
-                <dt className="fa-mono text-[10px] uppercase text-gold-600" style={{ letterSpacing: "0.12em" }}>Venue</dt>
-                <dd className="fa-display text-base text-ink-900 mt-0.5">{form.venue || "—"}</dd>
-              </div>
-              <div>
-                <dt className="fa-mono text-[10px] uppercase text-gold-600" style={{ letterSpacing: "0.12em" }}>Invitation window</dt>
+                <dt
+                  className="fa-mono text-[10px] uppercase text-teal-600 font-bold"
+                  style={{ letterSpacing: "0.12em" }}
+                >
+                  Invitations
+                </dt>
                 <dd className="fa-mono text-sm text-ink-800 mt-0.5">
-                  {form.invitationOpenDate && form.invitationCloseDate
-                    ? `${form.invitationOpenDate} → ${form.invitationCloseDate}`
-                    : "—"}
+                  {invOpen && invClose ? `${invOpen} → ${invClose}` : "—"}
                 </dd>
               </div>
+              {!skipQuotas && (
+                <div>
+                  <dt
+                    className="fa-mono text-[10px] uppercase text-rose-600 font-bold"
+                    style={{ letterSpacing: "0.12em" }}
+                  >
+                    Quota
+                  </dt>
+                  <dd className="text-sm text-ink-800 mt-0.5">
+                    {totalQuota > 0
+                      ? `${totalQuota} student${totalQuota !== 1 ? "s" : ""} across ${Object.values(quotas).filter(v => Number(v) > 0).length} branch${Object.values(quotas).filter(v => Number(v) > 0).length !== 1 ? "es" : ""}`
+                      : "Not set"}
+                  </dd>
+                </div>
+              )}
             </dl>
-
-            <div className="mt-5 pt-4 border-t border-gold-200 text-xs text-ink-500">
-              After creating, you&apos;ll add <strong className="text-ink-600">sessions</strong> and
-              assign <strong className="text-ink-600">branch quotas</strong> before opening the event to BMs.
-            </div>
           </div>
-        </div>
+        </aside>
       </form>
     </AppShell>
   );

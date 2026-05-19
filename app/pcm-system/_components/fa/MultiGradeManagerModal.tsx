@@ -12,7 +12,7 @@ interface Props {
 }
 
 /**
- * Central manager for multi-grade exceptions. Opens from the Marketing
+ * Central manager for multi-grade exceptions. Opens from the Academy
  * events-list filter row so HQ can manage every event from one place
  * instead of clicking into each event one by one.
  *
@@ -35,7 +35,7 @@ export function MultiGradeManagerModal({ open, onClose }: Props) {
   const revokeOverride = useFAStore((s) => s.revokeEventBranchOverride);
 
   // Default to the next-upcoming non-completed event so most clicks are
-  // one-step. Marketing can still switch via the dropdown.
+  // one-step. Academy can still switch via the dropdown.
   const sortedEvents = useMemo(() => {
     return [...allEvents].sort((a, b) => {
       // Active events first (open/ongoing/draft), completed last.

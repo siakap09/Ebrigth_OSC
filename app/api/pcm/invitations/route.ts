@@ -6,7 +6,7 @@ import {
   getQuotaForSessionBranch,
   InvitationRejected,
 } from "@pcm/_lib/events.server";
-import { BranchCode, InvitationStatus } from "@pcm/_types";
+import { BranchCode, InvitationStatus, InviteType } from "@pcm/_types";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
     const targetGrade: number = Number(body.targetGrade) || 0;
     const status: InvitationStatus = body.initialStatus ?? "invited";
     const allowOverQuota: boolean = body.allowOverQuota === true;
+    const inviteType: InviteType = body.inviteType === "renewal" ? "renewal" : "progress";
 
     // Event must exist and be in an invitable state (unless walk-in override).
     const eventStatus = await getEventStatus(eventId);
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
         targetGrade,
         status,
         invitedBy,
+        inviteType,
       });
       return NextResponse.json({ invitation: created });
     } catch (err) {

@@ -6,8 +6,8 @@ import { useFAStore } from "@pcm/_lib/store";
 import { useRouter } from "next/navigation";
 import { Modal } from "@pcm/_components/shared/Modal";
 
-/** The FA "view switcher" page. Renders the Marketing / Branch Managers
- *  picker. Real BRANCH_MANAGER users can't actually impersonate Marketing
+/** The FA "view switcher" page. Renders the Academy / Branch Managers
+ *  picker. Real BRANCH_MANAGER users can't actually impersonate Academy
  *  because SessionSync (see SessionSync.tsx) force-overrides their FA user
  *  on the next render. So we don't need to gate the picker UI — we just
  *  need to bounce unauthenticated visitors to the NextAuth sign-in. */
@@ -68,11 +68,11 @@ export default function FAViewSwitcher() {
         {/* ── User picker ── */}
         <div className="grid md:grid-cols-2 gap-5 fa-enter fa-delay-1">
 
-          {/* Marketing */}
+          {/* Academy */}
           <div className="fa-card p-5">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-px h-5 bg-gold-400 flex-shrink-0" />
-              <h2 className="fa-display text-lg text-ink-900">Marketing</h2>
+              <h2 className="fa-display text-lg text-ink-900">Academy</h2>
               <span className="fa-mono text-[10px] text-ink-400 ml-auto">
                 {mktUsers.length} user
               </span>

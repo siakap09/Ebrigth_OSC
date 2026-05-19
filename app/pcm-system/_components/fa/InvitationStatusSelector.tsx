@@ -1,11 +1,11 @@
-﻿import { Check, X } from "lucide-react";
+import { Check, X, CalendarClock } from "lucide-react";
 import { InvitationStatus } from "@pcm/_types";
 import { InvitationStatusPill } from "@pcm/_components/fa/StatusPill";
 
 export function InvitationStatusSelector({
   value, onChange, disabled,
 }: { value: InvitationStatus; onChange: (s: InvitationStatus) => void; disabled?: boolean }) {
-  // BMs control confirmed/declined; MKT controls attended/no_show during the event
+  // BMs control confirmed/declined/rescheduled; Academy controls attended/no_show during the event
   if (disabled) {
     return <InvitationStatusPill status={value} />;
   }
@@ -13,7 +13,7 @@ export function InvitationStatusSelector({
     return <InvitationStatusPill status={value} />;
   }
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1 flex-wrap">
       <button
         onClick={() => onChange("confirmed")}
         className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
@@ -35,6 +35,17 @@ export function InvitationStatusSelector({
         title="Invited, awaiting confirmation"
       >
         Pending
+      </button>
+      <button
+        onClick={() => onChange("rescheduled")}
+        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+          value === "rescheduled"
+            ? "bg-amber-100 text-amber-700 ring-1 ring-amber-300"
+            : "text-ink-500 hover:bg-ivory-200"
+        }`}
+        title="Parent asked to reschedule to a later session"
+      >
+        <CalendarClock className="w-3 h-3 inline" /> Reschedule
       </button>
       <button
         onClick={() => onChange("declined")}

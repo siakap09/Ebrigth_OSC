@@ -50,7 +50,7 @@ function generateRows(count: number, startFrom = "09:00", existing: NewRow[] = [
 export function BulkSessionEditorModal({
   open, onClose, event, existingSessions, onCreate,
 }: Props) {
-  const days = Array.from({ length: event.numberOfDays }, (_, i) => (i + 1) as 1 | 2 | 3);
+  const days = Array.from({ length: event.numberOfDays }, (_, i) => i + 1);
 
   // Per-day state: arrays of new rows the user wants to create.
   const [daysState, setDaysState] = useState<Record<number, NewRow[]>>(() => {

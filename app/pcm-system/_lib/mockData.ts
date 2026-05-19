@@ -2,7 +2,7 @@
 // PCM System — Seed Data
 // Students come from the real database (see src/lib/students.server.ts).
 // Users still seed locally because real auth isn't wired up yet — they're the
-// mock login picker on /login. Everything else starts empty so Marketing has
+// mock login picker on /login. Everything else starts empty so Academy has
 // to create real events / sessions / quotas before BMs can invite anyone.
 // ============================================================================
 
@@ -22,7 +22,7 @@ import {
 export const MOCK_USERS: User[] = [
   {
     id: "u-mkt",
-    name: "Marketing",
+    name: "Academy",
     email: "marketing@ebright.my",
     role: "MKT",
     branch: null,
@@ -36,7 +36,7 @@ export const MOCK_USERS: User[] = [
   })),
 ];
 
-// Empty seeds — Marketing creates real events from the app.
+// Empty seeds — Academy creates real events from the app.
 export const MOCK_EVENTS: FAEvent[] = [];
 export const MOCK_SESSIONS: Session[] = [];
 export const MOCK_QUOTAS: SessionQuota[] = [];

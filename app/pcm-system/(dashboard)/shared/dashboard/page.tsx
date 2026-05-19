@@ -1,226 +1,233 @@
-﻿"use client";
+"use client";
 
-import { useState, useMemo, useEffect } from "react";
-import Link from "next/link";
+import { useState, useMemo } from "react";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { AppShell } from "@pcm/_components/shared/AppShell";
-import { EventStatusPill } from "@pcm/_components/fa/StatusPill";
-import { EmptyState } from "@pcm/_components/shared/EmptyState";
 import {
-  CalendarDays, MapPin, Users, CheckCircle2, XCircle,
-  Filter, BarChart3
+  Users, CheckCircle2, XCircle, CalendarClock, TrendingUp,
+  Calendar, CalendarRange, BadgeCheck,
 } from "lucide-react";
 import { BRANCHES, BranchCode } from "@pcm/_types";
+import {
+  format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
+  startOfYear, endOfYear, isWithinInterval,
+} from "date-fns";
+
+type RangePreset = "thisWeek" | "thisMonth" | "thisYear" | "custom" | "all";
 
 export default function DashboardPage() {
   const user = useCurrentUser();
   const events = useFAStore(s => s.events);
   const sessions = useFAStore(s => s.sessions);
-  const quotas = useFAStore(s => s.quotas);
   const invitations = useFAStore(s => s.invitations);
 
-  const [yearFilter, setYearFilter] = useState<number | "all">("all");
-  const [eventFilter, setEventFilter] = useState<string | "all">("all");
+  const [rangePreset, setRangePreset] = useState<RangePreset>("thisMonth");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd]     = useState("");
   const [branchFilter, setBranchFilter] = useState<BranchCode | "all">(
     user?.role === "BM" && user.branch ? user.branch : "all"
   );
 
-  // BMs are forced to their branch
-  const effectiveBranch = user?.role === "BM" ? user.branch! : branchFilter;
+  const effectiveBranch: BranchCode | "all" =
+    user?.role === "BM" ? (user.branch ?? "all") : branchFilter;
 
-  const years = useMemo(
-    () => Array.from(new Set(events.map(e => e.year))).sort((a, b) => b - a),
-    [events]
-  );
-
-  // Events that match the year filter — populates the event dropdown.
-  const eventsForFilter = useMemo(
-    () => events
-      .filter(e => yearFilter === "all" || e.year === yearFilter)
-      .sort((a, b) => b.startDate.localeCompare(a.startDate)),
-    [events, yearFilter]
-  );
-
-  // If the selected event no longer matches the year filter, drop it.
-  useEffect(() => {
-    if (eventFilter !== "all" && !eventsForFilter.some(e => e.id === eventFilter)) {
-      setEventFilter("all");
+  // Active date range
+  const range = useMemo(() => {
+    const now = new Date();
+    if (rangePreset === "custom") {
+      if (!customStart || !customEnd) return null;
+      return { start: parseISO(customStart), end: parseISO(customEnd), label: `${customStart} → ${customEnd}` };
     }
-  }, [eventFilter, eventsForFilter]);
+    if (rangePreset === "thisWeek")  return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }), label: "This week" };
+    if (rangePreset === "thisMonth") return { start: startOfMonth(now), end: endOfMonth(now), label: format(now, "MMMM yyyy") };
+    if (rangePreset === "thisYear")  return { start: startOfYear(now),  end: endOfYear(now),  label: String(now.getFullYear()) };
+    return null; // "all"
+  }, [rangePreset, customStart, customEnd]);
 
-  // Per-event stats
-  const eventStats = useMemo(() => {
-    return events
-      .filter(e => yearFilter === "all" ? true : e.year === yearFilter)
-      .filter(e => eventFilter === "all" ? true : e.id === eventFilter)
-      .map(event => {
-        const eventSessions = sessions.filter(s => s.eventId === event.id);
-        const sessionIds = new Set(eventSessions.map(s => s.id));
-        let relevantQuotas = quotas.filter(q => sessionIds.has(q.sessionId));
-        let relevantInvs = invitations.filter(i => i.eventId === event.id);
-        if (effectiveBranch !== "all") {
-          relevantQuotas = relevantQuotas.filter(q => q.branch === effectiveBranch);
-          relevantInvs = relevantInvs.filter(i => i.branch === effectiveBranch);
-        }
-        const totalQuota = relevantQuotas.reduce((sum, q) => sum + q.quota, 0);
-        const invited = relevantInvs.length;
-        const confirmed = relevantInvs.filter(
-          i => i.status === "confirmed" || i.status === "attended"
-        ).length;
-        const attended = relevantInvs.filter(i => i.status === "attended").length;
-        const noShow = relevantInvs.filter(i => i.status === "no_show").length;
-        const declined = relevantInvs.filter(i => i.status === "declined").length;
-        return {
-          event,
-          sessions: eventSessions.length,
-          totalQuota,
-          invited,
-          confirmed,
-          attended,
-          noShow,
-          declined,
-          fillRate: totalQuota > 0 ? invited / totalQuota : 0,
-          attendanceRate: confirmed > 0 ? attended / confirmed : 0,
-        };
-      })
-      .sort((a, b) => b.event.startDate.localeCompare(a.event.startDate));
-  }, [events, sessions, quotas, invitations, yearFilter, eventFilter, effectiveBranch]);
-
-  // Totals across all shown events
-  const totals = useMemo(() => {
-    return eventStats.reduce(
-      (acc, s) => ({
-        events: acc.events + 1,
-        sessions: acc.sessions + s.sessions,
-        slots: acc.slots + s.totalQuota,
-        invited: acc.invited + s.invited,
-        confirmed: acc.confirmed + s.confirmed,
-        attended: acc.attended + s.attended,
-        noShow: acc.noShow + s.noShow,
-      }),
-      { events: 0, sessions: 0, slots: 0, invited: 0, confirmed: 0, attended: 0, noShow: 0 }
+  const eventsInRange = useMemo(() => {
+    if (!range) return events;
+    return events.filter(e =>
+      isWithinInterval(parseISO(e.startDate), { start: range.start, end: range.end }),
     );
-  }, [eventStats]);
+  }, [events, range]);
 
-  // ── Attendance rate widget data ──
-  // Denominator per spec: attended + absent only (post-event marked).
-  // Derived from `totals` so it follows the existing year + branch filter scope.
-  // Note: invitation status "no_show" is kept in the DB enum — only UI labels
-  // and the rate calculation flip from absence-oriented to attendance-oriented.
-  const totalAttendanceMarked = totals.attended + totals.noShow;
-  const overallAttendanceRate = totalAttendanceMarked > 0
-    ? totals.attended / totalAttendanceMarked
-    : 0;
+  const sessionIdsInRange = useMemo(
+    () => new Set(sessions.filter(s => eventsInRange.some(e => e.id === s.eventId)).map(s => s.id)),
+    [sessions, eventsInRange],
+  );
 
-  // Per-branch breakdown for the attendance rate section. Visible to both
-  // roles — BM is locked to their branch via `effectiveBranch`, MKT respects
-  // the active branch filter. Branches with no post-event data are hidden in
-  // the all-branches view; in the single-branch view we always render that
-  // one row.
-  const attendanceByBranch = useMemo(() => {
-    const eventIds = new Set(
-      events
-        .filter(e => yearFilter === "all" || e.year === yearFilter)
-        .filter(e => eventFilter === "all" || e.id === eventFilter)
-        .map(e => e.id)
+  const filteredInvs = useMemo(() => {
+    return invitations.filter(i => {
+      if (!sessionIdsInRange.has(i.sessionId)) return false;
+      if (effectiveBranch !== "all" && i.branch !== effectiveBranch) return false;
+      return true;
+    });
+  }, [invitations, sessionIdsInRange, effectiveBranch]);
+
+  const stats = useMemo(() => {
+    const invited      = filteredInvs.length;
+    const confirmed    = filteredInvs.filter(i => i.status === "confirmed" || i.status === "attended").length;
+    const attended     = filteredInvs.filter(i => i.status === "attended").length;
+    const absent       = filteredInvs.filter(i => i.status === "no_show" || i.status === "declined").length;
+    const rescheduled  = filteredInvs.filter(i => i.status === "rescheduled").length;
+
+    const progressInvs = filteredInvs.filter(i => i.inviteType === "progress");
+    const renewalInvs  = filteredInvs.filter(i => i.inviteType === "renewal");
+    const progressAttended = progressInvs.filter(i => i.status === "attended").length;
+    const renewalAttended  = renewalInvs.filter(i => i.status === "attended").length;
+
+    // Attendance rate = attended / invited (the user-specified formula)
+    const attendancePct = invited > 0 ? Math.round((attended / invited) * 100) : 0;
+
+    return {
+      invited, confirmed, attended, absent, rescheduled,
+      progressInvited: progressInvs.length,
+      progressAttended,
+      renewalInvited: renewalInvs.length,
+      renewalAttended,
+      attendancePct,
+    };
+  }, [filteredInvs]);
+
+  // Per-(event, branch) breakdown. Each row is one branch within one event.
+  // Branches with zero invitations in an event are skipped so the table
+  // stays compact. When the page-level branch filter is set, only that
+  // branch's rows survive.
+  const eventBreakdown = useMemo(() => {
+    type Row = {
+      key: string;
+      event: typeof events[number];
+      branch: BranchCode;
+      invited: number;
+      confirmed: number;
+      attended: number;
+      absent: number;
+      rescheduled: number;
+      progress: number;
+      renewal: number;
+      pct: number;
+      /** True for the FIRST row of an event group — the table renders the
+       *  event name + date only on that row to visually group rows together. */
+      isFirstOfEvent: boolean;
+    };
+    const rows: Row[] = [];
+    const sortedEvents = [...eventsInRange].sort((a, b) =>
+      b.startDate.localeCompare(a.startDate)
     );
-    const branches = effectiveBranch === "all"
-      ? BRANCHES
-      : BRANCHES.filter(b => b.code === effectiveBranch);
-    return branches
-      .map(b => {
-        const bInvs = invitations.filter(
-          i => eventIds.has(i.eventId) && i.branch === b.code
-        );
-        const invited = bInvs.length;
-        const confirmed = bInvs.filter(
-          i => i.status === "confirmed" || i.status === "attended"
-        ).length;
-        const attended = bInvs.filter(i => i.status === "attended").length;
-        const absent = bInvs.filter(i => i.status === "no_show").length;
-        const attendanceMarked = attended + absent;
-        const attendanceRate = attendanceMarked > 0 ? attended / attendanceMarked : 0;
-        return { branch: b, invited, confirmed, attended, absent, attendanceMarked, attendanceRate };
-      })
-      .filter(row => effectiveBranch !== "all" || row.attendanceMarked > 0)
-      // Worst performers (lowest attendance) surface first, so MKT can act on them.
-      .sort((a, b) => a.attendanceRate - b.attendanceRate || b.invited - a.invited);
-  }, [events, invitations, yearFilter, eventFilter, effectiveBranch]);
+    for (const event of sortedEvents) {
+      const evInvs = filteredInvs.filter(i => i.eventId === event.id);
+      // Branches touched by this event, ordered by their BRANCHES list index
+      // so the table is stable across renders.
+      const branchesInEvent = BRANCHES
+        .map(b => b.code as BranchCode)
+        .filter(code => evInvs.some(i => i.branch === code));
+      let isFirst = true;
+      for (const branch of branchesInEvent) {
+        const branchInvs = evInvs.filter(i => i.branch === branch);
+        const invited     = branchInvs.length;
+        const confirmed   = branchInvs.filter(i => i.status === "confirmed" || i.status === "attended").length;
+        const attended    = branchInvs.filter(i => i.status === "attended").length;
+        const absent      = branchInvs.filter(i => i.status === "no_show" || i.status === "declined").length;
+        const rescheduled = branchInvs.filter(i => i.status === "rescheduled").length;
+        const progress    = branchInvs.filter(i => i.inviteType === "progress").length;
+        const renewal     = branchInvs.filter(i => i.inviteType === "renewal").length;
+        const pct = invited > 0 ? Math.round((attended / invited) * 100) : 0;
+        rows.push({
+          key: `${event.id}:${branch}`,
+          event, branch, invited, confirmed, attended, absent, rescheduled,
+          progress, renewal, pct, isFirstOfEvent: isFirst,
+        });
+        isFirst = false;
+      }
+    }
+    return rows;
+  }, [eventsInRange, filteredInvs]);
 
-  // Breakdown by branch for the current filter (MKT only, when branch=all)
-  const branchBreakdown = useMemo(() => {
-    if (!user || user.role === "BM" || branchFilter !== "all") return null;
-    const eventIds = new Set(
-      events
-        .filter(e => yearFilter === "all" ? true : e.year === yearFilter)
-        .filter(e => eventFilter === "all" ? true : e.id === eventFilter)
-        .map(e => e.id)
-    );
-    const sessionIds = new Set(sessions.filter(s => eventIds.has(s.eventId)).map(s => s.id));
-    return BRANCHES.map(b => {
-      const bQuotas = quotas.filter(q => sessionIds.has(q.sessionId) && q.branch === b.code);
-      const bInvs = invitations.filter(i => eventIds.has(i.eventId) && i.branch === b.code);
-      const totalQuota = bQuotas.reduce((sum, q) => sum + q.quota, 0);
-      const invited = bInvs.length;
-      const confirmed = bInvs.filter(i => i.status === "confirmed" || i.status === "attended").length;
-      const attended = bInvs.filter(i => i.status === "attended").length;
-      return {
-        branch: b,
-        totalQuota,
-        invited,
-        confirmed,
-        attended,
-        fillRate: totalQuota > 0 ? invited / totalQuota : 0,
-        attendanceRate: confirmed > 0 ? attended / confirmed : 0,
-      };
-    }).filter(b => b.totalQuota > 0).sort((a, b) => b.attended - a.attended);
-  }, [events, sessions, quotas, invitations, yearFilter, eventFilter, branchFilter, user]);
-
-  if (!user) return null;
+  const totalEventsShown = useMemo(
+    () => new Set(eventBreakdown.map(r => r.event.id)).size,
+    [eventBreakdown],
+  );
 
   return (
     <AppShell>
-      <div className="flex items-start justify-between mb-8">
-        <div>
-          <div className="text-xs uppercase tracking-wider font-semibold text-ink-400 mb-1">
-            FA Shared
-          </div>
-          <h1 className="fa-display text-4xl text-ink-900">Dashboard</h1>
-          <p className="text-ink-500 mt-1">
-            Overview of Pro-Class Mastery performance across all events.
-          </p>
+      {/* Slimmer hero — keeps a single gradient as the visual anchor */}
+      <div className="mb-6 relative overflow-hidden rounded-2xl p-6
+                      bg-gradient-to-r from-violet-600 to-indigo-600 text-white">
+        <TrendingUp className="absolute -right-4 -top-4 w-32 h-32 text-white/10" aria-hidden="true" />
+        <div className="fa-mono text-[10px] uppercase text-white/80 mb-1" style={{ letterSpacing: "0.14em" }}>
+          PCM · Dashboard
         </div>
+        <h1 className="text-3xl font-bold tracking-tight">Performance overview</h1>
+        <p className="text-white/80 text-sm mt-1.5">
+          {range ? range.label : "All events on record"}
+          {effectiveBranch !== "all" && <> · Branch {effectiveBranch}</>}
+        </p>
       </div>
 
-      {/* Filters */}
-      <div className="fa-card p-4 mb-6">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-40">
-            <label className="fa-label">Year</label>
-            <select className="fa-input" value={yearFilter} onChange={e => setYearFilter(e.target.value === "all" ? "all" : Number(e.target.value))}>
-              <option value="all">All years</option>
-              {years.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
+      {/* Range + branch filter */}
+      <div className="rounded-xl bg-white border border-ivory-300 shadow-sm p-3 mb-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <Calendar className="w-4 h-4 text-violet-500" />
+          <span className="fa-mono text-[10px] uppercase text-ink-500" style={{ letterSpacing: "0.12em" }}>
+            Show
+          </span>
+          <div className="inline-flex p-1 rounded-lg bg-ivory-100 border border-ivory-300">
+            {([
+              { id: "thisWeek",  label: "This week"  },
+              { id: "thisMonth", label: "This month" },
+              { id: "thisYear",  label: "This year"  },
+              { id: "custom",    label: "Custom"     },
+              { id: "all",       label: "All time"   },
+            ] as { id: RangePreset; label: string }[]).map(opt => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setRangePreset(opt.id)}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                  rangePreset === opt.id
+                    ? "bg-violet-600 text-white shadow-sm"
+                    : "text-ink-600 hover:text-ink-900"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
-          <div className="w-64">
-            <label className="fa-label">Event</label>
-            <select
-              className="fa-input"
-              value={eventFilter}
-              onChange={e => setEventFilter(e.target.value)}
-              disabled={eventsForFilter.length === 0}
-            >
-              <option value="all">All events</option>
-              {eventsForFilter.map(e => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
-            </select>
-          </div>
-          {user.role === "MKT" && (
-            <div className="w-52">
-              <label className="fa-label">Branch</label>
-              <select className="fa-input" value={branchFilter} onChange={e => setBranchFilter(e.target.value as BranchCode | "all")}>
+
+          {rangePreset === "custom" && (
+            <div className="flex items-center gap-2">
+              <CalendarRange className="w-3.5 h-3.5 text-violet-500" />
+              <input
+                type="date"
+                className="fa-input"
+                style={{ height: "30px", paddingTop: "0.15rem", paddingBottom: "0.15rem" }}
+                value={customStart}
+                onChange={e => setCustomStart(e.target.value)}
+              />
+              <span className="text-xs text-ink-400">→</span>
+              <input
+                type="date"
+                className="fa-input"
+                style={{ height: "30px", paddingTop: "0.15rem", paddingBottom: "0.15rem" }}
+                value={customEnd}
+                min={customStart}
+                onChange={e => setCustomEnd(e.target.value)}
+              />
+            </div>
+          )}
+
+          {user?.role !== "BM" && (
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="fa-mono text-[10px] uppercase text-ink-500" style={{ letterSpacing: "0.12em" }}>
+                Branch
+              </span>
+              <select
+                className="fa-input text-xs"
+                style={{ minWidth: "160px", height: "30px", paddingTop: "0.15rem", paddingBottom: "0.15rem" }}
+                value={branchFilter}
+                onChange={e => setBranchFilter(e.target.value as BranchCode | "all")}
+              >
                 <option value="all">All branches</option>
                 {BRANCHES.map(b => (
                   <option key={b.code} value={b.code}>{b.code} — {b.name}</option>
@@ -228,285 +235,219 @@ export default function DashboardPage() {
               </select>
             </div>
           )}
-          {user.role === "BM" && (
-            <div className="text-sm text-ink-500 flex items-center gap-2">
-              <Filter className="w-4 h-4" />
-              Showing data for your branch: <strong className="text-ink-900 ml-1">{BRANCHES.find(b => b.code === user.branch)?.name}</strong>
+        </div>
+      </div>
+
+      {/* Big stat cards — quieter palette. Soft tinted background + colored
+          accent strip on the left so each card has identity without screaming. */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+        <CalmStatCard label="Invited"     value={stats.invited}     icon={Users}         accent="violet"  />
+        <CalmStatCard label="Confirmed"   value={stats.confirmed}   icon={BadgeCheck}    accent="indigo"  />
+        <CalmStatCard label="Attended"    value={stats.attended}    icon={CheckCircle2}  accent="emerald" />
+        <CalmStatCard label="Absent"      value={stats.absent}      icon={XCircle}       accent="rose"    />
+        <CalmStatCard label="Rescheduled" value={stats.rescheduled} icon={CalendarClock} accent="amber"   />
+      </div>
+
+      {/* Type split — Progress and Renewal each show "invited · attended" */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <TypeSplitCard
+          label="PCM Progress"
+          invited={stats.progressInvited}
+          attended={stats.progressAttended}
+          totalAttended={stats.attended}
+          accent="violet"
+        />
+        <TypeSplitCard
+          label="PCM Renewal"
+          invited={stats.renewalInvited}
+          attended={stats.renewalAttended}
+          totalAttended={stats.attended}
+          accent="cyan"
+        />
+      </div>
+
+      {/* Attendance rate = attended / invited. Single calmer gradient card. */}
+      <div className="rounded-2xl shadow-sm mb-6 border border-violet-200 bg-white overflow-hidden">
+        <div className="bg-gradient-to-r from-violet-100 to-indigo-100 px-5 py-2 border-b border-violet-200">
+          <div className="fa-mono text-[10px] uppercase text-violet-700 font-bold" style={{ letterSpacing: "0.14em" }}>
+            Attendance rate
+          </div>
+        </div>
+        <div className="p-6 flex items-center gap-6 flex-wrap">
+          <div className="text-6xl font-black text-violet-700 leading-none">{stats.attendancePct}%</div>
+          <div className="text-sm text-ink-500">
+            <strong className="text-ink-900">{stats.attended}</strong> attended /
+            <strong className="text-ink-900 ml-1">{stats.invited}</strong> invited
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <div className="w-full h-2.5 bg-ivory-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all"
+                style={{ width: `${stats.attendancePct}%` }}
+              />
             </div>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* High-level KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <KPICard
-          icon={CalendarDays}
-          label="Events"
-          value={totals.events}
-          accent="brand"
-        />
-        <KPICard
-          icon={Users}
-          label="Invited"
-          value={totals.invited}
-          subtle={totals.slots > 0 ? `${Math.round(totals.invited / totals.slots * 100)}% of ${totals.slots} slots` : undefined}
-        />
-        <KPICard
-          icon={CheckCircle2}
-          label="Attended"
-          value={totals.attended}
-          subtle={totals.confirmed > 0 ? `${Math.round(totals.attended / totals.confirmed * 100)}% of confirmed` : undefined}
-          accent="success"
-        />
-        <KPICard
-          icon={XCircle}
-          label="Absent"
-          value={totals.noShow}
-          subtle={totals.confirmed > 0 ? `${Math.round(totals.noShow / totals.confirmed * 100)}% of confirmed` : undefined}
-          accent="danger"
-        />
-      </div>
-
-      {/* Attendance rate widget */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="fa-display text-2xl text-ink-900">Attendance rate</h2>
+      {/* By-event-and-branch table — tone-matched header */}
+      <div className="rounded-2xl bg-white shadow-sm border border-ivory-300 overflow-hidden">
+        <div className="bg-gradient-to-r from-violet-50 to-indigo-50 px-5 py-3 flex items-center justify-between border-b border-ivory-300">
+          <h2 className="text-base font-semibold text-violet-900">By event &amp; branch</h2>
+          <span className="text-xs text-ink-500">
+            {totalEventsShown} event{totalEventsShown !== 1 ? "s" : ""} · {eventBreakdown.length} branch row{eventBreakdown.length !== 1 ? "s" : ""}
+          </span>
         </div>
-
-        {totalAttendanceMarked === 0 ? (
-          <div className="fa-card p-8 text-center text-sm text-ink-400">
-            Attendance not recorded yet.
+        {eventBreakdown.length === 0 ? (
+          <div className="p-8 text-center text-sm text-ink-400">
+            No invitations fall in this range.
           </div>
         ) : (
-          <>
-            {/* Stat card */}
-            <div className="fa-card p-6 mb-4">
-              <div className="text-xs uppercase tracking-wider font-semibold text-ink-400">
-                Overall attendance rate
-              </div>
-              <div className="flex items-baseline gap-4 mt-2">
-                <div className={`fa-display text-5xl leading-none ${attendanceRateColor(overallAttendanceRate)}`}>
-                  {(overallAttendanceRate * 100).toFixed(1)}%
-                </div>
-                <div className="text-sm text-ink-500">
-                  <span className="text-success font-semibold">{totals.attended}</span> attended of{" "}
-                  <span className="text-ink-900 font-semibold">{totalAttendanceMarked}</span> marked
-                </div>
-              </div>
-            </div>
-
-            {/* Per-branch breakdown */}
-            <div className="fa-card overflow-hidden">
-              <table className="fa-table">
-                <thead>
-                  <tr>
-                    <th>Branch</th>
-                    <th className="text-center">Invited</th>
-                    <th className="text-center">Confirmed</th>
-                    <th className="text-center">Attended</th>
-                    <th className="text-center">Absent</th>
-                    <th className="text-center">Attendance rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {attendanceByBranch.map(row => (
-                    <tr key={row.branch.code}>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-semibold text-ink-700 bg-ivory-200 px-2 py-0.5 rounded">
-                            {row.branch.code}
-                          </span>
-                          <span className="text-ink-900">{row.branch.name}</span>
-                        </div>
-                      </td>
-                      <td className="text-center font-mono">{row.invited}</td>
-                      <td className="text-center font-mono">{row.confirmed}</td>
-                      <td className="text-center font-mono text-success font-medium">{row.attended}</td>
-                      <td className="text-center font-mono text-danger font-medium">{row.absent}</td>
-                      <td className="text-center font-mono">
-                        {row.attendanceMarked > 0 ? (
-                          <span className={`font-semibold ${attendanceRateColor(row.attendanceRate)}`}>
-                            {(row.attendanceRate * 100).toFixed(1)}%
-                          </span>
-                        ) : (
-                          <span className="text-ink-300">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <table className="fa-table">
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Date</th>
+                <th>Branch</th>
+                <th>Invited</th>
+                <th>Confirmed</th>
+                <th>Attended</th>
+                <th>Absent</th>
+                <th>Rescheduled</th>
+                <th>Progress</th>
+                <th>Renewal</th>
+                <th>%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eventBreakdown.map(row => (
+                <tr
+                  key={row.key}
+                  className={row.isFirstOfEvent ? "border-t-2 border-violet-200" : undefined}
+                >
+                  <td className="font-medium text-ink-900">
+                    {row.isFirstOfEvent ? row.event.name : <span className="text-ink-300">·</span>}
+                  </td>
+                  <td className="text-xs text-ink-500 font-mono">
+                    {row.isFirstOfEvent ? format(parseISO(row.event.startDate), "d MMM yyyy") : ""}
+                  </td>
+                  <td>
+                    <span
+                      className="fa-mono text-[11px] uppercase px-2 py-0.5 rounded bg-violet-100 text-violet-700 font-bold"
+                      style={{ letterSpacing: "0.06em" }}
+                    >
+                      {row.branch}
+                    </span>
+                  </td>
+                  <td className="font-mono">{row.invited}</td>
+                  <td className="font-mono text-indigo-700">{row.confirmed}</td>
+                  <td className="font-mono text-emerald-700">{row.attended}</td>
+                  <td className="font-mono text-rose-600">{row.absent}</td>
+                  <td className="font-mono text-amber-700">{row.rescheduled}</td>
+                  <td className="font-mono text-violet-700">{row.progress}</td>
+                  <td className="font-mono text-cyan-700">{row.renewal}</td>
+                  <td>
+                    <span
+                      className={`font-mono font-bold ${
+                        row.pct >= 80 ? "text-emerald-600" : row.pct >= 50 ? "text-amber-600" : "text-rose-600"
+                      }`}
+                    >
+                      {row.pct}%
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
-
-      {/* Per-event table */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="fa-display text-2xl text-ink-900">By event</h2>
-          <span className="text-xs text-ink-400">{eventStats.length} event{eventStats.length !== 1 ? "s" : ""}</span>
-        </div>
-
-        {eventStats.length === 0 ? (
-          <EmptyState
-            icon={BarChart3}
-            title="No data for this filter"
-            description="Try selecting a different year or branch."
-          />
-        ) : (
-          <div className="fa-card overflow-hidden">
-            <table className="fa-table">
-              <thead>
-                <tr>
-                  <th>Event</th>
-                  <th>Date</th>
-                  <th>Status</th>
-                  <th className="text-center">Slots</th>
-                  <th className="text-center">Invited</th>
-                  <th className="text-center">Confirmed</th>
-                  <th className="text-center">Attended</th>
-                  <th className="text-center">Fill rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {eventStats.map(({ event, sessions, totalQuota, invited, confirmed, attended, noShow, fillRate }) => {
-                  const link = user.role === "MKT"
-                    ? `/pcm-system/academy/events/${event.id}`
-                    : `/pcm-system/bm/events/${event.id}`;
-                  return (
-                    <tr key={event.id}>
-                      <td>
-                        <Link href={link} className="block hover:text-brand-900 transition-colors">
-                          <div className="font-medium text-ink-900">{event.name}</div>
-                          <div className="text-xs text-ink-400 flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3" />
-                            {event.venue}
-                            <span className="mx-1">·</span>
-                            <span>{sessions} session{sessions !== 1 ? "s" : ""}</span>
-                          </div>
-                        </Link>
-                      </td>
-                      <td className="text-sm text-ink-600">
-                        {new Date(event.startDate).toLocaleDateString(undefined, {
-                          day: "numeric", month: "short", year: "numeric"
-                        })}
-                      </td>
-                      <td>
-                        <EventStatusPill status={event.status} />
-                      </td>
-                      <td className="text-center font-mono">{totalQuota}</td>
-                      <td className="text-center font-mono">{invited}</td>
-                      <td className="text-center font-mono">{confirmed}</td>
-                      <td className="text-center font-mono">
-                        <span className="text-success font-medium">{attended}</span>
-                        {noShow > 0 && <span className="text-danger text-xs"> / {noShow} absent</span>}
-                      </td>
-                      <td className="text-center">
-                        <FillRateBar rate={fillRate} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Branch breakdown (MKT only) */}
-      {branchBreakdown && branchBreakdown.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="fa-display text-2xl text-ink-900">By branch</h2>
-            <span className="text-xs text-ink-400">{branchBreakdown.length} active branches</span>
-          </div>
-          <div className="fa-card overflow-hidden">
-            <table className="fa-table">
-              <thead>
-                <tr>
-                  <th>Branch</th>
-                  <th className="text-center">Slots</th>
-                  <th className="text-center">Invited</th>
-                  <th className="text-center">Confirmed</th>
-                  <th className="text-center">Attended</th>
-                  <th className="text-center">Fill rate</th>
-                  <th className="text-center">Attendance rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {branchBreakdown.map(b => (
-                  <tr key={b.branch.code}>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-semibold text-ink-700 bg-ivory-200 px-2 py-0.5 rounded">
-                          {b.branch.code}
-                        </span>
-                        <span className="text-ink-900">{b.branch.name}</span>
-                      </div>
-                    </td>
-                    <td className="text-center font-mono">{b.totalQuota}</td>
-                    <td className="text-center font-mono">{b.invited}</td>
-                    <td className="text-center font-mono">{b.confirmed}</td>
-                    <td className="text-center font-mono text-success font-medium">{b.attended}</td>
-                    <td className="text-center"><FillRateBar rate={b.fillRate} /></td>
-                    <td className="text-center"><FillRateBar rate={b.attendanceRate} tone="success" /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </AppShell>
   );
 }
 
-// ----------------------------------------------------------------------------
-function KPICard({
-  icon: Icon, label, value, subtle, accent,
+// ─── Card primitives ────────────────────────────────────────────────────
+
+type Accent = "violet" | "indigo" | "emerald" | "rose" | "amber" | "cyan";
+
+const ACCENTS: Record<Accent, { strip: string; text: string; bg: string; iconBg: string }> = {
+  violet:  { strip: "bg-violet-500",  text: "text-violet-700",  bg: "bg-violet-50/60",  iconBg: "bg-violet-100  text-violet-600"  },
+  indigo:  { strip: "bg-indigo-500",  text: "text-indigo-700",  bg: "bg-indigo-50/60",  iconBg: "bg-indigo-100  text-indigo-600"  },
+  emerald: { strip: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50/60", iconBg: "bg-emerald-100 text-emerald-600" },
+  rose:    { strip: "bg-rose-500",    text: "text-rose-700",    bg: "bg-rose-50/60",    iconBg: "bg-rose-100    text-rose-600"    },
+  amber:   { strip: "bg-amber-500",   text: "text-amber-700",   bg: "bg-amber-50/60",   iconBg: "bg-amber-100   text-amber-600"   },
+  cyan:    { strip: "bg-cyan-500",    text: "text-cyan-700",    bg: "bg-cyan-50/60",    iconBg: "bg-cyan-100    text-cyan-600"    },
+};
+
+function CalmStatCard({
+  label, value, icon: Icon, accent,
 }: {
-  icon: React.ElementType;
   label: string;
-  value: number | string;
-  subtle?: string;
-  accent?: "brand" | "success" | "danger";
+  value: number;
+  icon: React.ElementType;
+  accent: Accent;
 }) {
-  const accentClasses = {
-    brand:   "bg-brand-50 text-brand-900",
-    success: "bg-success-soft text-success",
-    danger:  "bg-danger-soft text-danger",
-  };
-  const c = accent ? accentClasses[accent] : "bg-ivory-200 text-ink-600";
+  const a = ACCENTS[accent];
   return (
-    <div className="fa-card p-5 text-center">
-      <div className={`w-9 h-9 rounded-[10px] ${c} flex items-center justify-center mb-3 mx-auto`}>
-        <Icon className="w-4 h-4" />
+    <div className={`relative rounded-xl ${a.bg} border border-ivory-300 shadow-sm p-4 overflow-hidden`}>
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${a.strip}`} aria-hidden="true" />
+      <div className="flex items-start justify-between pl-2">
+        <div
+          className={`fa-mono text-[10px] uppercase ${a.text} font-bold`}
+          style={{ letterSpacing: "0.14em" }}
+        >
+          {label}
+        </div>
+        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${a.iconBg}`}>
+          <Icon className="w-3.5 h-3.5" />
+        </div>
       </div>
-      <div className="text-xs uppercase tracking-wider font-semibold text-ink-400">{label}</div>
-      <div className="fa-display text-3xl text-ink-900 mt-1">{value}</div>
-      {subtle && <div className="text-xs text-ink-400 mt-1">{subtle}</div>}
+      <div className="text-3xl font-black text-ink-900 mt-2 pl-2">{value}</div>
     </div>
   );
 }
 
-function FillRateBar({ rate, tone = "brand" }: { rate: number; tone?: "brand" | "success" }) {
-  const pct = Math.min(100, Math.round(rate * 100));
-  const color = tone === "success" ? "bg-success" : "bg-brand-700";
+function TypeSplitCard({
+  label, invited, attended, totalAttended, accent,
+}: {
+  label: string;
+  invited: number;
+  attended: number;
+  totalAttended: number;
+  accent: Accent;
+}) {
+  // Two ratios surfaced for the BM:
+  //   • internal: this type's attendance rate  (attended / invited)
+  //   • of total attended: what share of overall attendance came from this type
+  const internalPct = invited > 0 ? Math.round((attended / invited) * 100) : 0;
+  const shareOfAttended = totalAttended > 0 ? Math.round((attended / totalAttended) * 100) : 0;
+  const a = ACCENTS[accent];
   return (
-    <div className="inline-flex items-center gap-2 w-28">
-      <div className="flex-1 h-1.5 bg-ivory-200 rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
+    <div className={`relative rounded-xl ${a.bg} border border-ivory-300 shadow-sm overflow-hidden`}>
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${a.strip}`} aria-hidden="true" />
+      <div className="p-4 pl-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className={`text-base font-bold ${a.text}`}>{label}</h3>
+          <span className={`fa-mono text-[10px] font-bold ${a.text}`} style={{ letterSpacing: "0.06em" }}>
+            {internalPct}%
+          </span>
+        </div>
+        <div className="flex items-baseline gap-2 mb-2">
+          <span className="text-3xl font-black text-ink-900">{invited}</span>
+          <span className="text-sm text-ink-500">invited</span>
+          <span className="text-ink-300 mx-1">·</span>
+          <span className="text-2xl font-bold text-ink-900">{attended}</span>
+          <span className="text-sm text-ink-500">attended</span>
+        </div>
+        <div className="w-full h-2 bg-white rounded-full overflow-hidden border border-ivory-300">
+          <div
+            className={`h-full ${a.strip} rounded-full transition-all`}
+            style={{ width: `${internalPct}%` }}
+          />
+        </div>
+        <div className="text-[11px] text-ink-500 mt-2">
+          {shareOfAttended}% of total attended is {label.replace("PCM ", "")}
+        </div>
       </div>
-      <span className="text-xs font-mono text-ink-600 w-8 text-right">{pct}%</span>
     </div>
   );
-}
-
-// Attendance-rate thresholds (inverse of the old absence thresholds):
-// >90% green, 75–90% amber, <75% red.
-function attendanceRateColor(rate: number): string {
-  if (rate > 0.90) return "text-success";
-  if (rate >= 0.75) return "text-warning";
-  return "text-danger";
 }

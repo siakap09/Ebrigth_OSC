@@ -62,7 +62,7 @@ export default function BMEventDetailPage() {
 
   // Manual refresh — re-fetches every event/session/quota/invitation row
   // from the server. Used when the BM has made changes in another tab or
-  // when an invite count looks stale (e.g. after Marketing edits a quota).
+  // when an invite count looks stale (e.g. after Academy edits a quota).
   async function handleRefresh() {
     await loadEvents();
     setJustRefreshed(true);
@@ -115,7 +115,7 @@ export default function BMEventDetailPage() {
     const q = quotas.find(qq => qq.sessionId === s.id && qq.branch === user.branch);
     return sum + (q?.quota || 0);
   }, 0);
-  // Marketing sets a confirm target (quota). BMs may invite up to 3× that
+  // Academy sets a confirm target (quota). BMs may invite up to 3× that
   // because we expect ~1 in 3 students to actually confirm.
   const totalBranchInviteCap = totalBranchQuota * 3;
   // Only count invitations in sessions this BM can actually see (i.e.
@@ -202,7 +202,7 @@ export default function BMEventDetailPage() {
         <EmptyState
           icon={Users}
           title="No sessions assigned to your branch"
-          description="Marketing hasn't allocated any quotas for your branch in this event yet. Check back later."
+          description="Academy hasn't allocated any quotas for your branch in this event yet. Check back later."
         />
       ) : (
         <div className="grid lg:grid-cols-[320px_1fr] gap-6">
@@ -312,7 +312,7 @@ export default function BMEventDetailPage() {
           currentInvitations={sessionInvitations}
           allInvitationsForEvent={invitations.filter(i => i.branch === user.branch)}
           onInvite={(picks) => {
-            picks.forEach(({ studentId, targetGrade }) => {
+            picks.forEach(({ studentId, targetGrade, inviteType }) => {
               inviteStudent({
                 eventId: event.id,
                 sessionId: selectedSession.id,
@@ -320,9 +320,10 @@ export default function BMEventDetailPage() {
                 branch: user.branch!,
                 targetGrade,
                 invitedBy: user.id,
-                // Allow exceeding the marketing-set confirm target (the
+                // Allow exceeding the academy-set confirm target (the
                 // quota field) up to 3× of it. The modal enforces the cap.
                 allowOverQuota: true,
+                inviteType,
               });
             });
             setInviteModalOpen(false);

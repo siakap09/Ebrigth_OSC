@@ -2,59 +2,60 @@
 
 /* ============================================================================
    PCM System — Design Tokens
-   Ivory & Bronze palette. Swiss Contrast editorial aesthetic.
+   "Aurora" palette. Cool lavender surfaces, violet accents, indigo
+   highlights. Distinct from FA's warm Ivory & Bronze.
    ============================================================================ */
 
 @theme {
-  /* Ivory & cream — page + surface */
+  /* Cool off-whites — page + surface (slight lavender tint) */
   --color-ivory-50:  #ffffff;
-  --color-ivory-100: #fbfaf6;
-  --color-ivory-200: #f5f1e8;
-  --color-ivory-300: #ece5d3;
+  --color-ivory-100: #faf9ff;
+  --color-ivory-200: #f3f0ff;
+  --color-ivory-300: #e0d9ff;
 
-  /* Charcoal — primary ink + primary action */
-  --color-ink-50:  #f5f5f4;
-  --color-ink-100: #e7e5e4;
-  --color-ink-200: #d6d3d1;
-  --color-ink-300: #a8a29e;
-  --color-ink-400: #78716c;
-  --color-ink-500: #57534e;
-  --color-ink-600: #44403c;
-  --color-ink-700: #292524;
-  --color-ink-800: #1c1917;
-  --color-ink-900: #0c0a09;
+  /* Slate ink — slight cool shift vs FA's warm charcoal */
+  --color-ink-50:  #f8fafc;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-300: #cbd5e1;
+  --color-ink-400: #94a3b8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
 
-  /* Champagne gold — accent only, never filled */
-  --color-gold-100: #f5ebd0;
-  --color-gold-200: #e8d4a3;
-  --color-gold-300: #d8b97e;
-  --color-gold-400: #c9a96a;
-  --color-gold-500: #b0914f;
-  --color-gold-600: #8c7238;
-  --color-gold-700: #6b5628;
+  /* Violet — accent only, replaces FA's bronze gold */
+  --color-gold-100: #ede9fe;
+  --color-gold-200: #ddd6fe;
+  --color-gold-300: #c4b5fd;
+  --color-gold-400: #a78bfa;
+  --color-gold-500: #8b5cf6;
+  --color-gold-600: #7c3aed;
+  --color-gold-700: #6d28d9;
 
-  /* Burgundy — rare, danger/error/single hero moment only */
-  --color-brand-50:  #fdf4f3;
-  --color-brand-100: #fbe5e3;
-  --color-brand-200: #f7cfcc;
-  --color-brand-300: #efaba5;
-  --color-brand-400: #e47d74;
-  --color-brand-500: #d3554a;
-  --color-brand-600: #bf3d33;
-  --color-brand-700: #9e2e26;
-  --color-brand-800: #842923;
-  --color-brand-900: #6b2520;
-  --color-brand-950: #3d110e;
+  /* Indigo — rare, hero/CTA moments. Replaces FA's burgundy. */
+  --color-brand-50:  #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
+  --color-brand-950: #1e1b4b;
 
-  /* Functional */
-  --color-success:      #4f7c3a;
-  --color-success-soft: #eef3e5;
-  --color-warning:      #b0914f;
-  --color-warning-soft: #f5ebd0;
-  --color-danger:       #a83d2d;
-  --color-danger-soft:  #fce4df;
-  --color-info:         #3a6a8c;
-  --color-info-soft:    #dfeaf2;
+  /* Functional — sharper tones to match the cool palette */
+  --color-success:      #059669;
+  --color-success-soft: #d1fae5;
+  --color-warning:      #d97706;
+  --color-warning-soft: #fef3c7;
+  --color-danger:       #e11d48;
+  --color-danger-soft:  #ffe4e6;
+  --color-info:         #0891b2;
+  --color-info-soft:    #cffafe;
 
   /* Typography */
   --font-display: var(--font-fraunces), "Source Serif Pro", Georgia, serif;
@@ -64,11 +65,11 @@
 
 /* ============================================================================
    Theme variants — override the @theme tokens above on the <html> element
-   when data-fa-theme is set. The default (Ivory & Bronze) needs no overrides.
+   when data-pcm-theme is set. The default (Ivory & Bronze) needs no overrides.
    ============================================================================ */
 
 /* Vibrant Modern — clean white surfaces, navy ink, blue + teal accents. */
-[data-fa-theme="vibrant"] {
+[data-pcm-theme="vibrant"] {
   --color-ivory-50:  #ffffff;
   --color-ivory-100: #f7fafc;
   --color-ivory-200: #edf2f7;
@@ -105,7 +106,7 @@
 }
 
 /* Warm Sunset — peach + cream + orange/pink/purple. */
-[data-fa-theme="sunset"] {
+[data-pcm-theme="sunset"] {
   --color-ivory-50:  #fffaf3;
   --color-ivory-100: #fff7ed;
   --color-ivory-200: #ffedd5;
@@ -141,7 +142,7 @@
 }
 
 /* High-Contrast Pro — deep navy + bright accents, maximum number readability. */
-[data-fa-theme="highcontrast"] {
+[data-pcm-theme="highcontrast"] {
   --color-ivory-50:  #ffffff;
   --color-ivory-100: #ffffff;
   --color-ivory-200: #f1f5f9;
@@ -189,11 +190,17 @@ html {
   -webkit-font-smoothing: antialiased;
 }
 
-body {
-  background: var(--color-ivory-200);
-  background-image:
-    radial-gradient(at 10% 0%, rgba(201, 169, 106, 0.06) 0px, transparent 40%),
-    radial-gradient(at 100% 100%, rgba(12, 10, 9, 0.02) 0px, transparent 50%);
+/* PCM body — multi-spot soft watercolor backdrop. Distinct from FA's
+   minimal cream-and-gold body. Scoped via the .pcm-system class on the
+   layout wrapper so it never leaks back to FA. */
+.pcm-system {
+  min-height: 100vh;
+  background:
+    radial-gradient(at  5%  10%, rgba(139,  92, 246, 0.18) 0px, transparent 45%),
+    radial-gradient(at 95%   5%, rgba(236,  72, 153, 0.14) 0px, transparent 45%),
+    radial-gradient(at 50%  95%, rgba( 14, 165, 233, 0.14) 0px, transparent 45%),
+    radial-gradient(at 80%  60%, rgba(244, 114,  82, 0.10) 0px, transparent 50%),
+    linear-gradient(180deg, #faf9ff 0%, #f3f0ff 60%, #fef3f2 100%);
   background-attachment: fixed;
 }
 
