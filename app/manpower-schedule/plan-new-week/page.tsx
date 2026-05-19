@@ -19,6 +19,15 @@ import {
 import { isBranchManager } from "@/lib/roles";
 import { isInTraining } from "@/lib/training";
 
+function isEndingSoon(endDate: string | undefined): boolean {
+  if (!endDate) return false;
+  const end = new Date(endDate);
+  if (isNaN(end.getTime())) return false;
+  const threeMonthsFromNow = new Date();
+  threeMonthsFromNow.setMonth(threeMonthsFromNow.getMonth() + 3);
+  return end < threeMonthsFromNow;
+}
+
 function nameWithBadge(name: string, training?: { start?: string; end?: string }) {
   const inWindow = isInTraining(training?.start, training?.end);
   if (!inWindow) return name;
@@ -107,6 +116,7 @@ function PlanNewWeekPage() {
   const [branchStaffData, setBranchStaffData] = useState<Record<string, string[]>>({});
   const [branchManagerData, setBranchManagerData] = useState<Record<string, string[]>>({});
   const [trainingMap, setTrainingMap] = useState<Record<string, { start?: string; end?: string }>>({});
+  const [endDateMap, setEndDateMap] = useState<Record<string, string>>({});
   const [columnReplacementBranch, setColumnReplacementBranch] = useState<Record<string, string>>({});
   const [managerReplacementBranch, setManagerReplacementBranch] = useState<Record<string, string>>({});
   const [selectedDay, setSelectedDay] = useState<string>("");
@@ -179,6 +189,7 @@ function PlanNewWeekPage() {
     const grouped: Record<string, string[]> = {};
     const managers: Record<string, string[]> = {};
     const tmap: Record<string, { start?: string; end?: string }> = {};
+    const emap: Record<string, string> = {};
     staffList.forEach((s: any) => {
       if (!s.branch) return;
       if (!grouped[s.branch]) grouped[s.branch] = [];
@@ -190,10 +201,14 @@ function PlanNewWeekPage() {
       if (s.trainingStartDate || s.trainingEndDate) {
         tmap[s.name] = { start: s.trainingStartDate ?? undefined, end: s.trainingEndDate ?? undefined };
       }
+      if (s.endDate) {
+        emap[s.name] = s.endDate;
+      }
     });
     setBranchStaffData(grouped);
     setBranchManagerData(managers);
     setTrainingMap(tmap);
+    setEndDateMap(emap);
   };
 
   useEffect(() => { fetchStaff(); }, []);
@@ -678,8 +693,9 @@ function PlanNewWeekPage() {
                                         const isConflict = !!conflictBranch;
                                         const isAssignedAsStaff = COLUMNS.some(c => selections[`${day}-${slot}-${c.id}`] === e);
                                         const isDisabled = isConflict || isAssignedAsStaff;
+                                        const endingSoon = isEndingSoon(endDateMap[e]);
                                         return (
-                                          <option key={e} value={e} disabled={isDisabled}>
+                                          <option key={e} value={e} disabled={isDisabled} style={endingSoon ? { color: '#dc2626' } : undefined}>
                                             {isConflict ? `${e} (at ${conflictBranch})` : isAssignedAsStaff ? `${e} (assigned as staff)` : `${e}${isInTraining(trainingMap[e]?.start, trainingMap[e]?.end) ? ' 🎓' : ''}`}
                                           </option>
                                         );
@@ -729,8 +745,9 @@ function PlanNewWeekPage() {
                                               ? Object.entries(scheduledElsewhere).find(([, dayMap]) => dayMap[day]?.has(e.toUpperCase()))?.[0]
                                               : undefined;
                                             const isConflict = !!conflictBranch;
+                                            const endingSoon = isEndingSoon(endDateMap[e]);
                                             return (
-                                              <option key={e} value={e} disabled={usedInCol || isConflict} className="text-slate-800 font-bold">
+                                              <option key={e} value={e} disabled={usedInCol || isConflict} className={endingSoon ? "font-bold" : "text-slate-800 font-bold"} style={endingSoon ? { color: '#dc2626' } : undefined}>
                                                 {isConflict ? `${e} (at ${conflictBranch})` : `${e}${isInTraining(trainingMap[e]?.start, trainingMap[e]?.end) ? ' 🎓' : ''}`}
                                               </option>
                                             );
