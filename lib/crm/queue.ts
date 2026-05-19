@@ -92,6 +92,9 @@ export const ticketEmailQueue: Queue = makeQueue('tkt.email_sender')
 /** Cron: find stale received tickets and alert platform admins. */
 export const staleTicketQueue: Queue = makeQueue('tkt.stale_reminder')
 
+/** Cron: auto-progress unresponsive leads (FU3 → UR_W1 → UR_W2 → UR_W3 → CL). */
+export const staleLeadQueue: Queue = makeQueue('crm.stale_lead')
+
 // ─── Typed job data interfaces ────────────────────────────────────────────────
 
 export interface AutomationJobData {

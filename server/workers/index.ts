@@ -63,6 +63,7 @@ async function main() {
       { digestWorker, scheduleDigest },
       { ticketEmailWorker, startTicketEmailWorker },
       { staleTicketWorker, startStaleTicketWorker },
+      { staleLeadWorker, scheduleStaleLeadScan },
     ] = await Promise.all([
       import('./automationWorker'),
       import('./messageSenderWorker'),
@@ -70,6 +71,7 @@ async function main() {
       import('./digestWorker'),
       import('./ticketEmailWorker'),
       import('./staleTicketWorker'),
+      import('./staleLeadWorker'),
     ])
 
     const bullWorkers = [
@@ -79,6 +81,7 @@ async function main() {
       digestWorker,
       ticketEmailWorker,
       staleTicketWorker,
+      staleLeadWorker,
     ]
 
     // Per-worker error swallow — BullMQ emits 'error' for transient connection
@@ -97,6 +100,7 @@ async function main() {
     await scheduleDigest()
     startTicketEmailWorker()
     await startStaleTicketWorker()
+    await scheduleStaleLeadScan()
 
     // Wire the leadIngest worker's automation enqueuer to BullMQ.
     // Imported here (inside the Redis-up branch) so queue.ts is never loaded
@@ -118,6 +122,7 @@ async function main() {
     console.log('  - digestWorker        (crm.digest)   — daily at 08:00 KL')
     console.log('  - ticketEmailWorker   (tkt.email_sender)')
     console.log('  - staleTicketWorker   (tkt.stale_reminder) — hourly scan')
+    console.log('  - staleLeadWorker     (crm.stale_lead)     — hourly scan, FU3→URW1→URW2→URW3→CL')
   } else {
     console.warn('[workers] Redis unreachable — BullMQ-backed workers DISABLED')
     console.warn('[workers] (automation/messages/reminders/digest/ticket-email)')

@@ -48,6 +48,7 @@ const LEAD_PIPELINE_STAGES = [
   { name: 'Enrolled',              shortCode: 'ENR',   color: 'emerald' },
   { name: 'Unresponsive Week 1',   shortCode: 'UR_W1', color: 'slate'   },
   { name: 'Unresponsive Week 2',   shortCode: 'UR_W2', color: 'slate'   },
+  { name: 'Unresponsive Week 3',   shortCode: 'UR_W3', color: 'slate'   },
   { name: 'Follow-Up 3 Months',    shortCode: 'FU3M',  color: 'slate'   },
   { name: 'Cold Lead',             shortCode: 'CL',    color: 'slate'   },
   { name: 'Do Not Disturb',        shortCode: 'DND',   color: 'red'     },
