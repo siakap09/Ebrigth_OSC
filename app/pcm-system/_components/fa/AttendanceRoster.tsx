@@ -1,0 +1,233 @@
+﻿"use client";
+
+import { Clock, CheckCircle2, XCircle, GripVertical } from "lucide-react";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { useFAStore } from "@pcm/_lib/store";
+import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
+import { StatusPill } from "@pcm/_components/fa/StatusPill";
+import { BRANCHES, Invitation, Student } from "@pcm/_types";
+
+export function AttendanceRoster({
+  session, orderedInvitations, pendingConfirmationsCount, canEdit, canDrag,
+}: {
+  session: { dayNumber: number; sessionNumber: number; startTime: string; endTime: string; label?: string };
+  /** Pre-filtered, pre-ordered list of invitations the page wants displayed.
+   *  Page owns ordering (applies sessionOrder + branch filter + status filter)
+   *  so the roster and the dnd-kit handler always see the same sequence. */
+  orderedInvitations: Invitation[];
+  pendingConfirmationsCount: number;
+  canEdit: boolean;
+  /** When true, render drag handles and wire up dnd-kit sortable rows. MKT-only. */
+  canDrag: boolean;
+}) {
+  const user = useCurrentUser();
+  const students = useFAStore(s => s.students);
+  const updateStatus = useFAStore(s => s.updateInvitationStatus);
+
+  const attended = orderedInvitations.filter(i => i.status === "attended").length;
+  const noShow = orderedInvitations.filter(i => i.status === "no_show").length;
+  const awaiting = orderedInvitations.filter(i => i.status === "confirmed").length;
+
+  function setAttendance(invId: string, status: "attended" | "no_show" | "confirmed") {
+    if (!canEdit) return;
+    updateStatus(invId, status, user?.id);
+  }
+
+  const sortableIds = orderedInvitations.map(i => i.id);
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs uppercase tracking-wider font-semibold text-brand-900">
+              Day {session.dayNumber} · Session {session.sessionNumber}
+            </span>
+            <Clock className="w-3 h-3 text-ink-300" />
+            <span className="text-sm text-ink-500">
+              {session.startTime}–{session.endTime}
+            </span>
+          </div>
+          <h2 className="fa-display text-2xl text-ink-900">
+            {session.label || `Session ${session.sessionNumber}`}
+          </h2>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <div className="fa-display text-2xl text-success">{attended}</div>
+            <div className="text-xs text-ink-400 uppercase tracking-wider">Attended</div>
+          </div>
+          <div className="text-right">
+            <div className="fa-display text-2xl text-danger">{noShow}</div>
+            <div className="text-xs text-ink-400 uppercase tracking-wider">No show</div>
+          </div>
+          <div className="text-right">
+            <div className="fa-display text-2xl text-ink-600">{awaiting}</div>
+            <div className="text-xs text-ink-400 uppercase tracking-wider">Awaiting</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Unconfirmed warning */}
+      {pendingConfirmationsCount > 0 && (
+        <div className="fa-card p-3 mb-4 border-l-4 border-l-warning bg-warning-soft/30 flex items-center gap-3">
+          <span className="text-sm text-ink-600">
+            <strong className="text-ink-900">{pendingConfirmationsCount}</strong> invitation{pendingConfirmationsCount !== 1 ? "s" : ""} still pending parent confirmation and not shown below.
+          </span>
+        </div>
+      )}
+
+      {orderedInvitations.length === 0 ? (
+        <div className="fa-card p-8 text-center text-sm text-ink-400">
+          No confirmed students for this session yet.
+        </div>
+      ) : (
+        <div className="fa-card overflow-hidden">
+          <table className="fa-table">
+            <thead>
+              <tr>
+                <th className="w-10 text-right">#</th>
+                {canDrag && <th className="w-8" aria-label="Drag" />}
+                <th>Student</th>
+                <th>Branch</th>
+                <th>Grade</th>
+                <th>Parent</th>
+                <th>Confirmation</th>
+                <th className="text-right">Attendance</th>
+              </tr>
+            </thead>
+            <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+              <tbody>
+                {orderedInvitations.map((inv, idx) => {
+                  const student = students.find(s => s.id === inv.studentId);
+                  if (!student) return null;
+                  return (
+                    <SortableInvitationRow
+                      key={inv.id}
+                      inv={inv}
+                      student={student}
+                      position={idx + 1}
+                      canEdit={canEdit}
+                      canDrag={canDrag}
+                      onAttended={() => setAttendance(inv.id, "attended")}
+                      onNoShow={() => setAttendance(inv.id, "no_show")}
+                      onReset={() => setAttendance(inv.id, "confirmed")}
+                    />
+                  );
+                })}
+              </tbody>
+            </SortableContext>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SortableInvitationRow({
+  inv, student, position, canEdit, canDrag,
+  onAttended, onNoShow, onReset,
+}: {
+  inv: Invitation;
+  student: Student;
+  position: number;
+  canEdit: boolean;
+  canDrag: boolean;
+  onAttended: () => void;
+  onNoShow: () => void;
+  onReset: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: inv.id,
+    disabled: !canDrag,
+  });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    background: isDragging ? "var(--color-ivory-100)" : undefined,
+  };
+  const branchInfo = BRANCHES.find(b => b.code === inv.branch);
+
+  return (
+    <tr ref={setNodeRef} style={style} {...attributes}>
+      <td className="text-right fa-mono text-ink-500">{position}</td>
+      {canDrag && (
+        <td>
+          <button
+            type="button"
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing text-ink-400 hover:text-ink-700 p-1 rounded touch-none"
+            aria-label={`Drag ${student.name} to reorder or move to another session`}
+            title="Drag to reorder or transfer"
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+        </td>
+      )}
+      <td>
+        <div className="font-medium text-ink-900">{student.name}</div>
+        <div className="text-xs text-ink-400">#{student.id}</div>
+      </td>
+      <td>
+        <span className="font-mono text-xs font-semibold text-ink-700 bg-ivory-200 px-2 py-0.5 rounded" title={branchInfo?.name}>
+          {inv.branch}
+        </span>
+      </td>
+      <td className="font-mono text-sm">G{inv.targetGrade ?? student.grade}</td>
+      <td>
+        <div className="text-sm text-ink-900">{student.parentName}</div>
+        <div className="text-xs text-ink-400 font-mono">{student.parentPhone}</div>
+      </td>
+      <td>
+        {inv.confirmedAt ? (
+          <StatusPill tone="success" showDot={false}>
+            <CheckCircle2 className="w-3 h-3 inline mr-1" />
+            Confirmed
+          </StatusPill>
+        ) : (
+          <span className="text-xs text-ink-400">—</span>
+        )}
+      </td>
+      <td>
+        <div className="flex items-center gap-1 justify-end">
+          <button
+            onClick={onAttended}
+            disabled={!canEdit}
+            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              inv.status === "attended"
+                ? "bg-success-soft text-success ring-1 ring-success/30"
+                : "text-ink-500 hover:bg-ivory-200"
+            } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />
+            Present
+          </button>
+          <button
+            onClick={onNoShow}
+            disabled={!canEdit}
+            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              inv.status === "no_show"
+                ? "bg-danger-soft text-danger ring-1 ring-danger/30"
+                : "text-ink-500 hover:bg-ivory-200"
+            } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            <XCircle className="w-3.5 h-3.5 inline mr-1" />
+            Absent
+          </button>
+          {(inv.status === "attended" || inv.status === "no_show") && canEdit && (
+            <button
+              onClick={onReset}
+              className="text-xs text-ink-400 hover:text-ink-700 px-2"
+              title="Reset to awaiting"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}

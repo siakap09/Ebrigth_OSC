@@ -100,6 +100,16 @@ const dashboards: DashboardCard[] = [
     color: "bg-rose-500",
     items: [],
   },
+  {
+    // PCM System — academy-owned assessment, mirrors FA's structure but
+    // with its own pcm_* DB tables and pcm_progress_json on studentrecords.
+    // Inner /pcm-system route handles its own role-based nav.
+    id: "pcm-system",
+    title: "PCM System",
+    icon: "🎯",
+    color: "bg-amber-500",
+    items: [],
+  },
 ];
 
 export default function DashboardHome({ userRole }: { userRole?: string; userEmail?: string }) {
@@ -128,6 +138,7 @@ const targetHref =
   dashboard.id === "academy" ? "/academy" :
   dashboard.id === "inventory" ? "/api/launch-inventory" :
   dashboard.id === "fa-system" ? "/fa-system" :
+  dashboard.id === "pcm-system" ? "/pcm-system" :
   `/dashboards/${dashboard.id}`;
 
 const href = isDisabled ? "#" : targetHref;
