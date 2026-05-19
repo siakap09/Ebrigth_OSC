@@ -41,6 +41,7 @@ export async function GET(request: Request) {
       status: string | null;
       trainingStartDate: string | null;
       trainingEndDate: string | null;
+      endDate: string | null;
     };
     const staff = await prisma.branchStaff.findMany({
       select: {
@@ -51,6 +52,7 @@ export async function GET(request: Request) {
         status: true,
         trainingStartDate: true,
         trainingEndDate: true,
+        endDate: true,
       },
       where: { status: { equals: 'Active', mode: 'insensitive' } },
     }) as StaffRow[];
@@ -68,6 +70,7 @@ export async function GET(request: Request) {
             : null,
           trainingStartDate: s.trainingStartDate,
           trainingEndDate: s.trainingEndDate,
+          endDate: s.endDate,
         };
       });
 
