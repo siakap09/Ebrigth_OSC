@@ -213,9 +213,18 @@ export function KanbanCard({
   // Is this lead's trial scheduled for today (Asia/Kuala_Lumpur wall-clock)?
   // Compared in KL so a lead booked for "23 May 19:00" doesn't accidentally
   // light up on the 22nd just because the browser is in a behind-KL TZ.
-  const trialStartAt = contact.appointments?.[0]?.startAt
-    ? new Date(contact.appointments[0].startAt)
-    : null
+  // The pill is also gated by stage — only Reschedule, Confirmed for Trial,
+  // Show-Up, and Buffer (OD) leads display the timeslot. Anything past SU
+  // (ENR, SNE) or that never reached CT (NL, FU1-3, etc.) hides it because
+  // the slot info isn't actionable in that state.
+  const stageCodeRaw = stageShortCode ?? ''
+  const stageCodeNorm = stageCodeRaw.toUpperCase().replace(/_/g, '')
+  const TIMESLOT_VISIBLE_STAGES = new Set(['RSD', 'CT', 'SU', 'SG'])
+  const stageAllowsTimeslot = TIMESLOT_VISIBLE_STAGES.has(stageCodeNorm)
+  const trialStartAt =
+    stageAllowsTimeslot && contact.appointments?.[0]?.startAt
+      ? new Date(contact.appointments[0].startAt)
+      : null
   const isTrialToday = trialStartAt ? isSameKLDay(trialStartAt, new Date()) : false
 
   return (

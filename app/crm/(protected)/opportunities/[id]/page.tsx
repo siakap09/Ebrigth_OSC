@@ -57,7 +57,13 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
     appointments?:      Array<{ id: string; startAt: Date }>
   }
   const cExt = contact as CExt
-  const trialAppointment = cExt.appointments?.[0] ?? null
+  // Gated to RSD / CT / SU / SG — same rule the kanban card + modal use.
+  // Anything past SU or that never reached CT hides the timeslot pill
+  // because the appointment is no longer an "active" datum.
+  const TIMESLOT_VISIBLE_STAGES = new Set(['RSD', 'CT', 'SU', 'SG'])
+  const normalizedStageCode = (opp.stage.shortCode ?? '').toUpperCase().replace(/_/g, '')
+  const stageAllowsTimeslot = TIMESLOT_VISIBLE_STAGES.has(normalizedStageCode)
+  const trialAppointment = stageAllowsTimeslot ? (cExt.appointments?.[0] ?? null) : null
   const isChild = !!cExt.parentFullName
   const parentDisplay = isChild ? (cExt.parentFullName ?? '—') : childOwnName
   const studentName = isChild

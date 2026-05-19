@@ -1152,12 +1152,71 @@ export function KanbanBoard({
   // Lead) route through the per-lead modal queue so each lead gets its own
   // date / slot / package / reason. Other stages take the fast bulk-endpoint
   // path because no extras are needed.
+  //
+  // Before doing anything we filter the selected leads against
+  // ALLOWED_LEAD_TRANSITIONS — a CT lead can't bulk-move to FU1, an SU
+  // lead can't bulk-move to NL, etc. Admins (canSwitchBranches) bypass.
   async function handleBulkMove(toStageId: string) {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
 
     const toStage = stages.find((s) => s.id === toStageId)
-    const normalized = toStage?.name.trim().toLowerCase() ?? ''
+    if (!toStage) {
+      toast.error('Target stage not found')
+      return
+    }
+
+    // ── Per-lead transition validation ──────────────────────────────────────
+    // Build a map of opportunityId → currentStage. Then partition the selection
+    // into authorised / unauthorised based on the lead-transition rules. Admins
+    // pass everything through. HR / non-lead pipelines also pass through.
+    const currentPipelineName = pipelines.find((p) => p.id === selectedPipelineId)?.name ?? ''
+    const isLeadPipeline =
+      !/recruitment/i.test(currentPipelineName) &&
+      !currentPipelineName.startsWith('Ebright HR')
+    const enforceRules = isLeadPipeline && !canSwitchBranches
+
+    interface LeadByStage { id: string; fromStage: KanbanStage }
+    const leadsByStage: LeadByStage[] = []
+    for (const stage of stages) {
+      for (const o of stage.opportunities) {
+        if (ids.includes(o.id)) leadsByStage.push({ id: o.id, fromStage: stage })
+      }
+    }
+
+    const authorised: string[] = []
+    const rejected: Array<{ id: string; fromCode: string }> = []
+    for (const l of leadsByStage) {
+      // Same-stage moves are no-ops — drop them silently.
+      if (l.fromStage.id === toStage.id) continue
+      if (!enforceRules || isLeadTransitionAllowed(l.fromStage.shortCode, toStage.shortCode)) {
+        authorised.push(l.id)
+      } else {
+        rejected.push({ id: l.id, fromCode: l.fromStage.shortCode })
+      }
+    }
+
+    if (rejected.length > 0) {
+      // Group by source short code so the toast reads "FU3, CT (3 rejected)"
+      // instead of dumping every id. Branch managers can tell at a glance
+      // which sub-set of their selection couldn't move.
+      const byCode = new Map<string, number>()
+      for (const r of rejected) byCode.set(r.fromCode, (byCode.get(r.fromCode) ?? 0) + 1)
+      const summary = Array.from(byCode.entries())
+        .map(([code, n]) => `${code}×${n}`)
+        .join(', ')
+      toast.error(
+        `${rejected.length} lead${rejected.length === 1 ? '' : 's'} can't move to ${toStage.shortCode} (${summary}). Skipped.`,
+        { duration: 6000 },
+      )
+    }
+
+    if (authorised.length === 0) {
+      toast('No leads eligible for this stage change')
+      return
+    }
+
+    const normalized = toStage.name.trim().toLowerCase()
     const requiresModal =
       normalized === 'confirmed for trial' ||
       normalized === 'enrolled' ||
@@ -1169,11 +1228,11 @@ export function KanbanBoard({
         const res = await fetch('/api/crm/opportunities/bulk/move', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ opportunityIds: ids, toStageId }),
+          body: JSON.stringify({ opportunityIds: authorised, toStageId }),
         })
         if (!res.ok) throw new Error('Bulk move failed')
         const data = (await res.json()) as { moved: number }
-        toast.success(`Moved ${data.moved} opportunities`)
+        toast.success(`Moved ${data.moved} opportunit${data.moved === 1 ? 'y' : 'ies'}`)
         setSelectedIds(new Set())
         void refetch()
       } catch {
@@ -1182,12 +1241,12 @@ export function KanbanBoard({
       return
     }
 
-    // Modal-required path: walk through each selected lead sequentially.
-    const remaining = [...ids]
+    // Modal-required path: walk through each authorised lead sequentially.
+    const remaining = [...authorised]
     const firstId = remaining.shift()
     if (!firstId) return
-    setBulkQueue({ remaining, toStageId, completed: 0, total: ids.length })
-    const opened = openBulkPendingFor(firstId, toStageId, { current: 1, total: ids.length })
+    setBulkQueue({ remaining, toStageId, completed: 0, total: authorised.length })
+    const opened = openBulkPendingFor(firstId, toStageId, { current: 1, total: authorised.length })
     if (!opened) {
       setBulkQueue(null)
       toast.error('Could not open bulk move')
@@ -1567,14 +1626,6 @@ function OpportunityDetailModal({
     isLoading: boolean
   }
   const notes = full?.contact?.notes ?? []
-  // Trial timeslot — prefer the detail-API copy, fall back to the kanban-card
-  // copy already on `opportunity.contact.appointments` so the pill renders
-  // immediately on first paint even before the detail fetch settles.
-  const trialAppt =
-    full?.contact?.appointments?.[0] ??
-    (opportunity.contact as unknown as { appointments?: Array<{ id: string; startAt: string | Date }> })
-      .appointments?.[0] ??
-    null
   // Stage remarks history — every prior stage move with a non-empty note.
   // Newest-first so the most recent context is at the top of the section.
   const stageRemarks = (full?.stageHistory ?? [])
@@ -1593,6 +1644,23 @@ function OpportunityDetailModal({
   const displayStageName = full?.stage?.name ?? (stageName !== '—' ? stageName : '')
   const displayShortCode = full?.stage?.shortCode ?? stageShortCode
   const journey = buildJourneyFromHistory(full?.stageHistory, full?.stage, currentStageId)
+
+  // Trial timeslot — prefer the detail-API copy, fall back to the kanban-card
+  // copy already on `opportunity.contact.appointments` so the pill renders
+  // immediately on first paint even before the detail fetch settles.
+  // Gated to RSD / CT / SU / SG stages: those are the only states where
+  // the appointment is the "active" datum to show in the header.
+  const TIMESLOT_VISIBLE_STAGES = new Set(['RSD', 'CT', 'SU', 'SG'])
+  const stageAllowsTimeslot = TIMESLOT_VISIBLE_STAGES.has(
+    normalizeStageCode(displayShortCode ?? ''),
+  )
+  const trialAppt =
+    stageAllowsTimeslot
+      ? full?.contact?.appointments?.[0] ??
+        (opportunity.contact as unknown as { appointments?: Array<{ id: string; startAt: string | Date }> })
+          .appointments?.[0] ??
+        null
+      : null
 
   const deleteMutation = useDeleteOpportunity()
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)

@@ -11,7 +11,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useBranchContext } from '@/components/crm/branch-context'
 import {
   Zap, Plus, Copy, Trash2, Edit, CheckCircle, XCircle, Loader2, Clock,
+  Cog, ChevronRight, FileCode,
 } from 'lucide-react'
+import { useState } from 'react'
+import {
+  SYSTEM_AUTOMATIONS,
+  SYSTEM_AUTOMATION_CATEGORY_LABELS,
+  type SystemAutomation,
+  type SystemAutomationCategory,
+} from '@/lib/crm/system-automations'
 
 const TRIGGER_LABELS: Record<string, string> = {
   NEW_LEAD: 'New Lead',
@@ -81,6 +89,8 @@ export function AutomationsListClient({ userId: _userId }: AutomationsListClient
           <Plus className="h-4 w-4 mr-2" /> New Automation
         </Button>
       </div>
+
+      <SystemAutomationsSection />
 
       {isLoading && (
         <div className="space-y-3">
@@ -154,5 +164,120 @@ export function AutomationsListClient({ userId: _userId }: AutomationsListClient
         </div>
       )}
     </div>
+  )
+}
+
+// ─── System automations section ──────────────────────────────────────────────
+// Read-only catalogue of hard-coded automations / flows that run in the
+// backend. Sourced from lib/crm/system-automations.ts. Each row expands to
+// show trigger / actions / source files so super-admins can audit the
+// full automation surface area without spelunking the codebase.
+
+function SystemAutomationsSection() {
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  // Group by category in the canonical display order. Iterate
+  // SYSTEM_AUTOMATION_CATEGORY_LABELS so empty categories silently drop out
+  // and order stays stable across renders.
+  const byCategory: Record<SystemAutomationCategory, SystemAutomation[]> = {
+    'lead-ingestion':     [],
+    'lead-source-flow':   [],
+    'stage-transition':   [],
+    'notifications':      [],
+    'branch-management':  [],
+    'sibling-handling':   [],
+  }
+  for (const a of SYSTEM_AUTOMATIONS) byCategory[a.category].push(a)
+
+  return (
+    <section className="mb-8 rounded-2xl border border-indigo-200 bg-indigo-50/30 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+      <header className="mb-3 flex items-center gap-2">
+        <Cog className="h-4 w-4 text-indigo-600 dark:text-indigo-300" />
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+          System Automations
+        </h2>
+        <Badge variant="secondary" className="text-[10px]">Built-in</Badge>
+        <p className="ml-auto text-[11px] italic text-slate-500 dark:text-slate-400">
+          Hard-coded flows that run automatically. Read-only.
+        </p>
+      </header>
+
+      <div className="space-y-4">
+        {(Object.keys(byCategory) as SystemAutomationCategory[]).map((cat) => {
+          const items = byCategory[cat]
+          if (items.length === 0) return null
+          return (
+            <div key={cat}>
+              <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {SYSTEM_AUTOMATION_CATEGORY_LABELS[cat]}
+              </h3>
+              <ul className="space-y-1.5">
+                {items.map((a) => {
+                  const isOpen = expanded === a.id
+                  return (
+                    <li
+                      key={a.id}
+                      className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setExpanded(isOpen ? null : a.id)}
+                        className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                      >
+                        <ChevronRight
+                          className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-900 dark:text-white">
+                            {a.name}
+                          </p>
+                          <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                            {a.summary}
+                          </p>
+                        </div>
+                        <Badge variant="secondary" className="shrink-0 text-[10px]">
+                          {SYSTEM_AUTOMATION_CATEGORY_LABELS[a.category]}
+                        </Badge>
+                      </button>
+
+                      {isOpen && (
+                        <div className="space-y-3 border-t border-slate-100 bg-slate-50/50 px-3 py-3 text-xs dark:border-slate-700 dark:bg-slate-800/30">
+                          <div>
+                            <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                              Trigger
+                            </p>
+                            <p className="text-slate-700 dark:text-slate-300">{a.trigger}</p>
+                          </div>
+                          <div>
+                            <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                              Actions
+                            </p>
+                            <ol className="list-decimal space-y-0.5 pl-4 text-slate-700 dark:text-slate-300">
+                              {a.actions.map((step, i) => (
+                                <li key={i}>{step}</li>
+                              ))}
+                            </ol>
+                          </div>
+                          <div>
+                            <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                              <FileCode className="h-3 w-3" /> Source files
+                            </p>
+                            <ul className="space-y-0.5 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                              {a.sources.map((src) => (
+                                <li key={src} className="truncate" title={src}>{src}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
