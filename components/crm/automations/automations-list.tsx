@@ -1,9 +1,12 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   useAutomations, useToggleAutomation, useDuplicateAutomation, useDeleteAutomation,
+  useCreateAutomation,
+  type AutomationListRow,
 } from '@/hooks/crm/useAutomations'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,34 +14,22 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useBranchContext } from '@/components/crm/branch-context'
 import {
   Zap, Plus, Copy, Trash2, Edit, CheckCircle, XCircle, Loader2, Clock,
-  Cog, ChevronRight, FileCode,
+  Cog, ChevronRight, FileCode, Sparkles, Power, Activity, Settings2,
 } from 'lucide-react'
-import { useState } from 'react'
 import {
   SYSTEM_AUTOMATIONS,
   SYSTEM_AUTOMATION_CATEGORY_LABELS,
   type SystemAutomation,
   type SystemAutomationCategory,
 } from '@/lib/crm/system-automations'
-
-const TRIGGER_LABELS: Record<string, string> = {
-  NEW_LEAD: 'New Lead',
-  STAGE_CHANGED: 'Stage Changed',
-  TAG_ADDED: 'Tag Added',
-  TAG_REMOVED: 'Tag Removed',
-  TIME_IN_STAGE: 'Time in Stage',
-  SCHEDULED: 'Scheduled',
-  FORM_SUBMITTED: 'Form Submitted',
-  INCOMING_MESSAGE: 'Incoming Message',
-  CUSTOM_FIELD_CHANGED: 'Field Changed',
-  APPOINTMENT_BOOKED: 'Appointment Booked',
-  CONTACT_REPLIED: 'Contact Replied',
-  NO_REPLY_AFTER: 'No Reply After',
-}
+import { AUTOMATION_TEMPLATES } from '@/lib/crm/automation-templates'
+import { TRIGGER_TYPE_LABELS, type TriggerType } from '@/lib/crm/validations/automation'
 
 interface AutomationsListClientProps {
   userId: string
 }
+
+type TabId = 'custom' | 'system'
 
 export function AutomationsListClient({ userId: _userId }: AutomationsListClientProps) {
   const router = useRouter()
@@ -47,8 +38,25 @@ export function AutomationsListClient({ userId: _userId }: AutomationsListClient
   const toggle = useToggleAutomation()
   const duplicate = useDuplicateAutomation()
   const remove = useDeleteAutomation()
+  const create = useCreateAutomation()
 
-  const automations = (data as { id: string; name: string; triggerType: string; enabled: boolean; runs?: { status: string; startedAt: string }[] }[] | undefined) ?? []
+  const [tab, setTab] = useState<TabId>('custom')
+
+  const automations: AutomationListRow[] = useMemo(() => (data ?? []), [data])
+
+  const stats = useMemo(() => {
+    const enabled = automations.filter((a) => a.enabled).length
+    const lastRunOk = automations.filter((a) => a.lastRun?.status === 'COMPLETED').length
+    const lastRunFail = automations.filter((a) => a.lastRun?.status === 'FAILED').length
+    return {
+      total: automations.length,
+      enabled,
+      disabled: automations.length - enabled,
+      systemCount: SYSTEM_AUTOMATIONS.length,
+      lastRunOk,
+      lastRunFail,
+    }
+  }, [automations])
 
   async function handleToggle(id: string, current: boolean) {
     try {
@@ -78,107 +86,284 @@ export function AutomationsListClient({ userId: _userId }: AutomationsListClient
     }
   }
 
+  async function createFromTemplate(templateId: string) {
+    const tpl = AUTOMATION_TEMPLATES.find((t) => t.id === templateId)
+    if (!tpl) return
+    try {
+      const created = await create.mutateAsync({
+        name: tpl.name,
+        triggerType: tpl.triggerType,
+        triggerConfig: {},
+        graph: tpl.graph as never,
+        enabled: false,
+      })
+      const c = created as { automationId: string }
+      toast.success(`Created "${tpl.name}" — opening editor`)
+      router.push(`/crm/automations/${c.automationId}`)
+    } catch {
+      toast.error('Failed to create from template')
+    }
+  }
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Automations</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Visual workflows that run automatically on triggers.</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Automations</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Build visual workflows that trigger when leads enter your CRM. Combine messages, tags, and stage moves.
+          </p>
         </div>
         <Button onClick={() => router.push('/crm/automations/new')}>
-          <Plus className="h-4 w-4 mr-2" /> New Automation
+          <Plus className="h-4 w-4 mr-1.5" /> New Automation
         </Button>
       </div>
 
-      <SystemAutomationsSection />
+      {/* Stats strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        <StatCard icon={Cog} label="Built-in" value={stats.systemCount} hint="Read-only, hard-coded flows" tone="indigo" />
+        <StatCard icon={Settings2} label="Custom" value={stats.total} hint={`${stats.enabled} live · ${stats.disabled} draft`} tone="blue" />
+        <StatCard icon={Power} label="Live" value={stats.enabled} hint="Workflows enabled" tone="emerald" />
+        <StatCard
+          icon={Activity}
+          label="Last 24h"
+          value={`${stats.lastRunOk}✓ ${stats.lastRunFail}✗`}
+          hint="Most-recent run per automation"
+          tone="amber"
+        />
+      </div>
 
-      {isLoading && (
-        <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-lg" />
-          ))}
-        </div>
+      {/* Starter templates */}
+      {automations.length === 0 && !isLoading && tab === 'custom' && (
+        <TemplatesRow onPick={createFromTemplate} pending={create.isPending} />
       )}
 
-      {!isLoading && automations.length === 0 && (
-        <div className="text-center py-20 bg-gray-50 dark:bg-gray-900 rounded-xl border border-dashed">
-          <Zap className="mx-auto h-10 w-10 text-gray-300 mb-3" />
-          <p className="text-gray-500 font-medium">No automations yet</p>
-          <p className="text-sm text-gray-400 mt-1">Create your first workflow to automate lead communication.</p>
-          <Button className="mt-4" onClick={() => router.push('/crm/automations/new')}>
-            <Plus className="h-4 w-4 mr-2" /> Create Automation
-          </Button>
-        </div>
-      )}
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 mb-4">
+        <TabButton active={tab === 'custom'} onClick={() => setTab('custom')}>
+          Custom <span className="ml-1 text-xs text-slate-400">({stats.total})</span>
+        </TabButton>
+        <TabButton active={tab === 'system'} onClick={() => setTab('system')}>
+          Built-in <span className="ml-1 text-xs text-slate-400">({stats.systemCount})</span>
+        </TabButton>
+      </div>
 
-      {!isLoading && automations.length > 0 && (
-        <div className="space-y-2">
-          {automations.map((a) => {
-            const lastRun = a.runs?.[0]
-            return (
-              <div
-                key={a.id}
-                className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 transition-colors"
-              >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className={`p-2 rounded-lg ${a.enabled ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
-                    <Zap className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-medium text-gray-900 dark:text-white truncate">{a.name}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <Badge variant="secondary" className="text-xs">{TRIGGER_LABELS[a.triggerType] ?? a.triggerType}</Badge>
-                      {lastRun && (
-                        <span className="text-xs text-gray-400 flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {lastRun.status === 'COMPLETED' && <CheckCircle className="h-3 w-3 text-green-500" />}
-                          {lastRun.status === 'FAILED' && <XCircle className="h-3 w-3 text-red-500" />}
-                          {lastRun.status === 'RUNNING' && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
-                          {lastRun.status}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+      {/* Tab content */}
+      {tab === 'custom' && (
+        <>
+          {isLoading && (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full rounded-lg" />
+              ))}
+            </div>
+          )}
 
-                <div className="flex items-center gap-2 ml-4">
-                  <button
-                    onClick={() => handleToggle(a.id, a.enabled)}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${a.enabled ? 'bg-blue-600' : 'bg-gray-300'}`}
-                  >
-                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${a.enabled ? 'translate-x-4' : 'translate-x-1'}`} />
-                  </button>
-                  <Button variant="ghost" size="icon" onClick={() => router.push(`/crm/automations/${a.id}`)}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDuplicate(a.id)}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700" onClick={() => handleDelete(a.id, a.name)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+          {!isLoading && automations.length === 0 && (
+            <div className="text-center py-12 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+              <Zap className="mx-auto h-10 w-10 text-slate-300 mb-3" />
+              <p className="text-slate-600 dark:text-slate-300 font-medium">No custom automations yet</p>
+              <p className="text-sm text-slate-400 mt-1">Pick a starter template above, or build one from scratch.</p>
+              <Button className="mt-4" onClick={() => router.push('/crm/automations/new')}>
+                <Plus className="h-4 w-4 mr-1.5" /> Build from scratch
+              </Button>
+            </div>
+          )}
+
+          {!isLoading && automations.length > 0 && (
+            <div className="space-y-2">
+              {automations.map((a) => (
+                <AutomationRow
+                  key={a.id}
+                  automation={a}
+                  onEdit={() => router.push(`/crm/automations/${a.id}`)}
+                  onToggle={() => handleToggle(a.id, a.enabled)}
+                  onDuplicate={() => handleDuplicate(a.id)}
+                  onDelete={() => handleDelete(a.id, a.name)}
+                />
+              ))}
+
+              {/* Show templates row below the list too, for adding more */}
+              <div className="mt-6">
+                <TemplatesRow onPick={createFromTemplate} pending={create.isPending} compact />
               </div>
-            )
-          })}
-        </div>
+            </div>
+          )}
+        </>
       )}
+
+      {tab === 'system' && <SystemAutomationsSection />}
+    </div>
+  )
+}
+
+// ─── Stat card ────────────────────────────────────────────────────────────────
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: string | number
+  hint: string
+  tone: 'indigo' | 'blue' | 'emerald' | 'amber'
+}) {
+  const tones: Record<typeof tone, string> = {
+    indigo: 'border-indigo-200 bg-indigo-50/60 dark:bg-indigo-950/30 dark:border-indigo-900/50 text-indigo-700 dark:text-indigo-300',
+    blue: 'border-blue-200 bg-blue-50/60 dark:bg-blue-950/30 dark:border-blue-900/50 text-blue-700 dark:text-blue-300',
+    emerald: 'border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/30 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300',
+    amber: 'border-amber-200 bg-amber-50/60 dark:bg-amber-950/30 dark:border-amber-900/50 text-amber-700 dark:text-amber-300',
+  }
+  return (
+    <div className={`rounded-xl border p-3 ${tones[tone]}`}>
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider">
+        <Icon className="h-3.5 w-3.5" />
+        <span>{label}</span>
+      </div>
+      <p className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">{value}</p>
+      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{hint}</p>
+    </div>
+  )
+}
+
+// ─── Tab button ───────────────────────────────────────────────────────────────
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+        active
+          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+          : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ─── Starter templates ────────────────────────────────────────────────────────
+
+function TemplatesRow({
+  onPick,
+  pending,
+  compact = false,
+}: {
+  onPick: (id: string) => void
+  pending: boolean
+  compact?: boolean
+}) {
+  return (
+    <section className={compact ? 'mt-2' : 'mb-5'}>
+      <div className="flex items-center gap-2 mb-2">
+        <Sparkles className="h-4 w-4 text-amber-500" />
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+          Starter templates
+        </h2>
+        <span className="text-[11px] text-slate-400">Click to create — you can customize before saving.</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {AUTOMATION_TEMPLATES.map((tpl) => (
+          <button
+            key={tpl.id}
+            onClick={() => onPick(tpl.id)}
+            disabled={pending}
+            className="text-left rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 hover:border-blue-400 hover:shadow-sm transition-all disabled:opacity-60"
+          >
+            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{tpl.name}</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-snug">{tpl.summary}</p>
+            <div className="mt-2 flex items-center gap-1.5">
+              <Badge variant="secondary" className="text-[10px]">
+                {TRIGGER_TYPE_LABELS[tpl.triggerType as TriggerType]}
+              </Badge>
+              <span className="text-[10px] text-slate-400">{tpl.graph.nodes.length} steps</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ─── Automation row ───────────────────────────────────────────────────────────
+
+function AutomationRow({
+  automation: a,
+  onEdit,
+  onToggle,
+  onDuplicate,
+  onDelete,
+}: {
+  automation: AutomationListRow
+  onEdit: () => void
+  onToggle: () => void
+  onDuplicate: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="group flex items-center justify-between p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+      <button onClick={onEdit} className="flex items-center gap-3 min-w-0 flex-1 text-left">
+        <div className={`p-2 rounded-lg ${a.enabled ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}`}>
+          <Zap className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <p className="font-medium text-slate-900 dark:text-white truncate">{a.name}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <Badge variant="secondary" className="text-[10px]">
+              {TRIGGER_TYPE_LABELS[a.triggerType as TriggerType] ?? a.triggerType}
+            </Badge>
+            {a.branchName && (
+              <span className="text-[11px] text-slate-400 truncate">· {a.branchName}</span>
+            )}
+            {a.lastRun && (
+              <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {a.lastRun.status === 'COMPLETED' && <CheckCircle className="h-3 w-3 text-emerald-500" />}
+                {a.lastRun.status === 'FAILED' && <XCircle className="h-3 w-3 text-red-500" />}
+                {a.lastRun.status === 'RUNNING' && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
+                {new Date(a.lastRun.startedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </div>
+        </div>
+      </button>
+
+      <div className="flex items-center gap-1 ml-4 shrink-0">
+        <button
+          onClick={onToggle}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${a.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+          title={a.enabled ? 'Disable' : 'Enable'}
+        >
+          <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${a.enabled ? 'translate-x-4' : 'translate-x-1'}`} />
+        </button>
+        <Button variant="ghost" size="icon" onClick={onEdit} title="Edit">
+          <Edit className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" onClick={onDuplicate} title="Duplicate">
+          <Copy className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700" onClick={onDelete} title="Delete">
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   )
 }
 
 // ─── System automations section ──────────────────────────────────────────────
+//
 // Read-only catalogue of hard-coded automations / flows that run in the
-// backend. Sourced from lib/crm/system-automations.ts. Each row expands to
-// show trigger / actions / source files so super-admins can audit the
-// full automation surface area without spelunking the codebase.
+// backend. Sourced from lib/crm/system-automations.ts.
 
 function SystemAutomationsSection() {
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  // Group by category in the canonical display order. Iterate
-  // SYSTEM_AUTOMATION_CATEGORY_LABELS so empty categories silently drop out
-  // and order stays stable across renders.
   const byCategory: Record<SystemAutomationCategory, SystemAutomation[]> = {
     'lead-ingestion':     [],
     'lead-source-flow':   [],
@@ -190,15 +375,15 @@ function SystemAutomationsSection() {
   for (const a of SYSTEM_AUTOMATIONS) byCategory[a.category].push(a)
 
   return (
-    <section className="mb-8 rounded-2xl border border-indigo-200 bg-indigo-50/30 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+    <section className="rounded-2xl border border-indigo-200 bg-indigo-50/30 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/20">
       <header className="mb-3 flex items-center gap-2">
         <Cog className="h-4 w-4 text-indigo-600 dark:text-indigo-300" />
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-          System Automations
+          Built-in flows
         </h2>
-        <Badge variant="secondary" className="text-[10px]">Built-in</Badge>
+        <Badge variant="secondary" className="text-[10px]">Read-only</Badge>
         <p className="ml-auto text-[11px] italic text-slate-500 dark:text-slate-400">
-          Hard-coded flows that run automatically. Read-only.
+          Hard-coded inside the platform. Tap a row to inspect.
         </p>
       </header>
 

@@ -11,11 +11,32 @@ async function fetcher<T>(url: string, opts?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// Shape returned by GET /api/crm/automations
+export interface AutomationListRow {
+  id: string
+  name: string
+  triggerType: string
+  enabled: boolean
+  branchId: string | null
+  branchName: string | null
+  createdAt: string
+  updatedAt: string
+  lastRun: {
+    id: string
+    status: string
+    startedAt: string
+    completedAt: string | null
+  } | null
+}
+
 export function useAutomations(branchId?: string) {
   const params = branchId ? `?branchId=${branchId}` : ''
   return useQuery({
     queryKey: ['crm', 'automations', branchId],
-    queryFn: () => fetcher(`${BASE}${params}`),
+    queryFn: async () => {
+      const res = await fetcher<{ data: AutomationListRow[]; total: number }>(`${BASE}${params}`)
+      return res.data
+    },
   })
 }
 
@@ -32,6 +53,7 @@ export function useAutomationRuns(automationId: string) {
     queryKey: ['crm', 'automation-runs', automationId],
     queryFn: () => fetcher(`${BASE}/${automationId}/runs`),
     enabled: !!automationId,
+    refetchInterval: 5_000,
   })
 }
 
@@ -78,5 +100,16 @@ export function useDeleteAutomation() {
   return useMutation({
     mutationFn: (id: string) => fetcher(`${BASE}/${id}`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['crm', 'automations'] }),
+  })
+}
+
+export function useTestRunAutomation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, contactId }: { id: string; contactId: string }) =>
+      fetcher(`${BASE}/${id}/test-run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contactId }) }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['crm', 'automation-runs', v.id] })
+    },
   })
 }
