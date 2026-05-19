@@ -280,6 +280,27 @@ export const SYSTEM_AUTOMATIONS: SystemAutomation[] = [
       'components/crm/opportunities/kanban-board.tsx',
     ],
   },
+  {
+    id: 'stale-lead-auto-progression',
+    name: 'Auto-progress Unresponsive Leads — FU3 → URW1 → URW2 → URW3 → CL',
+    summary: 'After 7 days of inactivity at each step, leads walk themselves down the unresponsive funnel.',
+    category: 'stage-transition',
+    trigger: 'Hourly scan (BullMQ repeatable on Redis-enabled environments) + manual HTTP cron endpoint',
+    actions: [
+      'Find every opportunity in FU3 whose lastStageChangeAt is older than 7 days → move to UR_W1',
+      'Same rule moves UR_W1 → UR_W2 after another 7 days of silence',
+      'Same rule moves UR_W2 → UR_W3 after another 7 days of silence',
+      'After 7 days in UR_W3 the lead drops to Cold Lead with the stage remark "Unresponsive (Auto-Generated)"',
+      'Each move bumps lastStageChangeAt so a lead only advances one step per scan run',
+      'Stage remarks are written to crm_stage_history.note so they show under "Stage remarks" on the lead detail',
+      'On Redis-less staging the worker is dormant — the same logic can be fired by hitting POST /api/crm/cron/move-stale-leads with the CRON_SECRET',
+    ],
+    sources: [
+      'lib/crm/stale-leads.ts',
+      'server/workers/staleLeadWorker.ts',
+      'app/api/crm/cron/move-stale-leads/route.ts',
+    ],
+  },
 
   // ── Notifications ─────────────────────────────────────────────────────────
   {
@@ -321,7 +342,7 @@ export const SYSTEM_AUTOMATIONS: SystemAutomation[] = [
     trigger: 'POST /api/crm/branches by a super-admin / agency-admin',
     actions: [
       'Insert the crm_branch row',
-      'Create a matching crm_pipeline + 16 lead stages (NL, FU1-3, RSD, CT, CNS, SU, SNE, ENR, UR_W1-2, FU3M, CL, DND, SG)',
+      'Create a matching crm_pipeline + 17 lead stages (NL, FU1-3, RSD, CT, CNS, SU, SNE, ENR, UR_W1-3, FU3M, CL, DND, SG)',
       'If the name has an "NN" prefix AND a code, also create a tkt_branch so the ticket module picks it up',
     ],
     sources: [

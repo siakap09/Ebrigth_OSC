@@ -130,14 +130,32 @@ async function main() {
 
     for (let i = 0; i < ordered.length; i++) {
       const child = children[i]
-      if (!child?.name) continue
-      const { firstName, lastName } = splitName(child.name)
-      const childAge = child.age ?? null
       const target = ordered[i]
-      console.log(
-        `  [${key}] contact ${target.id} → ${child.name}` +
-          (childAge ? ` (${childAge})` : ''),
-      )
+
+      // Determine the firstName / lastName / childAge1 we'll set on this row.
+      // Real entry with a name → use that. Otherwise (missing entry OR entry
+      // without a name) we still mark the contact as a child, just with a
+      // placeholder firstName. The placeholder is what surfaces on the kanban
+      // card until the BM renames the contact manually.
+      let firstName: string
+      let lastName: string | null = null
+      let childAge: string | null = null
+      if (child?.name) {
+        const split = splitName(child.name)
+        firstName = split.firstName
+        lastName  = split.lastName
+        childAge  = child.age ?? null
+        console.log(
+          `  [${key}] contact ${target.id} → ${child.name}` +
+            (childAge ? ` (${childAge})` : ''),
+        )
+      } else {
+        firstName = `Child ${i + 1}`
+        console.log(
+          `  [${key}] contact ${target.id} → placeholder "${firstName}" (children_details has no name at index ${i})`,
+        )
+      }
+
       if (!DRY_RUN) {
         await prisma.crm_contact.update({
           where: { id: target.id },

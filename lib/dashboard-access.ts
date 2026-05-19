@@ -121,6 +121,18 @@ export const DASHBOARD_TREE: DashboardNode[] = [
     href: "/fa-system",
     icon: "🎗️",
   },
+
+  // PCM System — academy-owned counterpart of FA. Mirrors the same
+  // event/session/invitation shape but with its own pcm_* DB tables and
+  // pcm_progress_json on studentrecords. The internal /pcm-system route
+  // has its own SessionSync-driven nav (ACADEMY / ADMIN / SUPER_ADMIN
+  // get the Academy view, BRANCH_MANAGER gets the BM view).
+  {
+    key: "pcm-system",
+    label: "PCM System",
+    href: "/pcm-system",
+    icon: "🎯",
+  },
 ];
 
 // ─── Role allowlists ────────────────────────────────────────────────────────
@@ -165,10 +177,12 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
 
   // Original BM rule was "manpower-planning + fa-system" inside HRMS, plus
   // other tiles outside HRMS. Kept narrow so overrides can extend per-BM.
+  // BMs also get pcm-system (they're the branch-side of every assessment).
   [ROLES.BRANCH_MANAGER]: [
     "home",
     "hrms.manpower-planning",
     "fa-system",
+    "pcm-system",
     "crm",
     "inventory",
     "sms",
@@ -187,6 +201,7 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
     "inventory",
     "academy",
     "fa-system",                  // Academy has full FA access (matches SessionSync)
+    "pcm-system",                 // PCM is academy-owned — full access
   ],
 
   [ROLES.INTERN]:    ["home", "hrms.attendance", "hrms.claims", "library"],
