@@ -200,6 +200,12 @@ export function KanbanCard({
     : contact.childName1
   const primaryChildAge = contact.childAge1
 
+  // Placeholder firstName from the importer's fallback path — emitted when a
+  // sibling row's children_details entry is missing or has no `name`. Surface
+  // it in italics so the BM knows the actual child name still needs to be
+  // filled in (matches /^Child \d+$/ exactly, set by leads-import.ts).
+  const isPlaceholderName = /^Child \d+$/.test(contact.firstName)
+
   const ageColor = getAgeColor(
     opportunity.lastStageChangeAt,
     stuckHoursYellow,
@@ -290,8 +296,11 @@ export function KanbanCard({
               <Link
                 href={`/crm/opportunities/${opportunity.id}`}
                 onClick={(e) => e.stopPropagation()}
-                className="text-sm font-semibold text-slate-900 dark:text-white truncate hover:underline hover:text-indigo-600 dark:hover:text-indigo-400 underline-offset-2"
-                title="Open lead detail"
+                className={cn(
+                  'text-sm font-semibold text-slate-900 dark:text-white truncate hover:underline hover:text-indigo-600 dark:hover:text-indigo-400 underline-offset-2',
+                  isPlaceholderName && 'italic text-slate-500 dark:text-slate-400',
+                )}
+                title={isPlaceholderName ? 'Placeholder — rename to the actual child name' : 'Open lead detail'}
               >
                 {primaryChildName}
               </Link>
