@@ -48,6 +48,13 @@ jobs:
             docker exec ebright-osc-worker-1 node scripts/ensure-burnlist-tables.mjs \
               || echo "WARN: burnlist tables ensure failed (non-fatal — page may show DB error until fixed)"
 
+            # One-shot backfill of the 2026-05-13 historical week. Script
+            # checks if the week already exists and exits early — so this is
+            # a no-op on every deploy after the first. Safe to keep here.
+            echo "===== backfilling 2026-05-13 historical week (idempotent) ====="
+            docker exec ebright-osc-worker-1 node scripts/backfill-burnlist-may13.mjs \
+              || echo "WARN: 5/13 backfill failed (non-fatal)"
+
   smoke-tests:
     needs: deploy # Only run tests AFTER deployment succeeds
     runs-on: ubuntu-latest
