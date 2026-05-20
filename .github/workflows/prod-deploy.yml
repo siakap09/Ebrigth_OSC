@@ -31,3 +31,11 @@ jobs:
             export SHARED_SSO_SECRET='${{ secrets.SHARED_SSO_SECRET }}'
             export INVENTORY_URL='${{ secrets.INVENTORY_URL }}'
             /home/staff1/deploy-prod.sh osc
+
+            # Self-healing burnlist tables: idempotent DDL run inside the
+            # worker container. Creates burnlist_week / burnlist_entry in
+            # both `crm` and `public` schemas of whichever DATABASE_URL
+            # the prod env points at. No-op on subsequent deploys.
+            echo "===== ensuring burnlist tables exist ====="
+            docker exec ebright-osc-worker-1 node scripts/ensure-burnlist-tables.mjs \
+              || echo "WARN: burnlist tables ensure failed (non-fatal — page may show DB error until fixed)"
