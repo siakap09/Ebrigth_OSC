@@ -132,37 +132,34 @@ async function main() {
       const child = children[i]
       const target = ordered[i]
 
-      // Determine the firstName / lastName / childAge1 we'll set on this row.
-      // Real entry with a name → use that. Otherwise (missing entry OR entry
-      // without a name) we still mark the contact as a child, just with a
-      // placeholder firstName. The placeholder is what surfaces on the kanban
-      // card until the BM renames the contact manually.
-      let firstName: string
-      let lastName: string | null = null
-      let childAge: string | null = null
+      // Real entry with a name → set the child's name + age, mark as child by
+      // populating parentFullName. Missing entry (children_details shorter
+      // than the group, or entry without a name) → leave the row showing the
+      // parent's name and leave parentFullName NULL, so the kanban card
+      // simply renders it like a parent submission. The BM can edit the name
+      // in-place later once they know the actual child.
       if (child?.name) {
-        const split = splitName(child.name)
-        firstName = split.firstName
-        lastName  = split.lastName
-        childAge  = child.age ?? null
+        const { firstName, lastName } = splitName(child.name)
+        const childAge: string | null = child.age ?? null
         console.log(
           `  [${key}] contact ${target.id} → ${child.name}` +
             (childAge ? ` (${childAge})` : ''),
         )
+        if (!DRY_RUN) {
+          await prisma.crm_contact.update({
+            where: { id: target.id },
+            data: { firstName, lastName, childAge1: childAge, parentFullName },
+          })
+        }
+        updated += 1
       } else {
-        firstName = `Child ${i + 1}`
         console.log(
-          `  [${key}] contact ${target.id} → placeholder "${firstName}" (children_details has no name at index ${i})`,
+          `  [${key}] contact ${target.id} → no child name at index ${i}, leaving parent-name fallback in place`,
         )
+        // No-op: the existing row already shows the parent's name. We do NOT
+        // set parentFullName here because the kanban would then render an
+        // empty "child name" + parent below.
       }
-
-      if (!DRY_RUN) {
-        await prisma.crm_contact.update({
-          where: { id: target.id },
-          data: { firstName, lastName, childAge1: childAge, parentFullName },
-        })
-      }
-      updated += 1
     }
   }
 

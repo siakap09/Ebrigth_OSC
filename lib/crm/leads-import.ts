@@ -148,56 +148,42 @@ function pickContactName(row: UnifiedLeadRow): {
   lastName: string | null
   childAge: string | null
   /**
-   * Parent's full name when the contact represents a CHILD (i.e. the row is
-   * a sibling-exploded record from master_leads_unified). Null only when
-   * this row is a single, non-sibling submission (sibling_index is null).
-   *
-   * Even when children_details is shorter than sibling_index or is missing a
-   * name at that index, we still mark the contact as a child — because the
-   * view exploded the submission into sibling rows for a reason (the
-   * source row had children_count ≥ 2). Marking it as a parent in that
-   * case would make the kanban card look like a duplicate parent
-   * submission, which is the visible symptom the user reported.
+   * Parent's full name when the contact represents a CHILD with a known
+   * child name (i.e. children_details had a usable name entry at
+   * sibling_index). Null in every other case — including sibling rows
+   * whose children_details is missing/short/has no name. Those rows fall
+   * back to the parent's name as the contact's firstName/lastName, so the
+   * kanban renders them with the parent's name (no "Child N" placeholder).
    */
   parentFullName: string | null
 } {
   const idx = row.sibling_index
-  if (idx && idx > 0) {
-    // Try children_details first — best case, we get a real child name + age.
-    if (row.children_details) {
-      try {
-        const parsed = JSON.parse(row.children_details) as WixChildEntry[]
-        if (Array.isArray(parsed)) {
-          const child = parsed[idx - 1] as WixChildEntry | undefined
-          const childName = (child?.name ?? '').trim()
-          if (childName) {
-            const { firstName, lastName } = splitName(childName)
-            return {
-              firstName,
-              lastName,
-              childAge: child?.age ?? null,
-              parentFullName: row.full_name ?? null,
-            }
+  if (idx && idx > 0 && row.children_details) {
+    try {
+      const parsed = JSON.parse(row.children_details) as WixChildEntry[]
+      if (Array.isArray(parsed)) {
+        const child = parsed[idx - 1] as WixChildEntry | undefined
+        const childName = (child?.name ?? '').trim()
+        if (childName) {
+          const { firstName, lastName } = splitName(childName)
+          return {
+            firstName,
+            lastName,
+            childAge: child?.age ?? null,
+            parentFullName: row.full_name ?? null,
           }
         }
-      } catch {
-        // children_details malformed — fall through to the placeholder path.
       }
-    }
-    // Sibling row, but no usable name at this index (children_count >
-    // children_details.length, or entry has an empty name, or JSON broken).
-    // Surface it as a child with a placeholder so the BM knows to fill it in,
-    // and so the kanban card uses the "isChild" rendering path instead of
-    // looking like the parent submission. parentFullName is still populated.
-    return {
-      firstName:      `Child ${idx}`,
-      lastName:       null,
-      childAge:       null,
-      parentFullName: row.full_name ?? null,
+    } catch {
+      // children_details malformed — fall through to parent-name path.
     }
   }
-  // No sibling_index → contact IS the parent. Parent column stays null
-  // so the card + modal both render firstName + lastName the normal way.
+  // Either a non-sibling row, OR a sibling row with no usable child name in
+  // children_details. Render with the parent's name so the kanban card shows
+  // something meaningful instead of a "Child N" placeholder. The sibling-
+  // indexed externalSourceId still keeps these contacts as distinct rows in
+  // the database when children_count > 1 — only the displayed name reuses
+  // the parent's, which the BM can rename in-place once they know the child.
   const { firstName, lastName } = splitName(row.full_name)
   return { firstName, lastName, childAge: null, parentFullName: null }
 }

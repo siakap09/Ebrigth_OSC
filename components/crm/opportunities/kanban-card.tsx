@@ -191,20 +191,18 @@ export function KanbanCard({
   const { contact } = opportunity
 
   // With master_leads_base as the source of truth, the contact's first/last
-  // name IS the child when parentFullName is set (sibling-exploded row), or
-  // the parent themself otherwise. childAge1 still holds the child's age in
-  // both flows (legacy childName1 is unused for new ingest).
-  const isChild = !!contact.parentFullName
-  const primaryChildName = isChild
+  // name IS the child when parentFullName is set (sibling-exploded row) AND
+  // the importer extracted a real child name from children_details. When no
+  // child name was available we fall back to displaying the parent's name —
+  // either by storing the parent's name as firstName (new imports) or by
+  // detecting the legacy "Child N" placeholder and reading parentFullName
+  // instead (rows imported by the previous build).
+  const isLegacyPlaceholder = /^Child \d+$/.test(contact.firstName)
+  const hasRealChildName = !!contact.parentFullName && !isLegacyPlaceholder
+  const primaryChildName = hasRealChildName
     ? `${contact.firstName}${contact.lastName ? ' ' + contact.lastName : ''}`
-    : contact.childName1
-  const primaryChildAge = contact.childAge1
-
-  // Placeholder firstName from the importer's fallback path — emitted when a
-  // sibling row's children_details entry is missing or has no `name`. Surface
-  // it in italics so the BM knows the actual child name still needs to be
-  // filled in (matches /^Child \d+$/ exactly, set by leads-import.ts).
-  const isPlaceholderName = /^Child \d+$/.test(contact.firstName)
+    : (isLegacyPlaceholder ? contact.parentFullName : contact.childName1)
+  const primaryChildAge = hasRealChildName ? contact.childAge1 : null
 
   const ageColor = getAgeColor(
     opportunity.lastStageChangeAt,
@@ -296,11 +294,8 @@ export function KanbanCard({
               <Link
                 href={`/crm/opportunities/${opportunity.id}`}
                 onClick={(e) => e.stopPropagation()}
-                className={cn(
-                  'text-sm font-semibold text-slate-900 dark:text-white truncate hover:underline hover:text-indigo-600 dark:hover:text-indigo-400 underline-offset-2',
-                  isPlaceholderName && 'italic text-slate-500 dark:text-slate-400',
-                )}
-                title={isPlaceholderName ? 'Placeholder — rename to the actual child name' : 'Open lead detail'}
+                className="text-sm font-semibold text-slate-900 dark:text-white truncate hover:underline hover:text-indigo-600 dark:hover:text-indigo-400 underline-offset-2"
+                title="Open lead detail"
               >
                 {primaryChildName}
               </Link>
@@ -337,12 +332,12 @@ export function KanbanCard({
             </Link>
           )}
 
-          {/* Parent name — shown below child name when this contact represents a child */}
-          {showField('parentName') && primaryChildName && !compact && (
+          {/* Parent name — shown below child name only when we actually have a
+              real child name (hasRealChildName). When we're falling back to the
+              parent's name as the primary, repeating it below would be noise. */}
+          {showField('parentName') && hasRealChildName && primaryChildName && !compact && (
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-              {isChild
-                ? contact.parentFullName
-                : `${contact.firstName} ${contact.lastName ?? ''}`}
+              {contact.parentFullName}
             </p>
           )}
 
