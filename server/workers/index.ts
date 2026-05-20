@@ -136,6 +136,15 @@ async function main() {
   setShutdownHook(stopLeadIngestWorker, true)
 
   console.log('  - leadIngestWorker    (LISTEN ebrightleads_db.lead_inserted)')
+
+  // Always start the burnlist Wednesday scheduler — runs in-process, no
+  // Redis required. Wakes every minute and creates the new BurnlistWeek
+  // snapshot the moment the calendar crosses into a new Wednesday.
+  const { startBurnlistScheduler, stopBurnlistScheduler } = await import('./burnlistScheduler')
+  await startBurnlistScheduler()
+  setShutdownHook(stopBurnlistScheduler, true)
+
+  console.log('  - burnlistScheduler   (Wednesday 00:00 snapshot rollover)')
   console.log('[workers] Startup complete.')
 }
 

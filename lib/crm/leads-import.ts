@@ -51,7 +51,14 @@ export interface UnifiedLeadRow {
   clean_branch: string | null   // resolved via branch_mapping in the view
   region: string | null
   submitted_at: Date | null
-  children_details: string | null  // raw JSON string from raw_wix_leads
+  // Source of truth for child names + ages. Shape depends on the caller:
+  //   - leadIngestWorker / seed-from-powerbi read this from a Postgres jsonb
+  //     column via node-postgres, which AUTO-PARSES it into a JS array. So in
+  //     the worker path, this is already WixChildEntry[].
+  //   - One-shot CSV / Power-BI imports read it as a raw JSON string.
+  // parseChildrenDetails() below normalises both shapes — never call
+  // JSON.parse on this field directly.
+  children_details: WixChildEntry[] | string | null
   sibling_index: number | null     // 1-based; >1 only for Wix multi-child submissions
   campaign_name: string | null     // marketing campaign label, stored verbatim; null when
                                    // the lead didn't come from a tracked campaign
@@ -131,6 +138,36 @@ function splitName(full: string | null): { firstName: string; lastName: string |
 interface WixChildEntry { name?: string | null; age?: string | null }
 
 /**
+ * Normalise `children_details` into a WixChildEntry[]. The field shows up in
+ * two different shapes depending on the caller:
+ *
+ *   - node-postgres returns jsonb columns as already-parsed JS values, so the
+ *     leadIngestWorker and seed-from-powerbi paths see an array here.
+ *   - Some legacy / CSV import paths produce a raw JSON string instead.
+ *
+ * Calling JSON.parse on the pre-parsed array shape throws (it stringifies the
+ * array to "[object Object],[object Object]" first and then fails to parse),
+ * which used to silently fall through to the parent-name path — that's why
+ * Naufal / Naura siblings were rendering as "Child 3" on the kanban even
+ * though children_details clearly had their names.
+ */
+function parseChildrenDetails(value: unknown): WixChildEntry[] | null {
+  if (value == null) return null
+  if (Array.isArray(value)) return value as WixChildEntry[]
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    try {
+      const parsed = JSON.parse(trimmed) as unknown
+      return Array.isArray(parsed) ? (parsed as WixChildEntry[]) : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+/**
  * Pick the contact name for one row of master_leads_unified.
  *
  * For Wix multi-child submissions the view yields N rows per submission and
@@ -158,24 +195,20 @@ function pickContactName(row: UnifiedLeadRow): {
   parentFullName: string | null
 } {
   const idx = row.sibling_index
-  if (idx && idx > 0 && row.children_details) {
-    try {
-      const parsed = JSON.parse(row.children_details) as WixChildEntry[]
-      if (Array.isArray(parsed)) {
-        const child = parsed[idx - 1] as WixChildEntry | undefined
-        const childName = (child?.name ?? '').trim()
-        if (childName) {
-          const { firstName, lastName } = splitName(childName)
-          return {
-            firstName,
-            lastName,
-            childAge: child?.age ?? null,
-            parentFullName: row.full_name ?? null,
-          }
+  if (idx && idx > 0) {
+    const parsed = parseChildrenDetails(row.children_details)
+    if (parsed) {
+      const child = parsed[idx - 1] as WixChildEntry | undefined
+      const childName = (child?.name ?? '').trim()
+      if (childName) {
+        const { firstName, lastName } = splitName(childName)
+        return {
+          firstName,
+          lastName,
+          childAge: child?.age ?? null,
+          parentFullName: row.full_name ?? null,
         }
       }
-    } catch {
-      // children_details malformed — fall through to parent-name path.
     }
   }
   // Either a non-sibling row, OR a sibling row with no usable child name in
@@ -361,29 +394,24 @@ export async function importLead(
   // parent's full name and every subsequent sibling card would look
   // identical, which is exactly the "two Shuzana cards" bug from prod.
   let effectiveSiblingIndex = row.sibling_index
-  if (effectiveSiblingIndex == null && row.children_details) {
-    try {
-      const parsed = JSON.parse(row.children_details) as WixChildEntry[]
-      if (Array.isArray(parsed) && parsed.length >= 1) {
-        const orClauses: Array<Record<string, unknown>> = []
-        if (phone) orClauses.push({ phone })
-        if (row.email && row.email.trim()) orClauses.push({ email: row.email })
-        if (orClauses.length > 0) {
-          const existing = await prisma.crm_contact.count({
-            where: { tenantId: ctx.tenantId, deletedAt: null, OR: orClauses },
-          })
-          const inferred = existing + 1
-          // Only adopt the inference when there's actually a corresponding
-          // child entry — otherwise we'd just rewrite a parent contact with
-          // garbage. Falls through to the parent-name branch in that case.
-          if (inferred <= parsed.length) {
-            effectiveSiblingIndex = inferred
-          }
+  if (effectiveSiblingIndex == null) {
+    const parsed = parseChildrenDetails(row.children_details)
+    if (parsed && parsed.length >= 1) {
+      const orClauses: Array<Record<string, unknown>> = []
+      if (phone) orClauses.push({ phone })
+      if (row.email && row.email.trim()) orClauses.push({ email: row.email })
+      if (orClauses.length > 0) {
+        const existing = await prisma.crm_contact.count({
+          where: { tenantId: ctx.tenantId, deletedAt: null, OR: orClauses },
+        })
+        const inferred = existing + 1
+        // Only adopt the inference when there's actually a corresponding
+        // child entry — otherwise we'd just rewrite a parent contact with
+        // garbage. Falls through to the parent-name branch in that case.
+        if (inferred <= parsed.length) {
+          effectiveSiblingIndex = inferred
         }
       }
-    } catch {
-      // children_details unparseable — keep effectiveSiblingIndex as null
-      // so pickContactName falls back to the parent's name.
     }
   }
 

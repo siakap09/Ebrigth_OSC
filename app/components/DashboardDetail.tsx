@@ -55,6 +55,7 @@ const dashboards: DashboardCard[] = [
       { key: "hrms.hr-dashboard",     name: "HR Dashboard",        href: "/hr-dashboard",                  icon: "📋" },
       { key: "hrms.manpower-cost",    name: "Manpower Cost Report",href: "/manpower-cost-report",          icon: "💸" },
       { key: "hrms.staff-directory",  name: "Staff Directory",     href: "/staff-directory",               icon: "📇" },
+      { key: "hrms.burnlist",         name: "Burnlist",            href: "/burnlist",                      icon: "🔥" },
     ],
   },
   {

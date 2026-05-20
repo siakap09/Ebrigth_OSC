@@ -1103,3 +1103,45 @@ model tkt_counter {
   @@index([tenant_id])
   @@map("tkt_counter")
 }
+
+// ============================================================
+// BURNLIST — weekly snapshots of expired+active students from
+// ebrightleads_db.studentrecords, with editable cta/remarks/done.
+// Each Wednesday a new BurnlistWeek is created and a row is
+// snapshotted per student. Entries store a frozen copy of
+// name/branch/expiry so historical weeks stay stable even when
+// the upstream studentrecords row changes.
+// ============================================================
+
+model BurnlistWeek {
+  id        String   @id @default(cuid())
+  weekKey   String   @unique  // YYYY-MM-DD of the Wednesday, e.g. "2026-05-20"
+  createdAt DateTime @default(now())
+
+  entries   BurnlistEntry[]
+
+  @@map("burnlist_week")
+}
+
+model BurnlistEntry {
+  id              String   @id @default(cuid())
+  weekId          String
+  week            BurnlistWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  // Snapshot fields — copied from studentrecords at snapshot time.
+  studentRecordId String
+  studentName     String
+  branch          String   // raw branch code, e.g. "ST"
+  expiryDate      String   // YYYY-MM-DD as Postgres held it
+
+  // Editable action fields. Blank on snapshot; filled in by BMs / user.
+  cta      String   @default("")    // "" | "Extend" | "Archive" | "Renew" | "No Action"
+  remarks  String   @default("")
+  done     Boolean  @default(false)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([weekId, studentRecordId])
+  @@index([weekId])
+  @@map("burnlist_entry")
+}

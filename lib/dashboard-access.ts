@@ -64,6 +64,7 @@ export const DASHBOARD_TREE: DashboardNode[] = [
       { key: "hrms.hr-dashboard",     label: "HR Dashboard",         href: "/hr-dashboard" },
       { key: "hrms.manpower-cost",    label: "Manpower Cost Report", href: "/manpower-cost-report" },
       { key: "hrms.staff-directory",  label: "Staff Directory",      href: "/staff-directory" },
+      { key: "hrms.burnlist",         label: "Burnlist",             href: "/burnlist" },
       { key: "hrms.account",          label: "Account Management",   href: "/account-management" },
     ],
   },

@@ -52,6 +52,7 @@ const EMPLOYEE_ALLOWED_PATHS = [
   "/dashboards/hrms",   // HRMS hub — only Manpower Cost Report tile is enabled
   "/manpower-cost-report",
   "/profile",           // standard self-service page
+  "/burnlist",          // new burnlist page — visible to all roles for preview
 ];
 const EMPLOYEE_LOCKED_ROLES: readonly Role[] = [ROLES.FULL_TIME, ROLES.PART_TIME];
 
