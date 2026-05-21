@@ -1812,9 +1812,9 @@ function OpportunityDetailModal({
               return (
                 <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
                   <CalendarDays className="h-3 w-3" />
-                  Trial: {startAt.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
+                  Trial: {startAt.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' })}
                   {' @ '}
-                  {startAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                  {startAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                 </div>
               )
             })()}

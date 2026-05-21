@@ -64,6 +64,9 @@ interface MetricsResponse {
   byMonth?: MonthlyBucket[]
   /** Branch name when scoped, used as the title of the Main block. */
   scopedBranchName?: string | null
+  /** Branch ID when scoped — drives the trial-schedule widget when the BM
+   *  has no explicit topbar selection (single-branch users don't get one). */
+  scopedBranchId?: string | null
 }
 
 type Preset = 'today' | 'yesterday' | 'last_week' | 'this_week' | '30d'
@@ -192,21 +195,33 @@ export function DashboardClient() {
               users so the page reads top-down: headline → regional split →
               branch-level trial detail.
               - Branch view (BM or admin-as-branch): single-branch grid,
-                clickable cells with "who's joining" drill-in.
+                clickable cells with "who's joining" drill-in. BMs whose
+                access is a single branch don't get a topbar switcher, so
+                `branchId` from useBranchContext is null — fall back to the
+                API's scopedBranchId so the widget still renders.
               - Elevated view (agency / super admin viewing rollup): renders
                 a branch-picker dropdown so the admin can browse any branch
                 without leaving the dashboard.
               - readOnly for super admin: cells render as plain numbers and
                 the drill-in modal is suppressed. Agency admin keeps drill-in. */}
-          {(data.elevated === false && branchId) || (data.elevated !== false && data.branches.length > 0) ? (
-            <TrialSchedule
-              branchId={data.elevated === false ? branchId : null}
-              branches={data.elevated !== false
-                ? data.branches.map((b) => ({ id: b.branchId, name: b.branchName }))
-                : undefined}
-              readOnly={data.elevated !== false && (data.isSuperAdmin ?? false)}
-            />
-          ) : null}
+          {(() => {
+            const branchScopedId = data.elevated === false
+              ? (branchId ?? data.scopedBranchId ?? null)
+              : null
+            const showWidget =
+              (data.elevated === false && !!branchScopedId)
+              || (data.elevated !== false && data.branches.length > 0)
+            if (!showWidget) return null
+            return (
+              <TrialSchedule
+                branchId={branchScopedId}
+                branches={data.elevated !== false
+                  ? data.branches.map((b) => ({ id: b.branchId, name: b.branchName }))
+                  : undefined}
+                readOnly={data.elevated !== false && (data.isSuperAdmin ?? false)}
+              />
+            )
+          })()}
 
           {/* Elevated-only continued: branch bar chart + per-branch table. */}
           {data.elevated !== false && (

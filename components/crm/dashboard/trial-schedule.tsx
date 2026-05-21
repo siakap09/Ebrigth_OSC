@@ -327,7 +327,7 @@ function StudentListModal({
             const startAt = new Date(s.startAt)
             return (
               <li key={s.appointmentId} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-100 to-indigo-50 text-sm font-bold text-indigo-700 ring-1 ring-indigo-200 dark:from-indigo-950/40 dark:to-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/50">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-indigo-100 to-indigo-50 text-sm font-bold text-indigo-700 ring-1 ring-indigo-200 dark:from-indigo-950/40 dark:to-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-900/50">
                   {(s.name[0] ?? '?').toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -354,11 +354,16 @@ function StudentListModal({
                   </div>
                   <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                     {startAt.toLocaleString('en-GB', {
-                      weekday: 'short',
-                      day:    '2-digit',
-                      month:  'short',
-                      hour:   '2-digit',
-                      minute: '2-digit',
+                      weekday:  'short',
+                      day:      '2-digit',
+                      month:    'short',
+                      hour:     '2-digit',
+                      minute:   '2-digit',
+                      // Appointments are stored naive-KL-as-UTC, so the UTC
+                      // components already represent KL wall-clock. Force
+                      // UTC display to avoid an extra +8h shift in the
+                      // browser's local timezone.
+                      timeZone: 'UTC',
                     })}
                   </p>
                 </div>

@@ -609,6 +609,12 @@ export async function GET(req: NextRequest) {
       // Surface what branch the response is scoped to so the UI can label
       // the "Your branch" block ("Viewing as Rimbayu" etc.).
       scopedBranchName: elevated ? null : (branches[0]?.name ?? null),
+      // Also surface the ID so non-elevated callers can fetch dependent
+      // widgets (like the trial-schedule grid) without needing the topbar
+      // branch-switcher to have an explicit selection. BMs whose access
+      // covers a single branch don't get a switcher, so without this they
+      // can't drive a per-branch widget at all.
+      scopedBranchId: elevated ? null : (branches[0]?.id ?? null),
     })
   } catch (e) {
     console.error('[GET leads-metrics]', e)
