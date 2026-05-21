@@ -1,4 +1,3 @@
-import "server-only";
 import { prisma } from "@/lib/prisma";
 import { pool as faPool } from "@/app/fa-system/_lib/db";
 
