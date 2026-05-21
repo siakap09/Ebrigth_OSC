@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
 
   // Time window — driven by ?preset. All boundaries are KL wall-clock days.
   //   today / yesterday          → 24h window
+  //   this_week                  → current calendar week Mon-Sun in KL
   //   last_week / next_week      → rolling 7 days backwards or forwards from today
   //   this_month                 → calendar month containing today
   //   default ("next_7d")        → next 7 days starting today (back-compat)
@@ -78,6 +79,16 @@ export async function GET(req: NextRequest) {
       from = new Date(today.getTime() - 24 * 3600 * 1000)
       to   = new Date(today.getTime() - 1)
       break
+    case 'this_week': {
+      const wall = new Date(today.getTime() + KL_OFFSET_MS)
+      const dow = wall.getUTCDay() // 0=Sun
+      const daysBack = dow === 0 ? 6 : dow - 1 // 0 when today is Mon
+      from = new Date(today.getTime() - daysBack * 24 * 3600 * 1000)
+      // End of Sunday (6 days after Monday)
+      const sunMs = today.getTime() + (6 - daysBack) * 24 * 3600 * 1000
+      to   = new Date(sunMs + 24 * 3600 * 1000 - 1)
+      break
+    }
     case 'last_week':
       from = new Date(today.getTime() - 7 * 24 * 3600 * 1000)
       to   = new Date(today.getTime() - 1)

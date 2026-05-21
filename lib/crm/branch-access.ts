@@ -17,6 +17,13 @@ export async function resolveBranchAccess(userId: string): Promise<{
   primaryBranchId: string
   branchIds: string[]
   elevated: boolean
+  /**
+   * True only for SUPER_ADMIN role. AGENCY_ADMIN is also elevated but does
+   * NOT set this flag. Used by widgets that need to gate destructive /
+   * write-style affordances behind a non-superadmin check (super admins
+   * get a read-only view).
+   */
+  isSuperAdmin: boolean
 } | null> {
   const links = await prisma.crm_user_branch.findMany({
     where: { userId },
@@ -32,10 +39,9 @@ export async function resolveBranchAccess(userId: string): Promise<{
 
   const tenantId = links[0].tenantId
   const primaryBranchId = links[0].branchId
-  const elevated = links.some(
-    (l) => l.role === 'SUPER_ADMIN' || l.role === 'AGENCY_ADMIN',
-  )
+  const isSuperAdmin = links.some((l) => l.role === 'SUPER_ADMIN')
+  const elevated = isSuperAdmin || links.some((l) => l.role === 'AGENCY_ADMIN')
   const branchIds = Array.from(new Set(links.map((l) => l.branchId)))
 
-  return { tenantId, primaryBranchId, branchIds, elevated }
+  return { tenantId, primaryBranchId, branchIds, elevated, isSuperAdmin }
 }
