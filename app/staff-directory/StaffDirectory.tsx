@@ -79,6 +79,13 @@ const DAY_LABEL: Record<DayKey, string> = {
   Sun: "Sunday",
 };
 
+// Single-letter day labels for the per-node working-day chips. Convention
+// matches typical M T W T F S S weekday pickers — duplicate letters are
+// disambiguated by the tooltip (title attribute) on each chip.
+const DAY_INITIAL: Record<DayKey, string> = {
+  Mon: "M", Tue: "T", Wed: "W", Thu: "T", Fri: "F", Sat: "S", Sun: "S",
+};
+
 const DAY_ALIASES: Record<string, DayKey> = {
   mon: "Mon", monday: "Mon",
   tue: "Tue", tues: "Tue", tuesday: "Tue",
@@ -90,7 +97,16 @@ const DAY_ALIASES: Record<string, DayKey> = {
 };
 
 function parseWorkingHours(json: unknown): WeekSchedule {
-  if (!json || typeof json !== "object" || Array.isArray(json)) return STANDARD_OFFICE;
+  const strict = parseWorkingHoursStrict(json);
+  return strict ?? STANDARD_OFFICE;
+}
+
+// Strict variant of parseWorkingHours: returns null when the raw value is
+// missing, malformed, or contains no recognised day keys. Used by the chart
+// node day-strip so staff with no DB-stored hours render as "no days set"
+// instead of being silently shown as the default Mon–Fri 9–6 schedule.
+function parseWorkingHoursStrict(json: unknown): WeekSchedule | null {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return null;
   const obj = json as Record<string, unknown>;
   const result: WeekSchedule = { Mon: null, Tue: null, Wed: null, Thu: null, Fri: null, Sat: null, Sun: null };
   let parsedAny = false;
@@ -116,7 +132,7 @@ function parseWorkingHours(json: unknown): WeekSchedule {
     }
   }
 
-  return parsedAny ? result : STANDARD_OFFICE;
+  return parsedAny ? result : null;
 }
 
 function formatDayMonth(iso: string): string {
@@ -210,7 +226,7 @@ const TIER_AVATAR: Record<Tier, string> = {
 };
 
 const NODE_W = 188;
-const NODE_H = 124;
+const NODE_H = 172;
 const GAP_X = 56;
 const GAP_Y = 10;
 const PAD = 24;
@@ -425,11 +441,9 @@ export default function StaffDirectory({
   const [filterType, setFilterType] = useState<"branch" | "dept">("branch");
   const [branchFilter, setBranchFilter] = useState<number | null>(null);
   const [deptFilter, setDeptFilter] = useState<number | null>(null);
-  // Working-hours filter: pick a day to restrict to staff who work that day;
-  // optionally add a time (HH:MM) to further restrict to staff whose shift
-  // covers that moment. Empty workingDay disables the filter entirely.
+  // Working-day filter: restrict to staff who work the chosen day. Empty
+  // workingDay disables the filter entirely.
   const [workingDay, setWorkingDay] = useState<DayKey | "">("");
-  const [workingTime, setWorkingTime] = useState<string>("");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
@@ -448,23 +462,16 @@ export default function StaffDirectory({
     });
   }, [people, branchFilter, deptFilter]);
 
-  // Adds the working-hours filter on top. Timeline view bypasses this
+  // Adds the working-day filter on top. Timeline view bypasses this
   // entirely — historical / departed staff don't have meaningful schedules,
-  // so the day/time filter only narrows chart and card views.
+  // so the day filter only narrows chart and card views.
   const scope = useMemo(() => {
     if (!workingDay) return branchDeptScope;
     return branchDeptScope.filter(p => {
       const sched = parseWorkingHours(p.workingHoursRaw);
-      const slot = sched[workingDay];
-      if (!slot) return false;
-      // Time filter is inclusive of start, exclusive of end — same
-      // convention used by attendance / shift code elsewhere.
-      if (workingTime && (workingTime < slot.start || workingTime >= slot.end)) {
-        return false;
-      }
-      return true;
+      return Boolean(sched[workingDay]);
     });
-  }, [branchDeptScope, workingDay, workingTime]);
+  }, [branchDeptScope, workingDay]);
 
   // Chart and card views only render currently-employed people; timeline includes
   // departures so it can show "Left {year}" events.
@@ -634,43 +641,17 @@ export default function StaffDirectory({
                 <FilterSelect
                   label="Working day"
                   value={workingDay}
-                  onChange={(v) => {
-                    setWorkingDay(v as DayKey | "");
-                    if (v === "") setWorkingTime("");
-                  }}
+                  onChange={(v) => setWorkingDay(v as DayKey | "")}
                   options={[
                     { value: "",    label: "Any day" },
                     ...DAYS_ORDER.map(d => ({ value: d, label: DAY_LABEL[d] })),
                   ]}
                 />
-
-                {workingDay && (
-                  <label className="relative inline-flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-emerald-500 focus-within:border-transparent">
-                    <span className="text-slate-500 mr-1.5 whitespace-nowrap">At:</span>
-                    <input
-                      type="time"
-                      value={workingTime}
-                      onChange={(e) => setWorkingTime(e.target.value)}
-                      aria-label="Working time"
-                      className="bg-transparent text-slate-900 font-medium tabular-nums focus:outline-none cursor-pointer w-[90px]"
-                    />
-                    {workingTime && (
-                      <button
-                        type="button"
-                        onClick={() => setWorkingTime("")}
-                        aria-label="Clear time"
-                        className="ml-1 p-0.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors duration-200 cursor-pointer"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </label>
-                )}
               </>
             )}
 
             {/* "Clear filters" — appears only when at least one filter is
-                non-default. Resets search, branch/dept, and working-hours
+                non-default. Resets search, branch/dept, and working-day
                 state. The Branch/Dept type toggle is a UI mode, not a
                 filter, so it's preserved. */}
             {(query || branchFilter !== null || deptFilter !== null || workingDay) && (
@@ -681,7 +662,6 @@ export default function StaffDirectory({
                   setBranchFilter(null);
                   setDeptFilter(null);
                   setWorkingDay("");
-                  setWorkingTime("");
                 }}
                 className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-600 hover:text-slate-900 hover:border-slate-300 hover:bg-slate-50 transition-colors duration-200 cursor-pointer"
                 aria-label="Clear all filters"
@@ -800,7 +780,22 @@ export default function StaffDirectory({
                   const hovered = hoveredId === p.id;
                   const matched = matchedIds !== null && matchedIds.has(p.id);
                   const dimmed = matchedIds !== null && !matchedIds.has(p.id);
-                  const tier = tierFromRank(positionRank(p.position));
+                  // Tier-based accent matches the employee details card: HOD/BM
+                  // (Lead) → emerald; everyone else → rose. Same isLead pivot the
+                  // employee card uses, so a chart node visually agrees with the
+                  // side panel that opens for the same person.
+                  const isLead = positionRank(p.position) <= 1;
+                  const sideBar = isLead ? "bg-emerald-500" : "bg-rose-500";
+                  const avatarBg = isLead ? "bg-emerald-100" : "bg-rose-100";
+                  const avatarText = isLead ? "text-emerald-700" : "text-rose-700";
+                  const defaultBorder = isLead ? "border-emerald-200" : "border-rose-200";
+                  const hoverBorder = isLead ? "border-emerald-300" : "border-rose-300";
+                  const activeBorder = isLead ? "border-emerald-500" : "border-rose-500";
+                  const dayActiveText = isLead ? "text-emerald-700" : "text-rose-700";
+                  const dayActiveDot = isLead ? "bg-emerald-500" : "bg-rose-500";
+                  const pillClass = isLead
+                    ? "bg-emerald-50 text-emerald-600"
+                    : "bg-rose-50 text-rose-600";
                   return (
                     <button
                       key={p.id}
@@ -815,29 +810,76 @@ export default function StaffDirectory({
                       aria-current={active ? "true" : undefined}
                       title={`${p.name} — ${p.position}`}
                       className={[
-                        "absolute group flex flex-col items-center gap-2 p-3 rounded-2xl bg-white transition-all duration-300 cursor-pointer",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
+                        "absolute group flex flex-col items-center gap-2 p-3 rounded-[20px] bg-white overflow-hidden transition-all duration-300 cursor-pointer",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+                        isLead ? "focus-visible:ring-emerald-500" : "focus-visible:ring-rose-500",
                         active
-                          ? "border-2 border-emerald-500 shadow-xl scale-[1.04] z-20"
+                          ? `border-[3px] ${activeBorder} shadow-lg scale-[1.04] z-20`
                           : matched
                             ? "border-2 border-amber-400 shadow-md scale-[1.02] z-10"
                             : hovered
-                              ? "border border-slate-200 shadow-lg scale-[1.03] z-10"
-                              : "border border-slate-200 hover:shadow-md z-0",
+                              ? `border-2 ${hoverBorder} shadow-md scale-[1.03] z-10`
+                              : `border-2 ${defaultBorder} shadow-sm hover:shadow-md z-0`,
                         dimmed ? "opacity-30" : "opacity-100",
                       ].join(" ")}
                       style={{ left, top, width: NODE_W, height: NODE_H }}
                     >
-                      <div className={`relative ${TIER_AVATAR[tier]} w-14 h-14 rounded-full flex items-center justify-center text-white font-semibold shadow-md ring-4 ring-white`}>
-                        <span className="text-base">{initials(p.name)}</span>
-                        <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${TIER_BG[tier]} ring-2 ring-white`} aria-hidden="true" />
+                      {/* Right-edge tier-coloured bar — mirrors the employee card
+                          sidebar pattern in compact form. overflow-hidden on the
+                          button clips the bar against the card's rounded corners. */}
+                      <span
+                        className={`absolute top-0 right-0 bottom-0 w-1.5 ${sideBar}`}
+                        aria-hidden="true"
+                      />
+
+                      <div className={`w-14 h-14 rounded-full ${avatarBg} flex items-center justify-center shadow-sm`}>
+                        <span className={`text-base font-bold ${avatarText}`}>{initials(p.name)}</span>
                       </div>
                       <p className="text-[13px] font-semibold text-slate-900 leading-tight text-center line-clamp-1 w-full px-1">
                         {p.name}
                       </p>
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${TIER_BADGE[tier]} truncate max-w-full`}>
+                      <span className={`text-[10px] font-semibold px-3 py-0.5 rounded-full ${pillClass} uppercase tracking-wider truncate max-w-full`}>
                         {p.position}
                       </span>
+                      {(() => {
+                        // Per-node working-day strip: all seven days are shown so the
+                        // off-days read as muted slots rather than absent letters.
+                        // Each day is a letter + small dot — the dot is tier-coloured
+                        // and filled when the person works that day, otherwise a
+                        // dim slate dot. Uses the strict parser so a staff member
+                        // with no DB-stored working hours renders as all-off rather
+                        // than the synthetic Mon–Fri 9–6 fallback. Duplicate initials
+                        // (T/T, S/S) are disambiguated by the full day name tooltip.
+                        const sched = parseWorkingHoursStrict(p.workingHoursRaw);
+                        return (
+                          <div className="flex items-center gap-1.5">
+                            {DAYS_ORDER.map(d => {
+                              const working = Boolean(sched?.[d]);
+                              return (
+                                <div
+                                  key={d}
+                                  title={DAY_LABEL[d]}
+                                  className="flex flex-col items-center gap-0.5"
+                                >
+                                  <span
+                                    className={`text-[10px] font-semibold leading-none ${
+                                      working ? dayActiveText : "text-slate-300"
+                                    }`}
+                                  >
+                                    {DAY_INITIAL[d]}
+                                  </span>
+                                  <span
+                                    className={`w-1 h-1 rounded-full ${
+                                      working ? dayActiveDot : "bg-slate-200"
+                                    }`}
+                                    aria-hidden="true"
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </button>
                   );
                 })}
