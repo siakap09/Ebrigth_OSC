@@ -158,15 +158,46 @@ export function DashboardClient() {
             <LeadsByMonthChart data={data.byMonth} />
           )}
 
-          {/* Trial schedule grid.
+          {/* Elevated-only sections: regional rollup cards land FIRST under
+              the headline metrics so the super-admin / agency-admin can
+              size up the funnel split per region before drilling into a
+              specific branch's trial schedule. */}
+          {data.elevated !== false && (
+            <div className="grid gap-5 lg:grid-cols-3">
+              <MetricsBlock
+                title="Region A"
+                subtitle={data.regionMap.A.join(' · ')}
+                metrics={data.regions.A}
+                accent="rose"
+                compact
+              />
+              <MetricsBlock
+                title="Region B"
+                subtitle={data.regionMap.B.join(' · ')}
+                metrics={data.regions.B}
+                accent="amber"
+                compact
+              />
+              <MetricsBlock
+                title="Region C"
+                subtitle={data.regionMap.C.join(' · ')}
+                metrics={data.regions.C}
+                accent="emerald"
+                compact
+              />
+            </div>
+          )}
+
+          {/* Trial schedule grid — sits AFTER the regional rollup for elevated
+              users so the page reads top-down: headline → regional split →
+              branch-level trial detail.
               - Branch view (BM or admin-as-branch): single-branch grid,
                 clickable cells with "who's joining" drill-in.
               - Elevated view (agency / super admin viewing rollup): renders
                 a branch-picker dropdown so the admin can browse any branch
                 without leaving the dashboard.
               - readOnly for super admin: cells render as plain numbers and
-                the drill-in modal is suppressed, matching the "view only"
-                model the BM team agreed on. Agency admin keeps drill-in. */}
+                the drill-in modal is suppressed. Agency admin keeps drill-in. */}
           {(data.elevated === false && branchId) || (data.elevated !== false && data.branches.length > 0) ? (
             <TrialSchedule
               branchId={data.elevated === false ? branchId : null}
@@ -177,35 +208,10 @@ export function DashboardClient() {
             />
           ) : null}
 
-          {/* Elevated-only sections: regional rollup + per-branch comparison. */}
+          {/* Elevated-only continued: branch bar chart + per-branch table. */}
           {data.elevated !== false && (
             <>
-              <div className="grid gap-5 lg:grid-cols-3">
-                <MetricsBlock
-                  title="Region A"
-                  subtitle={data.regionMap.A.join(' · ')}
-                  metrics={data.regions.A}
-                  accent="rose"
-                  compact
-                />
-                <MetricsBlock
-                  title="Region B"
-                  subtitle={data.regionMap.B.join(' · ')}
-                  metrics={data.regions.B}
-                  accent="amber"
-                  compact
-                />
-                <MetricsBlock
-                  title="Region C"
-                  subtitle={data.regionMap.C.join(' · ')}
-                  metrics={data.regions.C}
-                  accent="emerald"
-                  compact
-                />
-              </div>
-
               <BranchBarChart branches={data.branches} />
-
               <BranchTable branches={data.branches} />
             </>
           )}
