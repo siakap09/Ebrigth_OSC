@@ -74,17 +74,19 @@ function LeadSourceIcon({ name }: { name: string }) {
 }
 
 // ─── KL same-day helper ──────────────────────────────────────────────────────
-// Compare two dates in Asia/Kuala_Lumpur wall-clock terms (fixed +8 offset,
-// no DST in KL). Used to detect "trial is today" so the card can light up.
+// Trial appointments are stored as "naive-KL-as-UTC": when the BM picks
+// 16:00 KL, crm_appointment.startAt has UTC hour = 16. The UTC fields ARE
+// KL wall-clock fields. To compare "is the trial today (in KL)" we read
+// the trial's UTC components as-is, and shift `now` by +8h so we read its
+// UTC components in KL wall-clock terms too.
 
 const KL_OFFSET_MS = 8 * 3600 * 1000
-function isSameKLDay(a: Date, b: Date): boolean {
-  const wa = new Date(a.getTime() + KL_OFFSET_MS)
-  const wb = new Date(b.getTime() + KL_OFFSET_MS)
+function isSameKLDay(trialNaiveKL: Date, nowReal: Date): boolean {
+  const nowKL = new Date(nowReal.getTime() + KL_OFFSET_MS)
   return (
-    wa.getUTCFullYear() === wb.getUTCFullYear() &&
-    wa.getUTCMonth()    === wb.getUTCMonth() &&
-    wa.getUTCDate()     === wb.getUTCDate()
+    trialNaiveKL.getUTCFullYear() === nowKL.getUTCFullYear() &&
+    trialNaiveKL.getUTCMonth()    === nowKL.getUTCMonth() &&
+    trialNaiveKL.getUTCDate()     === nowKL.getUTCDate()
   )
 }
 
@@ -355,7 +357,7 @@ export function KanbanCard({
                   ? 'bg-amber-500 text-white shadow-sm'
                   : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
               )}
-              title={`Trial: ${trialStartAt.toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+              title={`Trial: ${trialStartAt.toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}`}
             >
               <Calendar className="h-3 w-3" />
               {isTrialToday && (
@@ -363,9 +365,9 @@ export function KanbanCard({
                   TODAY
                 </span>
               )}
-              {trialStartAt.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
+              {trialStartAt.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' })}
               {' · '}
-              {trialStartAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              {trialStartAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
             </div>
           )}
 

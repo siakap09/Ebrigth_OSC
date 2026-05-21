@@ -223,15 +223,21 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
                 <Clock className="h-3.5 w-3.5" />
                 Trial:{' '}
                 {new Date(trialAppointment.startAt).toLocaleDateString('en-GB', {
-                  weekday: 'short',
-                  day:     '2-digit',
-                  month:   'short',
-                  year:    'numeric',
+                  weekday:  'short',
+                  day:      '2-digit',
+                  month:    'short',
+                  year:     'numeric',
+                  // crm_appointment.startAt is stored as "naive-KL-as-UTC"
+                  // — its UTC fields ARE KL wall-clock fields. Force UTC
+                  // formatting so the display doesn't get double-shifted on
+                  // a browser or server outside the UTC zone.
+                  timeZone: 'UTC',
                 })}
                 {' @ '}
                 {new Date(trialAppointment.startAt).toLocaleTimeString('en-GB', {
-                  hour:   '2-digit',
-                  minute: '2-digit',
+                  hour:     '2-digit',
+                  minute:   '2-digit',
+                  timeZone: 'UTC',
                 })}
               </div>
             )}
