@@ -58,6 +58,8 @@ interface MetricsResponse {
    * collapses to the "branch view": Main block + line chart, no regions.
    */
   elevated?: boolean
+  /** True only for SUPER_ADMIN role. AGENCY_ADMIN is elevated but not super. */
+  isSuperAdmin?: boolean
   /** 6-month NL/CT/SU/ENR buckets — populated for branch view only. */
   byMonth?: MonthlyBucket[]
   /** Branch name when scoped, used as the title of the Main block. */
@@ -156,41 +158,60 @@ export function DashboardClient() {
             <LeadsByMonthChart data={data.byMonth} />
           )}
 
-          {/* Trial schedule grid — branch-scoped only. A super-admin viewing
-              the agency-wide rollup has nothing meaningful to plot here. */}
-          {data.elevated === false && branchId && (
-            <TrialSchedule branchId={branchId} />
+          {/* Elevated-only sections: regional rollup cards land FIRST under
+              the headline metrics so the super-admin / agency-admin can
+              size up the funnel split per region before drilling into a
+              specific branch's trial schedule. */}
+          {data.elevated !== false && (
+            <div className="grid gap-5 lg:grid-cols-3">
+              <MetricsBlock
+                title="Region A"
+                subtitle={data.regionMap.A.join(' · ')}
+                metrics={data.regions.A}
+                accent="rose"
+                compact
+              />
+              <MetricsBlock
+                title="Region B"
+                subtitle={data.regionMap.B.join(' · ')}
+                metrics={data.regions.B}
+                accent="amber"
+                compact
+              />
+              <MetricsBlock
+                title="Region C"
+                subtitle={data.regionMap.C.join(' · ')}
+                metrics={data.regions.C}
+                accent="emerald"
+                compact
+              />
+            </div>
           )}
 
-          {/* Elevated-only sections: regional rollup + per-branch comparison. */}
+          {/* Trial schedule grid — sits AFTER the regional rollup for elevated
+              users so the page reads top-down: headline → regional split →
+              branch-level trial detail.
+              - Branch view (BM or admin-as-branch): single-branch grid,
+                clickable cells with "who's joining" drill-in.
+              - Elevated view (agency / super admin viewing rollup): renders
+                a branch-picker dropdown so the admin can browse any branch
+                without leaving the dashboard.
+              - readOnly for super admin: cells render as plain numbers and
+                the drill-in modal is suppressed. Agency admin keeps drill-in. */}
+          {(data.elevated === false && branchId) || (data.elevated !== false && data.branches.length > 0) ? (
+            <TrialSchedule
+              branchId={data.elevated === false ? branchId : null}
+              branches={data.elevated !== false
+                ? data.branches.map((b) => ({ id: b.branchId, name: b.branchName }))
+                : undefined}
+              readOnly={data.elevated !== false && (data.isSuperAdmin ?? false)}
+            />
+          ) : null}
+
+          {/* Elevated-only continued: branch bar chart + per-branch table. */}
           {data.elevated !== false && (
             <>
-              <div className="grid gap-5 lg:grid-cols-3">
-                <MetricsBlock
-                  title="Region A"
-                  subtitle={data.regionMap.A.join(' · ')}
-                  metrics={data.regions.A}
-                  accent="rose"
-                  compact
-                />
-                <MetricsBlock
-                  title="Region B"
-                  subtitle={data.regionMap.B.join(' · ')}
-                  metrics={data.regions.B}
-                  accent="amber"
-                  compact
-                />
-                <MetricsBlock
-                  title="Region C"
-                  subtitle={data.regionMap.C.join(' · ')}
-                  metrics={data.regions.C}
-                  accent="emerald"
-                  compact
-                />
-              </div>
-
               <BranchBarChart branches={data.branches} />
-
               <BranchTable branches={data.branches} />
             </>
           )}
@@ -232,21 +253,76 @@ function MetricsBlock({
         </div>
       </div>
 
-      <div className={cn('grid gap-3', compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-5')}>
-        <Stat label="NL" value={metrics.NL} bold />
-        <Stat label="CT" value={metrics.CT} bold />
-        <Stat label="SU" value={metrics.SU} bold />
-        <Stat label="ENR" value={metrics.ENR} bold />
-        {!compact && (
-          <Stat label="Buffer" value={metrics.BUF} bold hint="OD use only" />
-        )}
-      </div>
+      {compact ? (
+        // Regional rollup cards: just the 4 funnel stats stacked 2-up. Buffer
+        // is intentionally absent here (snapshot-only — meaningful at the
+        // branch level, not the regional level).
+        <div className="grid grid-cols-2 gap-3">
+          <Stat label="NL"  value={metrics.NL}  bold />
+          <Stat label="CT"  value={metrics.CT}  bold />
+          <Stat label="SU"  value={metrics.SU}  bold />
+          <Stat label="ENR" value={metrics.ENR} bold />
+        </div>
+      ) : (
+        // Main / branch view: funnel stat above its matching rate so the
+        // numerator (top) and the denominator-derived rate (bottom) are
+        // visually paired. Buffer sits in its own card to the right with a
+        // subtle visual separator so it doesn't get read as part of the
+        // funnel.
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_auto]">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <FunnelPair label="NL"  value={metrics.NL}  rateLabel="Conversion Rate" rateValue={pct(metrics.conversionRate)} rateHint="ENR / NL" />
+            <FunnelPair label="CT"  value={metrics.CT}  rateLabel="Confirmed Rate"  rateValue={pct(metrics.confirmedRate)}  rateHint="CT / NL" />
+            <FunnelPair label="SU"  value={metrics.SU}  rateLabel="Show Up Rate"    rateValue={pct(metrics.showUpRate)}     rateHint="SU / CT" />
+            <FunnelPair label="ENR" value={metrics.ENR} rateLabel="Enrolment Rate"  rateValue={pct(metrics.enrolmentRate)}  rateHint="ENR / SU" />
+          </div>
+          <div className="lg:border-l lg:pl-4 lg:border-slate-200 lg:dark:border-slate-700">
+            <BufferCard value={metrics.BUF} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
-      <div className={cn('mt-3 grid gap-3', compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4')}>
-        <Stat label="Conversion Rate" value={pct(metrics.conversionRate)} hint="ENR / NL" />
-        <Stat label="Confirmed Rate" value={pct(metrics.confirmedRate)} hint="CT / NL" />
-        <Stat label="Show Up Rate"   value={pct(metrics.showUpRate)}    hint="SU / CT" />
-        <Stat label="Enrolment Rate" value={pct(metrics.enrolmentRate)} hint="ENR / SU" />
+// Funnel pair = stat tile on top, rate tile directly below. The two tiles
+// share the same column so the visual eye-line maps NL→Conv, CT→Confirmed,
+// SU→Show Up, ENR→Enrolment one-for-one.
+function FunnelPair({
+  label,
+  value,
+  rateLabel,
+  rateValue,
+  rateHint,
+}: {
+  label: string
+  value: number
+  rateLabel: string
+  rateValue: string
+  rateHint: string
+}) {
+  return (
+    <div className="space-y-2">
+      <Stat label={label} value={value} bold />
+      <Stat label={rateLabel} value={rateValue} hint={rateHint} />
+    </div>
+  )
+}
+
+// Buffer sits apart from the funnel — it's a snapshot of parked leads, not
+// a funnel-stage count. Lives in its own card with a faintly different
+// surface tint so it reads as "side info" rather than "the SU column".
+function BufferCard({ value }: { value: number }) {
+  return (
+    <div className="h-full rounded-md border border-slate-200 bg-slate-50/60 px-4 py-3 text-center dark:border-slate-700 dark:bg-slate-900/40 lg:min-w-30">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        Buffer
+      </div>
+      <div className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">
+        {value}
+      </div>
+      <div className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500">
+        OD use only · snapshot
       </div>
     </div>
   )

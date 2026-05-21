@@ -22,7 +22,10 @@ import {
   ChevronRight,
   RotateCcw,
   Share2,
+  Sun,
+  Moon,
 } from 'lucide-react'
+import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/crm/utils'
@@ -636,6 +639,10 @@ function UserMenu({ user }: { user: SessionUser }) {
 
           <hr className="my-1 border-slate-100 dark:border-slate-700" />
 
+          <ThemeToggleRow />
+
+          <hr className="my-1 border-slate-100 dark:border-slate-700" />
+
           <button
             onClick={handleSignOut}
             className="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
@@ -954,5 +961,51 @@ export function CrmTopbar({ collapsed, onToggleCollapse, session }: TopbarProps)
       {/* User menu */}
       <UserMenu user={session.user} />
     </header>
+  )
+}
+
+// ─── Theme toggle row (in user dropdown) ──────────────────────────────────────
+//
+// Reads + writes via next-themes. The ThemeProvider in components/crm/providers.tsx
+// is configured with attribute="class" defaultTheme="dark", so toggling here
+// flips the .dark class on <html> and all the dark: variants throughout the
+// CRM follow. Persists in localStorage automatically.
+//
+// Guarded against the server / hydration mismatch with a mounted flag —
+// next-themes is client-only.
+
+function ThemeToggleRow() {
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
+  // Treat anything other than 'light' as dark — covers the system / undefined
+  // edge cases without needing to wait for resolvedTheme.
+  const isDark = !mounted || theme !== 'light'
+
+  return (
+    <button
+      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      className="flex w-full items-center justify-between gap-2.5 px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+    >
+      <span className="flex items-center gap-2.5">
+        {isDark ? <Moon className="h-4 w-4 text-slate-400" /> : <Sun className="h-4 w-4 text-amber-500" />}
+        {isDark ? 'Dark mode' : 'Light mode'}
+      </span>
+      <span
+        aria-hidden
+        className={cn(
+          'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+          isDark ? 'bg-indigo-500' : 'bg-slate-300',
+        )}
+      >
+        <span
+          className={cn(
+            'inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform',
+            isDark ? 'translate-x-4' : 'translate-x-1',
+          )}
+        />
+      </span>
+    </button>
   )
 }

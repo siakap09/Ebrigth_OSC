@@ -602,6 +602,9 @@ export async function GET(req: NextRequest) {
           }
         : { A: [], B: [], C: [] },
       elevated,
+      // Surfaced so widgets that branch on "super admin vs agency admin"
+      // (e.g. read-only trial schedule view) don't need an extra round-trip.
+      isSuperAdmin: access?.isSuperAdmin ?? false,
       byMonth,
       // Surface what branch the response is scoped to so the UI can label
       // the "Your branch" block ("Viewing as Rimbayu" etc.).
