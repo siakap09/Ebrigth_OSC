@@ -307,6 +307,36 @@ export interface Invitation {
 }
 
 // ----------------------------------------------------------------------------
+// PCM Assessment Report — coach-filled rubric attached to one invitation.
+// Doubles as the printable certificate.
+// ----------------------------------------------------------------------------
+export interface PcmReport {
+  id: string;
+  invitationId: string;
+  studentId: string;
+  studentName: string;        // snapshot at fill time
+  branch: BranchCode;
+  grade: number;
+  assessmentDate: string;     // ISO date
+  // Each criterion is a 1–5 score from the rubric.
+  confidenceScore: number;
+  voiceClarityScore: number;
+  eyeContactScore: number;
+  ideaExpressionScore: number;
+  strengths: string;
+  improvementPlan: string;
+  preparedBy: string;
+  preparedById?: string;
+  /** Coach signature stored as a base64 data URL (e.g. "data:image/png;base64,...").
+   *  Optional — rendered above the "Prepared by" dashed line on the
+   *  certificate when present. Capped to ~200 KB client-side at upload time. */
+  preparedBySignature?: string;
+  receivedBy: string;
+  createdAt: string;          // ISO timestamp
+  updatedAt: string;          // ISO timestamp
+}
+
+// ----------------------------------------------------------------------------
 // Event branch overrides — per-event, per-branch toggle that lets a single
 // branch invite the same student to multiple grades within one event (all
 // on the same day, different sessions). Defaults to OFF for every branch on

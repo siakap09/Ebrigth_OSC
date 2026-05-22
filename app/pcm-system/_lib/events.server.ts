@@ -256,6 +256,107 @@ export async function createEventRow(
   return rowToEvent(rows[0]);
 }
 
+/**
+ * Duplicate an existing event with its full session + quota layout,
+ * overriding only the name, dates, and invitation window.
+ *
+ * What's COPIED from the source event:
+ *   • Every session (day_number, session_number, start_time, end_time, label)
+ *   • Every per-(session, branch) quota
+ *
+ * What's NOT copied:
+ *   • Invitations — the new event starts empty so BMs can re-invite for the
+ *     fresh week without inheriting last week's roster.
+ *   • Per-event multi-grade overrides — Academy can re-grant if needed.
+ *   • Status — new event starts as "draft" so Academy reviews before opening.
+ *
+ * All inserts run sequentially against the same pool; if any session insert
+ * fails the partial state stays and the caller surfaces the error (we don't
+ * wrap in a transaction yet since pg-pool doesn't expose one cheaply here
+ * and the failure mode is rare).
+ */
+export async function duplicateEventRow(
+  sourceEventId: string,
+  overrides: {
+    name: string;
+    startDate: string;          // ISO
+    endDate: string;            // ISO
+    invitationOpenDate: string;
+    invitationCloseDate: string;
+    createdBy: string;
+    notes?: string;
+  },
+): Promise<FAEvent | null> {
+  // 1. Load the source event so we can carry over numberOfDays, venue, etc.
+  const srcRes = await pool.query<EventRow>(
+    `SELECT id, name, month, year, venue, start_date, end_date, number_of_days,
+            invitation_open_date, invitation_close_date, status, created_by, created_at, notes
+       FROM pcm_events
+      WHERE id = $1 AND tenant_id = $2`,
+    [sourceEventId, TENANT],
+  );
+  if (!srcRes.rows[0]) return null;
+  const src = rowToEvent(srcRes.rows[0]);
+  const startD = new Date(overrides.startDate);
+
+  // 2. Create the new event using source layout + provided overrides.
+  const newEvent = await createEventRow({
+    name: overrides.name,
+    month: startD.getMonth() + 1,
+    year: startD.getFullYear(),
+    venue: src.venue,
+    startDate: overrides.startDate,
+    endDate: overrides.endDate,
+    numberOfDays: src.numberOfDays,
+    invitationOpenDate: overrides.invitationOpenDate,
+    invitationCloseDate: overrides.invitationCloseDate,
+    status: "draft",
+    createdBy: overrides.createdBy,
+    notes: overrides.notes ?? src.notes,
+  });
+
+  // 3. Copy every session, remembering the old → new ID mapping so we can
+  //    rewire quotas correctly. Sessions are dayNumber-relative, not
+  //    calendar-date-relative, so no time-shift math needed.
+  const sessionRowsRes = await pool.query<SessionRow>(
+    `SELECT id, event_id, day_number, session_number, start_time, end_time, label
+       FROM pcm_sessions
+      WHERE event_id = $1 AND tenant_id = $2`,
+    [sourceEventId, TENANT],
+  );
+  const idMap = new Map<string, string>();
+  for (const r of sessionRowsRes.rows) {
+    const ins = await pool.query<SessionRow>(
+      `INSERT INTO pcm_sessions
+         (tenant_id, event_id, day_number, session_number, start_time, end_time, label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, event_id, day_number, session_number, start_time, end_time, label`,
+      [TENANT, newEvent.id, r.day_number, r.session_number, r.start_time, r.end_time, r.label],
+    );
+    idMap.set(r.id, ins.rows[0].id);
+  }
+
+  // 4. Copy every quota, swapping session_id via the map.
+  const quotaRowsRes = await pool.query<QuotaRow>(
+    `SELECT id, session_id, branch, quota
+       FROM pcm_session_quotas
+      WHERE session_id = ANY($1::text[]) AND tenant_id = $2`,
+    [sessionRowsRes.rows.map(r => r.id), TENANT],
+  );
+  for (const q of quotaRowsRes.rows) {
+    const newSessionId = idMap.get(q.session_id);
+    if (!newSessionId) continue;
+    await pool.query(
+      `INSERT INTO pcm_session_quotas (tenant_id, session_id, branch, quota)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (session_id, branch) DO NOTHING`,
+      [TENANT, newSessionId, q.branch, q.quota],
+    );
+  }
+
+  return newEvent;
+}
+
 export async function updateEventRow(
   id: string,
   patch: Partial<FAEvent>
@@ -497,6 +598,10 @@ export async function updateInvitationRow(
   patch: {
     status?: InvitationStatus;
     sessionId?: string;
+    /** When the BM reschedules the invitation to a session in a different
+     *  event, pass the new eventId alongside the new sessionId. Both columns
+     *  must change together or the foreign-key consistency is broken. */
+    eventId?: string;
     markedBy?: string;
     /** When the BM assigns/changes the coach for this invitation. Pass
      *  `null` (for coachId) to clear the assignment. */
@@ -526,6 +631,10 @@ export async function updateInvitationRow(
   if (patch.sessionId !== undefined) {
     fields.push(`session_id = $${i++}`);
     values.push(patch.sessionId);
+  }
+  if (patch.eventId !== undefined) {
+    fields.push(`event_id = $${i++}`);
+    values.push(patch.eventId);
   }
   if (patch.coachId !== undefined) {
     fields.push(`coach_id = $${i++}`);

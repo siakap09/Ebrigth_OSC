@@ -16,6 +16,7 @@ import { EmptyState } from "@pcm/_components/shared/EmptyState";
 import { BMEventStatCard } from "@pcm/_components/fa/BMEventStatCard";
 import { SessionInvitesPanel } from "@pcm/_components/fa/SessionInvitesPanel";
 import { InviteStudentsModal } from "@pcm/_components/fa/InviteStudentsModal";
+import { RescheduleModal } from "@pcm/_components/fa/RescheduleModal";
 import { BRANCHES, Invitation } from "@pcm/_types";
 import { addDays, parseISO } from "date-fns";
 import { formatDateRange } from "@pcm/_lib/date";
@@ -58,6 +59,12 @@ export default function BMEventDetailPage() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [invitationToRemove, setInvitationToRemove] = useState<Invitation | null>(null);
+  // When the BM clicks "Reschedule" in the status selector we DON'T flip
+  // status immediately — we open the modal so they can pick the new
+  // (event, session) target. Reschedule via the picker actually moves the
+  // invitation; status only goes to "rescheduled" if they cancel out of
+  // the modal and explicitly want to mark it as needing a future slot.
+  const [rescheduleTarget, setRescheduleTarget] = useState<Invitation | null>(null);
   const [justRefreshed, setJustRefreshed] = useState(false);
 
   // Manual refresh — re-fetches every event/session/quota/invitation row
@@ -115,9 +122,6 @@ export default function BMEventDetailPage() {
     const q = quotas.find(qq => qq.sessionId === s.id && qq.branch === user.branch);
     return sum + (q?.quota || 0);
   }, 0);
-  // Academy sets a confirm target (quota). BMs may invite up to 3× that
-  // because we expect ~1 in 3 students to actually confirm.
-  const totalBranchInviteCap = totalBranchQuota * 3;
   // Only count invitations in sessions this BM can actually see (i.e.
   // sessions where their branch has a quota). Walk-ins or legacy invites
   // tied to a session whose quota was later removed would otherwise inflate
@@ -185,8 +189,12 @@ export default function BMEventDetailPage() {
       <div className="grid grid-cols-4 gap-4 mb-8">
         <BMEventStatCard label="Your sessions" value={bmSessions.length} />
         <BMEventStatCard label="Total slots" value={totalBranchQuota} />
-        <BMEventStatCard label="Invited" value={`${totalBranchInvitations} / ${totalBranchInviteCap}`} />
-        <BMEventStatCard label="Confirmed" value={`${totalBranchConfirmed} / ${totalBranchQuota}`} />
+        {/* Ratios per academy ask:
+            • Invited   = invitations placed / total quota slots academy opened
+            • Confirmed = confirmations / invitations placed (i.e. quality, not capacity)
+        */}
+        <BMEventStatCard label="Invited" value={`${totalBranchInvitations} / ${totalBranchQuota}`} />
+        <BMEventStatCard label="Confirmed" value={`${totalBranchConfirmed} / ${totalBranchInvitations || 0}`} />
       </div>
 
       {!canInvite && event.status === "closed" && (
@@ -237,7 +245,16 @@ export default function BMEventDetailPage() {
                         return (
                           <button
                             key={session.id}
-                            onClick={() => setSelectedSessionId(session.id)}
+                            onClick={() => {
+                              setSelectedSessionId(session.id);
+                              // Per academy request: clicking a session opens
+                              // the invite picker straight away. Skip when
+                              // the session has no remaining capacity so the
+                              // BM doesn't get a modal they can't act in.
+                              if (canInvite && invited < inviteCap) {
+                                setInviteModalOpen(true);
+                              }
+                            }}
                             className={`w-full text-left p-3 rounded-[10px] border transition-all ${
                               isSelected
                                 ? "bg-brand-50 border-brand-600 ring-2 ring-brand-100"
@@ -295,7 +312,17 @@ export default function BMEventDetailPage() {
                 invitations={sessionInvitations}
                 canInvite={canInvite}
                 onOpenInvite={() => setInviteModalOpen(true)}
-                onStatusChange={(id, status) => updateInvitationStatus(id, status, user.id)}
+                onStatusChange={(id, status) => {
+                  // Intercept "rescheduled" so the BM can pick the new slot
+                  // instead of just flipping a flag. Every other status flips
+                  // immediately as before.
+                  if (status === "rescheduled") {
+                    const inv = sessionInvitations.find(i => i.id === id);
+                    if (inv) setRescheduleTarget(inv);
+                    return;
+                  }
+                  updateInvitationStatus(id, status, user.id);
+                }}
                 onRemove={(inv) => setInvitationToRemove(inv)}
               />
             )}
@@ -342,6 +369,12 @@ export default function BMEventDetailPage() {
         description="The student will no longer be invited to this session. You can re-invite them later if needed."
         confirmLabel="Remove"
         danger
+      />
+
+      <RescheduleModal
+        open={!!rescheduleTarget}
+        onClose={() => setRescheduleTarget(null)}
+        invitation={rescheduleTarget}
       />
     </AppShell>
   );

@@ -17,6 +17,8 @@ import {
   LogOut,
   Home,
   Users,
+  ListOrdered,
+  ClipboardCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -36,12 +38,16 @@ interface NavItem {
 const MKT_NAV: NavItem[] = [
   { href: "/pcm-system/academy", label: "Events", icon: CalendarDays },
   { href: "/pcm-system/academy/students", label: "Student List", icon: Users },
+  { href: "/pcm-system/shared/invitations", label: "Invitations", icon: ListOrdered },
+  { href: "/pcm-system/shared/reports", label: "Reports", icon: ClipboardCheck },
   { href: "/pcm-system/shared/attendance", label: "Attendance", icon: ClipboardList },
   { href: "/pcm-system/shared/dashboard", label: "Dashboard", icon: ChartBar },
 ];
 
 const BM_NAV: NavItem[] = [
   { href: "/pcm-system/bm", label: "Events", icon: CalendarDays },
+  { href: "/pcm-system/shared/invitations", label: "Invitations", icon: ListOrdered },
+  { href: "/pcm-system/shared/reports", label: "Reports", icon: ClipboardCheck },
   { href: "/pcm-system/shared/attendance", label: "Attendance", icon: ClipboardList },
   { href: "/pcm-system/shared/dashboard", label: "Dashboard", icon: ChartBar },
 ];
@@ -51,6 +57,8 @@ const BM_NAV: NavItem[] = [
 const BM_NAV_FOR_ADMIN: NavItem[] = [
   { href: "/pcm-system/bm", label: "Events", icon: CalendarDays },
   { action: "switchToMarketing", label: "Academy View", icon: Building2 },
+  { href: "/pcm-system/shared/invitations", label: "Invitations", icon: ListOrdered },
+  { href: "/pcm-system/shared/reports", label: "Reports", icon: ClipboardCheck },
   { href: "/pcm-system/shared/attendance", label: "Attendance", icon: ClipboardList },
   { href: "/pcm-system/shared/dashboard", label: "Dashboard", icon: ChartBar },
 ];
@@ -80,6 +88,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (currentUser && !eventsLoaded) loadEvents();
   }, [currentUser, eventsLoaded, loadEvents]);
+
+  const loadReports = useFAStore(s => s.loadReports);
+  const reportsLoaded = useFAStore(s => s.reportsLoaded);
+  useEffect(() => {
+    if (currentUser && !reportsLoaded) loadReports();
+  }, [currentUser, reportsLoaded, loadReports]);
 
   // Whenever the FA tab regains focus (e.g. the user finished editing in
   // Heidi and switched back), re-fetch studentrecords so the FA UI always
