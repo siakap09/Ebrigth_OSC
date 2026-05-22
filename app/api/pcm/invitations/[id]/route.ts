@@ -14,6 +14,7 @@ export async function PATCH(
     const updated = await updateInvitationRow(id, {
       status: body.status as InvitationStatus | undefined,
       sessionId: body.sessionId,
+      eventId: body.eventId,
       markedBy: body.markedBy,
       coachId: body.coachId === undefined ? undefined : (body.coachId ?? null),
       coachName: body.coachName === undefined ? undefined : (body.coachName ?? null),

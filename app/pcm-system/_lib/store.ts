@@ -17,6 +17,7 @@ import {
   Invitation,
   InvitationStatus,
   InviteType,
+  PcmReport,
   Session,
   SessionQuota,
   Student,
@@ -38,6 +39,15 @@ interface FAStore {
    *  same student (one row per granted branch per event). Academy/Admin
    *  only — see /api/pcm/event-overrides. */
   eventBranchOverrides: EventBranchOverride[];
+
+  /** Assessment reports — one per invitation (filled by coach after the
+   *  session). Doubles as the printable certificate. Refreshed via
+   *  loadReports(); saved via saveReport(). */
+  reports: PcmReport[];
+  reportsLoaded: boolean;
+  reportsLoading: boolean;
+  loadReports: () => Promise<void>;
+  saveReport: (report: Omit<PcmReport, "id" | "createdAt" | "updatedAt">) => Promise<PcmReport>;
 
   // ------- Auth -------
   currentUserId: string | null;
@@ -72,6 +82,19 @@ interface FAStore {
   createEvent: (ev: Omit<FAEvent, "id" | "createdAt">) => Promise<FAEvent>;
   updateEvent: (id: string, patch: Partial<FAEvent>) => Promise<void>;
   deleteEvent: (id: string) => Promise<void>;
+  /** Duplicate a source event's session + quota layout into a new draft.
+   *  Only name/dates/invitation-window change; sessions and quotas are
+   *  cloned 1:1. Invitations are NOT copied. After the server returns,
+   *  the new event + its sessions + its quotas are added to local state
+   *  via a follow-up `loadEvents()` to keep mirroring trivial. */
+  duplicateEvent: (sourceId: string, args: {
+    name: string;
+    startDate: string;
+    endDate: string;
+    invitationOpenDate: string;
+    invitationCloseDate: string;
+    notes?: string;
+  }) => Promise<FAEvent>;
 
   // ------- Session CRUD -------
   createSession: (s: Omit<Session, "id">) => Promise<Session>;
@@ -112,6 +135,15 @@ interface FAStore {
   ) => Promise<void>;
   /** Flip an existing invitation between Progress and Renewal. */
   updateInviteType: (invitationId: string, inviteType: InviteType) => Promise<void>;
+  /** Move an invitation to a (possibly different) event + session. The
+   *  server writes both event_id and session_id in one PATCH. Use this
+   *  for the "Reschedule with target picker" flow; `moveInvitationToSession`
+   *  remains for the simple same-event move used by Academy's panel. */
+  rescheduleInvitation: (
+    invitationId: string,
+    targetEventId: string,
+    targetSessionId: string,
+  ) => Promise<void>;
 
   // ------- Multi-grade override toggles (Academy/Admin only) -------
   grantEventBranchOverride: (args: {
@@ -203,6 +235,9 @@ export const useFAStore = create<FAStore>()(
       quotas: [],
       invitations: [],
       eventBranchOverrides: [],
+      reports: [],
+      reportsLoaded: false,
+      reportsLoading: false,
       sessionOrder: {},
       packedItems: {},
       walkInBuffer: {},
@@ -263,6 +298,36 @@ export const useFAStore = create<FAStore>()(
         }
       },
 
+      // ------- Reports -------
+      loadReports: async () => {
+        if (get().reportsLoading) return;
+        set({ reportsLoading: true });
+        try {
+          const r = await apiJson<{ reports: PcmReport[] }>("/api/pcm/reports");
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          set({ reports: r.data.reports, reportsLoaded: true, reportsLoading: false });
+        } catch {
+          set({ reportsLoading: false });
+        }
+      },
+      saveReport: async (report) => {
+        const r = await apiJson<{ report: PcmReport }>("/api/pcm/reports", {
+          method: "POST",
+          body: JSON.stringify(report),
+        });
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error ?? `HTTP ${r.status}`;
+          throw new Error(`Save report failed: ${detail}`);
+        }
+        const saved = r.data.report;
+        // Replace if exists (same invitation_id), else append.
+        set((s) => {
+          const without = s.reports.filter(x => x.invitationId !== saved.invitationId);
+          return { reports: [saved, ...without] };
+        });
+        return saved;
+      },
+
       // ------- Events -------
       createEvent: async (ev) => {
         const r = await apiJson<FAEvent>("/api/pcm/events", {
@@ -290,6 +355,22 @@ export const useFAStore = create<FAStore>()(
         set((s) => ({
           events: s.events.map((e) => (e.id === id ? updated : e)),
         }));
+      },
+
+      duplicateEvent: async (sourceId, args) => {
+        const r = await apiJson<{ event: FAEvent }>(
+          `/api/pcm/events/${encodeURIComponent(sourceId)}/duplicate`,
+          { method: "POST", body: JSON.stringify(args) },
+        );
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error ?? `HTTP ${r.status}`;
+          throw new Error(`Duplicate failed: ${detail}`);
+        }
+        // Server cloned sessions + quotas — the simplest way to keep local
+        // state in sync is to re-fetch the whole bundle. Cheaper than
+        // mirroring every insert by hand.
+        await get().loadEvents();
+        return r.data.event;
       },
 
       deleteEvent: async (id) => {
@@ -429,6 +510,24 @@ export const useFAStore = create<FAStore>()(
           }
           return { invitations };
         });
+      },
+
+      rescheduleInvitation: async (id, targetEventId, targetSessionId) => {
+        const r = await apiJson<Invitation>(
+          `/api/pcm/invitations/${encodeURIComponent(id)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ eventId: targetEventId, sessionId: targetSessionId }),
+          }
+        );
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error ?? `HTTP ${r.status}`;
+          throw new Error(`Reschedule failed: ${detail}`);
+        }
+        const updated = r.data;
+        set((s) => ({
+          invitations: s.invitations.map((i) => (i.id === id ? updated : i)),
+        }));
       },
 
       updateInviteType: async (id, inviteType) => {

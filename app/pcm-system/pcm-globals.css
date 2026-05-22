@@ -517,3 +517,16 @@ h1, h2, h3, h4 {
   }
 }
 
+
+/* ============================================================================
+   PCM Assessment Report — A4 print rules
+   Drops the page background and enforces A4 with 12mm margins when the
+   browser print dialog runs. Triggered on the certificate route under
+   /pcm-system/shared/reports.
+   ============================================================================ */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}

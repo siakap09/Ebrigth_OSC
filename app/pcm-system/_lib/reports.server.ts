@@ -1,0 +1,126 @@
+import "server-only";
+import { pool } from "./db";
+import { BranchCode, PcmReport } from "@pcm/_types";
+
+const TENANT = "ebright";
+
+interface ReportRow {
+  id: string;
+  invitation_id: string;
+  student_id: string;
+  student_name: string;
+  branch: string;
+  grade: number;
+  assessment_date: Date | string;
+  confidence_score: number;
+  voice_clarity_score: number;
+  eye_contact_score: number;
+  idea_expression_score: number;
+  strengths: string;
+  improvement_plan: string;
+  prepared_by: string;
+  prepared_by_id: string | null;
+  prepared_by_signature: string | null;
+  received_by: string;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+function isoDate(d: Date | string): string {
+  if (d instanceof Date) return d.toISOString().split("T")[0];
+  return String(d).split("T")[0];
+}
+function isoTs(d: Date | string): string {
+  if (d instanceof Date) return d.toISOString();
+  return String(d);
+}
+
+function rowToReport(r: ReportRow): PcmReport {
+  return {
+    id: r.id,
+    invitationId: r.invitation_id,
+    studentId: r.student_id,
+    studentName: r.student_name,
+    branch: r.branch as BranchCode,
+    grade: r.grade,
+    assessmentDate: isoDate(r.assessment_date),
+    confidenceScore: r.confidence_score,
+    voiceClarityScore: r.voice_clarity_score,
+    eyeContactScore: r.eye_contact_score,
+    ideaExpressionScore: r.idea_expression_score,
+    strengths: r.strengths,
+    improvementPlan: r.improvement_plan,
+    preparedBy: r.prepared_by,
+    preparedById: r.prepared_by_id ?? undefined,
+    preparedBySignature: r.prepared_by_signature ?? undefined,
+    receivedBy: r.received_by,
+    createdAt: isoTs(r.created_at),
+    updatedAt: isoTs(r.updated_at),
+  };
+}
+
+const COLS = `id, invitation_id, student_id, student_name, branch, grade,
+              assessment_date, confidence_score, voice_clarity_score,
+              eye_contact_score, idea_expression_score, strengths,
+              improvement_plan, prepared_by, prepared_by_id,
+              prepared_by_signature, received_by,
+              created_at, updated_at`;
+
+export async function fetchAllReports(): Promise<PcmReport[]> {
+  // Wrapped in catch so the dashboard still loads on a fresh deploy where
+  // the migration hasn't been applied yet.
+  try {
+    const { rows } = await pool.query<ReportRow>(
+      `SELECT ${COLS} FROM pcm_assessment_reports WHERE tenant_id = $1 ORDER BY updated_at DESC`,
+      [TENANT],
+    );
+    return rows.map(rowToReport);
+  } catch (err) {
+    if ((err as { code?: string }).code === "42P01") return [];
+    throw err;
+  }
+}
+
+export async function upsertReportRow(args: Omit<PcmReport, "id" | "createdAt" | "updatedAt">): Promise<PcmReport> {
+  // One report per invitation — use INSERT ... ON CONFLICT to make this
+  // call serve both "first save" and "edit" without the caller having to
+  // know which one.
+  const { rows } = await pool.query<ReportRow>(
+    `INSERT INTO pcm_assessment_reports
+      (tenant_id, invitation_id, student_id, student_name, branch, grade,
+       assessment_date, confidence_score, voice_clarity_score,
+       eye_contact_score, idea_expression_score, strengths,
+       improvement_plan, prepared_by, prepared_by_id,
+       prepared_by_signature, received_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+     ON CONFLICT (invitation_id) DO UPDATE SET
+       student_name          = EXCLUDED.student_name,
+       branch                = EXCLUDED.branch,
+       grade                 = EXCLUDED.grade,
+       assessment_date       = EXCLUDED.assessment_date,
+       confidence_score      = EXCLUDED.confidence_score,
+       voice_clarity_score   = EXCLUDED.voice_clarity_score,
+       eye_contact_score     = EXCLUDED.eye_contact_score,
+       idea_expression_score = EXCLUDED.idea_expression_score,
+       strengths             = EXCLUDED.strengths,
+       improvement_plan      = EXCLUDED.improvement_plan,
+       prepared_by           = EXCLUDED.prepared_by,
+       prepared_by_id        = EXCLUDED.prepared_by_id,
+       prepared_by_signature = EXCLUDED.prepared_by_signature,
+       received_by           = EXCLUDED.received_by,
+       updated_at            = now()
+     RETURNING ${COLS}`,
+    [
+      TENANT, args.invitationId, args.studentId, args.studentName, args.branch, args.grade,
+      args.assessmentDate, args.confidenceScore, args.voiceClarityScore,
+      args.eyeContactScore, args.ideaExpressionScore, args.strengths,
+      args.improvementPlan, args.preparedBy, args.preparedById ?? null,
+      args.preparedBySignature ?? null, args.receivedBy,
+    ],
+  );
+  return rowToReport(rows[0]);
+}
+
+export async function deleteReportRow(id: string): Promise<void> {
+  await pool.query(`DELETE FROM pcm_assessment_reports WHERE id = $1 AND tenant_id = $2`, [id, TENANT]);
+}
