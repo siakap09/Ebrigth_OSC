@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { AppShell } from "@pcm/_components/shared/AppShell";
-import { BRANCHES, BranchCode } from "@pcm/_types";
+import { BranchCode } from "@pcm/_types";
 import { ClipboardCheck, Search, Printer, Pencil, Printer as PrinterAll } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { BranchMultiSelect } from "@pcm/_components/fa/BranchMultiSelect";
 
 export default function ReportsListPage() {
   const user = useCurrentUser();
@@ -15,18 +16,22 @@ export default function ReportsListPage() {
   const invitations = useFAStore(s => s.invitations);
   const events      = useFAStore(s => s.events);
 
-  const [branch, setBranch] = useState<BranchCode | "all">(
-    user?.role === "BM" && user.branch ? user.branch : "all"
-  );
+  // Multi-branch selection (empty = all). BMs are locked to their own branch.
+  const [selectedBranches, setSelectedBranches] = useState<Set<BranchCode>>(() => {
+    if (user?.role === "BM" && user.branch) return new Set([user.branch]);
+    return new Set();
+  });
   const [eventId, setEventId] = useState<string>("all");
   const [search, setSearch]   = useState("");
 
-  const effectiveBranch: BranchCode | "all" =
-    user?.role === "BM" ? (user.branch ?? "all") : branch;
+  const branchAllowed = (b: BranchCode): boolean => {
+    if (user?.role === "BM") return user.branch === b;
+    return selectedBranches.size === 0 || selectedBranches.has(b);
+  };
 
   const filtered = useMemo(() => {
     let list = [...reports];
-    if (effectiveBranch !== "all") list = list.filter(r => r.branch === effectiveBranch);
+    list = list.filter(r => branchAllowed(r.branch));
     if (eventId !== "all") {
       // Reports don't carry event_id directly — bridge via the invitation
       // they belong to. Filter by reports whose invitation is in this event.
@@ -42,7 +47,7 @@ export default function ReportsListPage() {
       );
     }
     return list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }, [reports, effectiveBranch, eventId, search, invitations]);
+  }, [reports, selectedBranches, user?.role, user?.branch, eventId, search, invitations]);
 
   const sortedEvents = useMemo(
     () => [...events].sort((a, b) => b.startDate.localeCompare(a.startDate)),
@@ -53,10 +58,10 @@ export default function ReportsListPage() {
   // Used to surface a "X of Y filled" coverage stat at the top.
   const attendedInvitations = useMemo(() => {
     let invs = invitations.filter(i => i.status === "attended");
-    if (effectiveBranch !== "all") invs = invs.filter(i => i.branch === effectiveBranch);
-    if (eventId !== "all")          invs = invs.filter(i => i.eventId === eventId);
+    invs = invs.filter(i => branchAllowed(i.branch));
+    if (eventId !== "all") invs = invs.filter(i => i.eventId === eventId);
     return invs;
-  }, [invitations, effectiveBranch, eventId]);
+  }, [invitations, selectedBranches, user?.role, user?.branch, eventId]);
 
   const coverage = attendedInvitations.length === 0
     ? 0
@@ -96,17 +101,10 @@ export default function ReportsListPage() {
           ))}
         </select>
         {user?.role !== "BM" && (
-          <select
-            className="fa-input text-xs"
-            style={{ minWidth: "200px", height: "30px", paddingTop: "0.15rem", paddingBottom: "0.15rem" }}
-            value={branch}
-            onChange={e => setBranch(e.target.value as BranchCode | "all")}
-          >
-            <option value="all">All branches</option>
-            {BRANCHES.map(b => (
-              <option key={b.code} value={b.code}>{b.code} — {b.name}</option>
-            ))}
-          </select>
+          <BranchMultiSelect
+            selected={selectedBranches}
+            onChange={setSelectedBranches}
+          />
         )}
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-400" />

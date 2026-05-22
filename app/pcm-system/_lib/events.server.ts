@@ -79,6 +79,7 @@ interface InvitationRow {
   invite_type: string;
   coach_id: string | null;
   coach_name: string | null;
+  paid: boolean;
 }
 
 interface EventBranchOverrideRow {
@@ -162,6 +163,7 @@ function rowToInvitation(r: InvitationRow): Invitation {
     inviteType: (r.invite_type === "renewal" ? "renewal" : "progress") as InviteType,
     coachId: r.coach_id ?? undefined,
     coachName: r.coach_name ?? undefined,
+    paid: r.paid === true,
     invitedBy: r.invited_by ?? "",
     invitedAt: isoTimestamp(r.invited_at) ?? new Date().toISOString(),
     confirmedAt: isoTimestamp(r.confirmed_at),
@@ -205,7 +207,7 @@ export async function fetchAllEventData(): Promise<{
     ),
     pool.query<InvitationRow>(
       `SELECT id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-              invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name
+              invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name, paid
          FROM pcm_invitations
         WHERE tenant_id = $1`,
       [TENANT]
@@ -579,7 +581,7 @@ export async function createInvitationRow(args: {
          (tenant_id, event_id, session_id, student_id, branch, target_grade, status, invited_by, invited_at, confirmed_at, invite_type)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $7 = 'confirmed' THEN now() ELSE NULL END, $9)
        RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-                 invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name`,
+                 invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name, paid`,
       [TENANT, args.eventId, args.sessionId, args.studentId, args.branch, args.targetGrade, args.status, args.invitedBy, inviteType]
     );
     return rowToInvitation(rows[0]);
@@ -609,6 +611,8 @@ export async function updateInvitationRow(
     coachName?: string | null;
     /** Allow the BM to flip Progress ↔ Renewal after the fact. */
     inviteType?: InviteType;
+    /** Mark this slot as paid / unpaid. Independent of attendance. */
+    paid?: boolean;
   }
 ): Promise<Invitation | null> {
   const fields: string[] = [];
@@ -648,13 +652,17 @@ export async function updateInvitationRow(
     fields.push(`invite_type = $${i++}`);
     values.push(patch.inviteType);
   }
+  if (patch.paid !== undefined) {
+    fields.push(`paid = $${i++}`);
+    values.push(patch.paid);
+  }
   if (fields.length === 0) return null;
   fields.push(`updated_at = now()`);
   values.push(id, TENANT);
   const { rows } = await pool.query<InvitationRow>(
     `UPDATE pcm_invitations SET ${fields.join(", ")} WHERE id = $${i++} AND tenant_id = $${i}
      RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-               invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name`,
+               invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name, paid`,
     values
   );
   if (!rows[0]) return null;

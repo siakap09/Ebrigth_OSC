@@ -62,10 +62,13 @@ export default function AttendancePage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-  // Relevant events — ongoing, closed, or recently completed
+  // Relevant events — every status except draft. Academy wanted BMs to be
+  // able to tick attendance during the run-up to the event ("open" period)
+  // too, not only once invitations close, so they can mark walk-ins or
+  // pre-arrivals without waiting on a status flip.
   const relevantEvents = useMemo(() => {
     return events
-      .filter(e => e.status === "ongoing" || e.status === "closed" || e.status === "completed")
+      .filter(e => e.status !== "draft")
       .sort((a, b) => b.startDate.localeCompare(a.startDate));
   }, [events]);
 

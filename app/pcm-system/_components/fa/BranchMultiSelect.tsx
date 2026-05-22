@@ -121,9 +121,12 @@ export function BranchMultiSelect({ selected, onChange }: Props) {
       </button>
 
       {open && (
+        // Anchor right-aligned so the popover never gets clipped by the page
+        // edge when the button sits at the far right of a filter row. The
+        // earlier left-anchored version cut off Region C on narrow screens.
         <div
-          className="absolute z-20 mt-1 left-0 rounded-xl bg-white border border-ivory-300 shadow-xl"
-          style={{ width: 580, padding: 12 }}
+          className="absolute z-20 mt-1 right-0 rounded-xl bg-white border border-ivory-300 shadow-xl"
+          style={{ width: 540, padding: 12 }}
         >
           {/* Header bar */}
           <div className="flex items-center justify-between gap-3 pb-2 mb-2 border-b border-ivory-300">

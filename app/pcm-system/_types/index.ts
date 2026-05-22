@@ -343,6 +343,9 @@ export interface Invitation {
    *  to do a cross-DB join. Both null until the BM picks a coach. */
   coachId?: string;
   coachName?: string;
+  /** Did the student pay for this slot? Independent of attendance —
+   *  surfaced on dashboards as paid/unpaid/not-attended buckets. */
+  paid: boolean;
   invitedBy: string;            // User id (BM)
   invitedAt: string;
   confirmedAt?: string;
