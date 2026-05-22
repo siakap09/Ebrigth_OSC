@@ -23,6 +23,12 @@ jobs:
           # these are missing or look like placeholders. Mirrors the export
           # block in staging-deploy.yml so the two environments stay aligned.
           script: |
+            # Stop + remove running containers and the stale image so the next
+            # `docker compose up` is forced to rebuild from the latest source.
+            docker stop ebright-osc-osc-1 ebright-osc-worker-1 2>/dev/null || true
+            docker rm -f ebright-osc-osc-1 ebright-osc-worker-1 2>/dev/null || true
+            docker rmi ebright-osc:latest 2>/dev/null || true
+
             export NEXTAUTH_SECRET='${{ secrets.NEXTAUTH_SECRET }}'
             export BETTER_AUTH_SECRET='${{ secrets.BETTER_AUTH_SECRET }}'
             export ENCRYPTION_KEY='${{ secrets.ENCRYPTION_KEY }}'
