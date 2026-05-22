@@ -23,17 +23,8 @@ jobs:
           # these are missing or look like placeholders. Mirrors the export
           # block in staging-deploy.yml so the two environments stay aligned.
           script: |
-            # Locate the project directory dynamically (handles any path the
-            # server admin chose) then hard-reset to the latest main commit.
-            PROJECT_DIR=$(find /home /opt /srv -maxdepth 5 -name docker-compose.yml 2>/dev/null | grep -v node_modules | head -1 | xargs -I{} dirname {})
-            echo "Project dir: $PROJECT_DIR"
-            cd "$PROJECT_DIR"
-            git fetch origin
-            git checkout main 2>/dev/null || git checkout -b main origin/main
-            git reset --hard origin/main
-            echo "Now at: $(git log --oneline -1)"
-
-            # Remove stale containers and image to force a full rebuild.
+            # Remove stale containers and image so deploy-prod.sh is forced
+            # to do a full docker image rebuild from the pulled source.
             docker rm -f ebright-osc-osc-1 ebright-osc-worker-1 2>/dev/null || true
             docker rmi ebright-osc:latest 2>/dev/null || true
 
@@ -44,19 +35,7 @@ jobs:
             export CRM_PREVIEW_MODE='${{ secrets.CRM_PREVIEW_MODE }}'
             export SHARED_SSO_SECRET='${{ secrets.SHARED_SSO_SECRET }}'
             export INVENTORY_URL='${{ secrets.INVENTORY_URL }}'
-
-            # Write env file so the running containers can read it at runtime.
-            cat > .env <<ENVEOF
-            NEXTAUTH_SECRET=$NEXTAUTH_SECRET
-            BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET
-            ENCRYPTION_KEY=$ENCRYPTION_KEY
-            DATABASE_URL=$DATABASE_URL
-            CRM_PREVIEW_MODE=$CRM_PREVIEW_MODE
-            SHARED_SSO_SECRET=$SHARED_SSO_SECRET
-            INVENTORY_URL=$INVENTORY_URL
-            ENVEOF
-
-            docker compose up -d --build
+            /home/staff1/deploy-prod.sh osc
 
             # Self-healing burnlist tables: idempotent DDL run inside the
             # worker container. Creates burnlist_week / burnlist_entry in
@@ -64,4 +43,4 @@ jobs:
             # the prod env points at. No-op on subsequent deploys.
             echo "===== ensuring burnlist tables exist ====="
             docker exec ebright-osc-worker-1 node scripts/ensure-burnlist-tables.mjs \
-              || echo "WARN: burnlist tables ensure failed (non-fatal — page may show DB error until failed)"
+              || echo "WARN: burnlist tables ensure failed (non-fatal — page may show DB error until fixed)"
