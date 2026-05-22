@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect } from "react";
+import { Suspense, useMemo, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useFAStore } from "@pcm/_lib/store";
@@ -11,8 +11,21 @@ import { CertificateBody } from "@pcm/_components/fa/CertificateBody";
 /**
  * Bulk-print: renders one CertificateBody per ?ids=… entry, each on its
  * own A4 sheet via the .fa-print-cert-page page-break class.
+ *
+ * The page export is just a Suspense wrapper — Next.js refuses to
+ * statically prerender any tree that reads useSearchParams() without
+ * one. Without the wrapper the prod build aborts before the page is
+ * even rendered.
  */
 export default function ReportsBulkPrintPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-ink-500 text-sm">Loading certificates…</div>}>
+      <BulkPrintInner />
+    </Suspense>
+  );
+}
+
+function BulkPrintInner() {
   const search = useSearchParams();
   const ids = useMemo(() => {
     const raw = search.get("ids") ?? "";
