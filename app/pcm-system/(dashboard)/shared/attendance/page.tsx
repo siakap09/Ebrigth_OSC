@@ -100,8 +100,13 @@ export default function AttendancePage() {
       invitations
         .filter(i =>
           i.sessionId === selectedSession.id &&
+          // Show everyone who could plausibly turn up — confirmed, already
+          // attended, pending ("invited"), no-shows, and reschedule-tagged.
+          // Only hide declined, since they've explicitly opted out.
+          // Academy ask: BMs need to see pending students too so they can
+          // tick attendance the moment they walk in, instead of having to
+          // confirm them first.
           i.status !== "declined" &&
-          i.status !== "invited" &&
           (visibleBranchFilter === "all" || i.branch === visibleBranchFilter)
         )
         .map(i => [i.id, i] as const)

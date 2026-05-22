@@ -296,8 +296,11 @@ export default function BMEventDetailPage() {
             </div>
           </div>
 
-          {/* Right: invitation list for selected session */}
-          <div>
+          {/* Right: invitation list for selected session.
+              `min-w-0` is essential — without it, the wide invitations
+              table forces the grid column to grow, pushing the Invite
+              button beyond the viewport edge. */}
+          <div className="min-w-0">
             {!selectedSession ? (
               <div className="fa-card p-12 text-center">
                 <div className="w-14 h-14 rounded-full bg-ivory-200 text-ink-400 flex items-center justify-center mx-auto mb-4">

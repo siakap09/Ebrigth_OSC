@@ -142,7 +142,7 @@ export function SessionInvitesPanel({
           ) : null}
         />
       ) : (
-        <div className="fa-card overflow-hidden">
+        <div className="fa-card overflow-x-auto">
           <table className="fa-table">
             <thead>
               <tr>
@@ -239,22 +239,30 @@ export function SessionInvitesPanel({
                       />
                     </td>
                     <td>
-                      {/* Paid pill — click to toggle. Independent of attendance
-                          so the BM can mark "paid before showing up" too. */}
-                      <button
-                        type="button"
-                        onClick={() => void setInvitationPaid(inv.id, !inv.paid)}
-                        title={inv.paid ? "Paid — click to mark unpaid" : "Unpaid — click to mark paid"}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold uppercase transition-all ${
-                          inv.paid
-                            ? "bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200"
-                            : "bg-ivory-100 text-ink-500 border border-ivory-300 hover:bg-ivory-200"
-                        }`}
-                        style={{ letterSpacing: "0.06em" }}
-                      >
-                        <DollarSign className="w-3 h-3" />
-                        {inv.paid ? "Paid" : "Unpaid"}
-                      </button>
+                      {/* Paid pill only renders once the student is marked
+                          "attended" — academy clarified the payment workflow:
+                          fee is collected on arrival, so until they actually
+                          show up there's nothing to mark. For non-attended
+                          rows we render a dim dash placeholder so the column
+                          width stays stable. */}
+                      {inv.status === "attended" ? (
+                        <button
+                          type="button"
+                          onClick={() => void setInvitationPaid(inv.id, !inv.paid)}
+                          title={inv.paid ? "Paid — click to mark unpaid" : "Unpaid — click to mark paid"}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold uppercase transition-all ${
+                            inv.paid
+                              ? "bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200"
+                              : "bg-ivory-100 text-ink-500 border border-ivory-300 hover:bg-ivory-200"
+                          }`}
+                          style={{ letterSpacing: "0.06em" }}
+                        >
+                          <DollarSign className="w-3 h-3" />
+                          {inv.paid ? "Paid" : "Unpaid"}
+                        </button>
+                      ) : (
+                        <span className="text-ink-300 italic text-xs">—</span>
+                      )}
                     </td>
                     <td>
                       <Link
