@@ -23,8 +23,25 @@ jobs:
           # these are missing or look like placeholders. Mirrors the export
           # block in staging-deploy.yml so the two environments stay aligned.
           script: |
-            # Remove stale containers and image so deploy-prod.sh is forced
-            # to do a full docker image rebuild from the pulled source.
+            # Pull the latest code before building.
+            # Try the most likely project paths on the server.
+            for CANDIDATE in /home/staff1/ebright-osc /home/staff1/osc /home/staff1/Ebrigth_OSC_fresh /root/ebright-osc /opt/ebright-osc; do
+              if [ -f "$CANDIDATE/docker-compose.yml" ]; then
+                PROJECT_DIR="$CANDIDATE"
+                break
+              fi
+            done
+            if [ -n "$PROJECT_DIR" ]; then
+              echo "Found project at $PROJECT_DIR — pulling latest main"
+              cd "$PROJECT_DIR"
+              git fetch origin
+              git reset --hard origin/main
+              echo "Source now at: $(git log --oneline -1)"
+            else
+              echo "WARNING: project dir not found, deploy-prod.sh will build from existing source"
+            fi
+
+            # Remove stale containers and image to force a full rebuild.
             docker rm -f ebright-osc-osc-1 ebright-osc-worker-1 2>/dev/null || true
             docker rmi ebright-osc:latest 2>/dev/null || true
 
