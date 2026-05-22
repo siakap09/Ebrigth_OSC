@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { Clock, X, Phone, UserPlus, ClipboardCheck, FileText, DollarSign } from "lucide-react";
+import { Clock, X, Phone, UserPlus, ClipboardCheck, FileText } from "lucide-react";
 import { useFAStore } from "@pcm/_lib/store";
 import { EmptyState } from "@pcm/_components/shared/EmptyState";
 import { StatusPill } from "@pcm/_components/fa/StatusPill";
@@ -29,7 +29,6 @@ export function SessionInvitesPanel({
   const students = useFAStore(s => s.students);
   const assignCoach = useFAStore(s => s.assignCoachToInvitation);
   const updateInviteType = useFAStore(s => s.updateInviteType);
-  const setInvitationPaid = useFAStore(s => s.setInvitationPaid);
   const reports = useFAStore(s => s.reports);
   // Build a quick "does an invitation have a saved report?" lookup so the
   // table can colour rows green when filled and amber when still pending.
@@ -152,7 +151,6 @@ export function SessionInvitesPanel({
                 <th>Coach</th>
                 <th>Parent</th>
                 <th>Status</th>
-                <th>Paid</th>
                 <th>Report</th>
                 <th></th>
               </tr>
@@ -237,32 +235,6 @@ export function SessionInvitesPanel({
                         onChange={(s) => onStatusChange(inv.id, s)}
                         disabled={!canInvite && inv.status !== "confirmed" && inv.status !== "invited"}
                       />
-                    </td>
-                    <td>
-                      {/* Paid pill only renders once the student is marked
-                          "attended" — academy clarified the payment workflow:
-                          fee is collected on arrival, so until they actually
-                          show up there's nothing to mark. For non-attended
-                          rows we render a dim dash placeholder so the column
-                          width stays stable. */}
-                      {inv.status === "attended" ? (
-                        <button
-                          type="button"
-                          onClick={() => void setInvitationPaid(inv.id, !inv.paid)}
-                          title={inv.paid ? "Paid — click to mark unpaid" : "Unpaid — click to mark paid"}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold uppercase transition-all ${
-                            inv.paid
-                              ? "bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200"
-                              : "bg-ivory-100 text-ink-500 border border-ivory-300 hover:bg-ivory-200"
-                          }`}
-                          style={{ letterSpacing: "0.06em" }}
-                        >
-                          <DollarSign className="w-3 h-3" />
-                          {inv.paid ? "Paid" : "Unpaid"}
-                        </button>
-                      ) : (
-                        <span className="text-ink-300 italic text-xs">—</span>
-                      )}
                     </td>
                     <td>
                       <Link

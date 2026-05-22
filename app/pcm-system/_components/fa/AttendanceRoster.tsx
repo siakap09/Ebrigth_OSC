@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Clock, CheckCircle2, XCircle, GripVertical } from "lucide-react";
+import { Clock, CheckCircle2, XCircle, GripVertical, DollarSign } from "lucide-react";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useFAStore } from "@pcm/_lib/store";
@@ -24,6 +24,7 @@ export function AttendanceRoster({
   const user = useCurrentUser();
   const students = useFAStore(s => s.students);
   const updateStatus = useFAStore(s => s.updateInvitationStatus);
+  const setInvitationPaid = useFAStore(s => s.setInvitationPaid);
 
   const attended = orderedInvitations.filter(i => i.status === "attended").length;
   const noShow = orderedInvitations.filter(i => i.status === "no_show").length;
@@ -96,6 +97,7 @@ export function AttendanceRoster({
                 <th>Parent</th>
                 <th>Confirmation</th>
                 <th className="text-right">Attendance</th>
+                <th>Paid</th>
               </tr>
             </thead>
             <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
@@ -114,6 +116,7 @@ export function AttendanceRoster({
                       onAttended={() => setAttendance(inv.id, "attended")}
                       onNoShow={() => setAttendance(inv.id, "no_show")}
                       onReset={() => setAttendance(inv.id, "confirmed")}
+                      onTogglePaid={() => void setInvitationPaid(inv.id, !inv.paid)}
                     />
                   );
                 })}
@@ -128,7 +131,7 @@ export function AttendanceRoster({
 
 function SortableInvitationRow({
   inv, student, position, canEdit, canDrag,
-  onAttended, onNoShow, onReset,
+  onAttended, onNoShow, onReset, onTogglePaid,
 }: {
   inv: Invitation;
   student: Student;
@@ -138,6 +141,7 @@ function SortableInvitationRow({
   onAttended: () => void;
   onNoShow: () => void;
   onReset: () => void;
+  onTogglePaid: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: inv.id,
@@ -227,6 +231,31 @@ function SortableInvitationRow({
             </button>
           )}
         </div>
+      </td>
+      <td>
+        {/* Paid pill only renders after the student is marked attended —
+            payment is collected on arrival, so before that there's nothing
+            to mark. Hidden as a dim placeholder otherwise to keep the
+            column width stable. */}
+        {inv.status === "attended" ? (
+          <button
+            type="button"
+            onClick={onTogglePaid}
+            disabled={!canEdit}
+            title={inv.paid ? "Paid — click to mark unpaid" : "Mark this student as paid"}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold uppercase transition-all ${
+              inv.paid
+                ? "bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200"
+                : "bg-ivory-100 text-ink-500 border border-ivory-300 hover:bg-ivory-200"
+            } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
+            style={{ letterSpacing: "0.06em" }}
+          >
+            <DollarSign className="w-3 h-3" />
+            {inv.paid ? "Paid" : "Unpaid"}
+          </button>
+        ) : (
+          <span className="text-ink-300 italic text-xs">—</span>
+        )}
       </td>
     </tr>
   );

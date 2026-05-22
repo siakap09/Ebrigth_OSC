@@ -393,7 +393,12 @@ export default function AttendancePage() {
                   session={selectedSession}
                   orderedInvitations={orderedInvitations}
                   pendingConfirmationsCount={pendingConfirmationsCount}
-                  canEdit={user.role === "MKT" || selectedEvent?.status === "ongoing"}
+                  /* Allow marking attendance during the open + closed +
+                     ongoing periods, not only "ongoing". Academy wants BMs
+                     to be able to tick before the event starts (e.g. early
+                     arrivals already at the venue) and clean up afterwards
+                     too. Only block draft (event not yet released). */
+                  canEdit={user.role === "MKT" || (!!selectedEvent && selectedEvent.status !== "draft")}
                   canDrag={canDrag}
                 />
               )}
