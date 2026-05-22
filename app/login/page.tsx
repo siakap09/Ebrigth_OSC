@@ -1,10 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff, Lock, User } from "lucide-react";
+import { CircleCheck, Eye, EyeOff, Lock, User } from "lucide-react";
 import { signIn } from "next-auth/react";
+
+// Reads the ?reset=1 query param. Isolated in its own component so the
+// useSearchParams() call lives inside a Suspense boundary — Next.js 15
+// fails the production build otherwise (prerender error on /login).
+function ResetBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("reset") !== "1") return null;
+  return (
+    <div role="status" className="mb-5 flex items-start gap-2 bg-emerald-500/20 border border-emerald-500/50 text-emerald-100 text-sm py-2.5 px-3 rounded-xl font-medium">
+      <CircleCheck className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+      <span>Password updated. Please sign in with your new password.</span>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -67,6 +81,10 @@ export default function LoginPage() {
             <p className="text-blue-200 text-sm">Sign in to your account</p>
           </div>
 
+          <Suspense fallback={null}>
+            <ResetBanner />
+          </Suspense>
+
           <form onSubmit={handleSubmit} className="space-y-6" autoComplete="off">
             {/* Username field */}
             <div className="space-y-2">
@@ -81,10 +99,11 @@ export default function LoginPage() {
                   name="username"
                   type="text"
                   required
-                  autoComplete="one-time-code" 
+                  autoComplete="one-time-code"
                   placeholder="Enter your username"
                   className="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   autoFocus
+                  suppressHydrationWarning
                 />
               </div>
             </div>
@@ -105,6 +124,10 @@ export default function LoginPage() {
                   autoComplete="new-password"
                   placeholder="Enter your password"
                   className="w-full pl-12 pr-12 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  // Browser password managers (1Password / "Verify it's you" / etc.)
+                  // inject extra aria-* attributes after hydration. Without this,
+                  // React logs a hydration mismatch warning that scares devs.
+                  suppressHydrationWarning
                 />
                 <button
                   type="button"
@@ -126,7 +149,7 @@ export default function LoginPage() {
                 <span className="text-blue-200">Remember me</span>
               </label>
               <Link href="/forgot-password" className="text-blue-300 hover:text-white transition-colors">
-                Forgot password?
+                Reset password?
               </Link>
             </div>
 

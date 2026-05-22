@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { isHR, isAcademy } from "@/lib/roles";
+import { canSeeKey } from "@/lib/dashboard-access";
+import { useMyPermissions } from "@/lib/use-my-permissions";
 
 interface DashboardCard {
   id: string;
@@ -11,6 +11,8 @@ interface DashboardCard {
   icon: string;
   color: string;
   items: {
+    /** Key in DASHBOARD_TREE — drives visibility via canSeeKey. */
+    key: string;
     name: string;
     href: string;
     icon: string;
@@ -24,8 +26,8 @@ const dashboards: DashboardCard[] = [
     icon: "📚",
     color: "bg-purple-500",
     items: [
-      { name: "Documents", href: "#", icon: "📄" },
-      { name: "Resources", href: "#", icon: "📁" },
+      { key: "library.documents", name: "Documents", href: "#", icon: "📄" },
+      { key: "library.resources", name: "Resources", href: "#", icon: "📁" },
     ],
   },
   {
@@ -34,8 +36,8 @@ const dashboards: DashboardCard[] = [
     icon: "📊",
     color: "bg-green-500",
     items: [
-      { name: "Analytics", href: "#", icon: "📈" },
-      { name: "Reports", href: "#", icon: "📋" },
+      { key: "internal-dashboard.analytics", name: "Analytics", href: "#", icon: "📈" },
+      { key: "internal-dashboard.reports",   name: "Reports",   href: "#", icon: "📋" },
     ],
   },
   {
@@ -44,14 +46,16 @@ const dashboards: DashboardCard[] = [
     icon: "👥",
     color: "bg-blue-500",
     items: [
-      { name: "Employee Dashboard", href: "/dashboard-employee-management", icon: "📊" },
-      { name: "Manpower Planning", href: "/manpower-schedule", icon: "🗂️" },
-      { name: "Claims", href: "/claim", icon: "💰" },
-      { name: "Attendance", href: "/attendance", icon: "⏰" },
-      { name: "Onboarding", href: "/onboarding", icon: "🟢" },
-      { name: "Offboarding", href: "/offboarding", icon: "🔴" },
-      { name: "HR Dashboard", href: "/hr-dashboard", icon: "📋" },
-      { name: "Manpower Cost Report", href: "/manpower-cost-report", icon: "💸" },
+      { key: "hrms.employee",         name: "Employee Dashboard",  href: "/dashboard-employee-management", icon: "📊" },
+      { key: "hrms.manpower-planning",name: "Manpower Planning",   href: "/manpower-schedule",             icon: "🗂️" },
+      { key: "hrms.claims",           name: "Claims",              href: "/claim",                         icon: "💰" },
+      { key: "hrms.attendance",       name: "Attendance",          href: "/attendance",                    icon: "⏰" },
+      { key: "hrms.onboarding",       name: "Onboarding",          href: "/onboarding",                    icon: "🟢" },
+      { key: "hrms.offboarding",      name: "Offboarding",         href: "/offboarding",                   icon: "🔴" },
+      { key: "hrms.hr-dashboard",     name: "HR Dashboard",        href: "/hr-dashboard",                  icon: "📋" },
+      { key: "hrms.manpower-cost",    name: "Manpower Cost Report",href: "/manpower-cost-report",          icon: "💸" },
+      { key: "hrms.staff-directory",  name: "Staff Directory",     href: "/staff-directory",               icon: "📇" },
+      { key: "hrms.burnlist",         name: "Burnlist",            href: "/burnlist",                      icon: "🔥" },
     ],
   },
   {
@@ -60,10 +64,10 @@ const dashboards: DashboardCard[] = [
     icon: "📊",
     color: "bg-yellow-500",
     items: [
-      { name: "Open CRM", href: "/crm", icon: "🚀" },
-      { name: "Contacts", href: "/crm/contacts", icon: "👥" },
-      { name: "Pipeline", href: "/crm/opportunities", icon: "📋" },
-      { name: "Automations", href: "/crm/automations", icon: "⚡" },
+      // Lead and Ticket are the only CRM entry points — both land on their
+      // respective dashboards first, where users drill into kanban / lists.
+      { key: "crm.lead",   name: "Lead",   href: "/crm/dashboard",         icon: "📋" },
+      { key: "crm.ticket", name: "Ticket", href: "/crm/tickets/dashboard", icon: "🎫" },
     ],
   },
   {
@@ -72,8 +76,8 @@ const dashboards: DashboardCard[] = [
     icon: "📰",
     color: "bg-yellow-500",
     items: [
-      { name: "Content Manager", href: "#", icon: "✏️" },
-      { name: "Media", href: "#", icon: "🖼️" },
+      { key: "cms.content-manager", name: "Content Manager", href: "#", icon: "✏️" },
+      { key: "cms.media",           name: "Media",           href: "#", icon: "🖼️" },
     ],
   },
   {
@@ -82,8 +86,8 @@ const dashboards: DashboardCard[] = [
     icon: "💬",
     color: "bg-indigo-500",
     items: [
-      { name: "Messages", href: "#", icon: "💌" },
-      { name: "Templates", href: "#", icon: "📧" },
+      { key: "sms.messages",  name: "Messages",  href: "#",    icon: "💌" },
+      { key: "sms.templates", name: "Templates", href: "/sms", icon: "📧" },
     ],
   },
   {
@@ -92,8 +96,8 @@ const dashboards: DashboardCard[] = [
     icon: "📦",
     color: "bg-pink-500",
     items: [
-      { name: "Stock Management", href: "#", icon: "📊" },
-      { name: "Warehouse", href: "#", icon: "🏭" },
+      { key: "inventory.stock",     name: "Stock Management", href: "#", icon: "📊" },
+      { key: "inventory.warehouse", name: "Warehouse",        href: "#", icon: "🏭" },
     ],
   },
   {
@@ -102,8 +106,8 @@ const dashboards: DashboardCard[] = [
     icon: "🎓",
     color: "bg-indigo-600",
     items: [
-      { name: "Event Management", href: "/academy", icon: "📅" },
-      { name: "Courses", href: "#", icon: "📖" },
+      { key: "academy.events",  name: "Event Management", href: "/academy", icon: "📅" },
+      { key: "academy.courses", name: "Courses",          href: "#",        icon: "📖" },
     ],
   },
 ];
@@ -114,14 +118,10 @@ interface DashboardDetailProps {
 
 export default function DashboardDetail({ id }: DashboardDetailProps) {
   const router = useRouter();
-  const { data: session } = useSession();
-  const userIsHR = isHR((session?.user as { role?: unknown } | undefined)?.role);
-  const userIsAcademy = isAcademy((session?.user as { role?: unknown } | undefined)?.role);
+  const { role, overrides } = useMyPermissions();
   const dashboard = dashboards.find((d) => d.id === id);
 
-  // For HR and Academy users on the HRMS hub, allow only the Employee Dashboard card.
-  const isItemEnabled = (href: string) =>
-    !((userIsHR || userIsAcademy) && id === "hrms" && href !== "/dashboard-employee-management");
+  const isItemEnabled = (key: string) => canSeeKey(role, key, overrides);
 
   if (!dashboard) {
     return (
@@ -155,7 +155,7 @@ export default function DashboardDetail({ id }: DashboardDetailProps) {
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {dashboard.items.map((item) => {
-          const enabled = isItemEnabled(item.href);
+          const enabled = isItemEnabled(item.key);
           if (!enabled) {
             return (
               <div

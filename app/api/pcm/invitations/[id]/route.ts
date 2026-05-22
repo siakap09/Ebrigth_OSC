@@ -1,0 +1,45 @@
+import { NextRequest, NextResponse } from "next/server";
+import { deleteInvitationRow, updateInvitationRow } from "@pcm/_lib/events.server";
+import { InvitationStatus, InviteType } from "@pcm/_types";
+
+export const dynamic = "force-dynamic";
+
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await ctx.params;
+    const body = await req.json();
+    const updated = await updateInvitationRow(id, {
+      status: body.status as InvitationStatus | undefined,
+      sessionId: body.sessionId,
+      eventId: body.eventId,
+      markedBy: body.markedBy,
+      coachId: body.coachId === undefined ? undefined : (body.coachId ?? null),
+      coachName: body.coachName === undefined ? undefined : (body.coachName ?? null),
+      inviteType: body.inviteType === "progress" || body.inviteType === "renewal"
+        ? (body.inviteType as InviteType)
+        : undefined,
+    });
+    if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(updated);
+  } catch (err) {
+    console.error("[api/fa/invitations PATCH] failed:", err);
+    return NextResponse.json({ error: "Failed to update invitation" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await ctx.params;
+    await deleteInvitationRow(id);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[api/fa/invitations DELETE] failed:", err);
+    return NextResponse.json({ error: "Failed to delete invitation" }, { status: 500 });
+  }
+}

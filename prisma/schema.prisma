@@ -4,6 +4,10 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // Prisma 6 still requires `url` in the schema (Prisma 7 will move this to
+  // prisma.config.ts entirely). PrismaClient instances also pass an explicit
+  // `datasourceUrl` override at runtime — that path is what Prisma 7 expects,
+  // so the upgrade later is just deleting this line.
   url      = env("DATABASE_URL")
 }
 
@@ -12,14 +16,19 @@ datasource db {
 // ============================================================
 
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
-  passwordHash String
-  role         String   @default("BRANCH_MANAGER")
-  branchName   String?
-  createdAt    DateTime @default(now())
-  name         String?
-  status       String   @default("ACTIVE")
+  id                   Int       @id @default(autoincrement())
+  email                String    @unique
+  passwordHash         String
+  role                 String    @default("BRANCH_MANAGER")
+  branchName           String?
+  createdAt            DateTime  @default(now())
+  name                 String?
+  status               String    @default("ACTIVE")
+  lastLoggedInAt       DateTime?
+  // Per-user dashboard access overrides on top of the role default in
+  // lib/dashboard-access.ts. Shape: { "hrms.attendance": "DENIED", "crm": "ALLOWED" }
+  // Null/empty = follow the role default for every key.
+  dashboardOverrides   Json?
 }
 
 model ManpowerSchedule {
@@ -88,6 +97,9 @@ model BranchStaff {
   updatedAt          DateTime? @updatedAt
   trainingStartDate  String?
   trainingEndDate    String?
+  // Weekly schedule for the Staff Directory working-hours panel.
+  // Shape: { Mon: { start: "09:00", end: "18:00" } | null, ..., Sun: ... }
+  workingHours       Json?
 
   @@map("BranchStaff")
 }
@@ -289,6 +301,15 @@ model crm_branch {
   id               String   @id @default(uuid())
   tenantId         String
   name             String
+  /** Short branch code (e.g. "AMP", "ST", "KD"). Used by the dashboard
+   *  bar chart + ticket module. Until the manage-branches feature went in
+   *  this lived in a hard-coded map in leads-metrics; now it's a column
+   *  so super-admins can add/rename branches without editing source. */
+  code             String?
+  /** Region letter: 'A' | 'B' | 'C'. Drives the colour bucket on the
+   *  super-admin dashboard bar chart. Nullable for branches outside the
+   *  canonical regional grouping (e.g. the OD test branch, HR). */
+  region           String?
   address          String?
   phone            String?
   email            String?
@@ -402,6 +423,15 @@ model crm_contact {
   preferredBranchId String?
   preferredTrialDay TrialDay?
   enrolledPackage   String?
+  // For sibling-exploded imports (children in master_leads_base.children_details),
+  // contact.firstName/lastName holds the CHILD's name and parentFullName holds
+  // the parent's. Single-child / no-children imports leave parentFullName null
+  // so the card and the modal both show the same name.
+  parentFullName    String?
+  // Marketing campaign that produced this lead (from master_leads_base.campaign_name).
+  // Stored verbatim — display as written, no normalisation. Null = lead didn't
+  // come from a tracked campaign; UI renders "-" in that case.
+  campaignName      String?
   childName1        String?
   childAge1         String?
   childName2        String?
@@ -410,6 +440,13 @@ model crm_contact {
   childAge3         String?
   childName4        String?
   childAge4         String?
+  // Idempotency keys for inbound integration ingest. The pair points back at
+  // the source row in ebrightleads_db (e.g. "meta_leads" + "6625556"). The
+  // composite unique constraint makes it impossible to ingest the same lead
+  // twice — the LISTEN/NOTIFY worker and the polling backstop can race freely
+  // without producing duplicates.
+  externalSourceTable String?
+  externalSourceId    String?
   deletedAt         DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -426,6 +463,7 @@ model crm_contact {
   appointments   crm_appointment[]
   automationRuns crm_automation_run[]
 
+  @@unique([tenantId, externalSourceTable, externalSourceId], name: "uq_crm_contact_external_source")
   @@index([tenantId, branchId])
   @@index([tenantId, email])
   @@index([tenantId, phone])
@@ -1051,4 +1089,46 @@ model tkt_counter {
   @@unique([tenant_id, platform_id, branch_id, counter_type, year, month, day])
   @@index([tenant_id])
   @@map("tkt_counter")
+}
+
+// ============================================================
+// BURNLIST — weekly snapshots of expired+active students from
+// ebrightleads_db.studentrecords, with editable cta/remarks/done.
+// Each Wednesday a new BurnlistWeek is created and a row is
+// snapshotted per student. Entries store a frozen copy of
+// name/branch/expiry so historical weeks stay stable even when
+// the upstream studentrecords row changes.
+// ============================================================
+
+model BurnlistWeek {
+  id        String   @id @default(cuid())
+  weekKey   String   @unique  // YYYY-MM-DD of the Wednesday, e.g. "2026-05-20"
+  createdAt DateTime @default(now())
+
+  entries   BurnlistEntry[]
+
+  @@map("burnlist_week")
+}
+
+model BurnlistEntry {
+  id              String   @id @default(cuid())
+  weekId          String
+  week            BurnlistWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  // Snapshot fields — copied from studentrecords at snapshot time.
+  studentRecordId String
+  studentName     String
+  branch          String   // raw branch code, e.g. "ST"
+  expiryDate      String   // YYYY-MM-DD as Postgres held it
+
+  // Editable action fields. Blank on snapshot; filled in by BMs / user.
+  cta      String   @default("")    // "" | "Extend" | "Archive" | "Renew" | "No Action"
+  remarks  String   @default("")
+  done     Boolean  @default(false)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([weekId, studentRecordId])
+  @@index([weekId])
+  @@map("burnlist_entry")
 }

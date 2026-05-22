@@ -23,7 +23,8 @@ test.describe('Authentication smoke', () => {
     const hrmsCard = page.locator('a, div').filter({ hasText: 'HRMS' }).first();
     await expect(hrmsCard).toBeVisible();
 
-    // The other 5 modules should each show a Locked pill
-    await expect(page.getByText('Locked', { exact: false })).toHaveCount(5);
+    // BMs can access HRMS, Inventory, CRM and SMS (4 of 7 tiles); the
+    // remaining 3 (Library, Internal Dashboard, Academy) show a Locked pill.
+    await expect(page.getByText('Locked', { exact: false })).toHaveCount(3);
   });
 });

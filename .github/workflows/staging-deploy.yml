@@ -18,8 +18,42 @@ jobs:
           host: 103.209.156.225
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
-          command_timeout: 20m
-          script: /home/deploy/deploy.sh osc
+          # 45m wasn't enough when deploy.sh runs the aggressive Docker
+          # cleanup — npm ci has to redownload all deps from scratch.
+          command_timeout: 90m
+          script: |
+            # Force-remove any leftover containers from a prior compose run.
+            # `docker compose up -d --build` inside deploy.sh otherwise
+            # fails with "container name already in use" when its image-
+            # build path bumps a layer hash but doesn't trigger a clean
+            # recreate — exactly what bit the 2026-05-16 staging deploy.
+            # Errors swallowed so first-ever deploys (containers absent)
+            # don't fail this line.
+            docker rm -f ebright-osc-osc-1 ebright-osc-worker-1 2>/dev/null || true
+
+            export NEXTAUTH_SECRET='${{ secrets.NEXTAUTH_SECRET }}'
+            export BETTER_AUTH_SECRET='${{ secrets.BETTER_AUTH_SECRET }}'
+            export ENCRYPTION_KEY='${{ secrets.ENCRYPTION_KEY }}'
+            export DATABASE_URL='${{ secrets.DATABASE_URL }}'
+            export CRM_PREVIEW_MODE='${{ secrets.CRM_PREVIEW_MODE }}'
+            export SHARED_SSO_SECRET='${{ secrets.SHARED_SSO_SECRET }}'
+            export INVENTORY_URL='${{ secrets.INVENTORY_URL }}'
+            /home/deploy/deploy.sh osc
+
+            # Self-healing burnlist tables: idempotent DDL run inside the
+            # worker container. Creates burnlist_week / burnlist_entry in
+            # both `crm` and `public` schemas of whichever DATABASE_URL
+            # the staging env points at. No-op on subsequent deploys.
+            echo "===== ensuring burnlist tables exist ====="
+            docker exec ebright-osc-worker-1 node scripts/ensure-burnlist-tables.mjs \
+              || echo "WARN: burnlist tables ensure failed (non-fatal — page may show DB error until fixed)"
+
+            # One-shot backfill of the 2026-05-13 historical week. Script
+            # checks if the week already exists and exits early — so this is
+            # a no-op on every deploy after the first. Safe to keep here.
+            echo "===== backfilling 2026-05-13 historical week (idempotent) ====="
+            docker exec ebright-osc-worker-1 node scripts/backfill-burnlist-may13.mjs \
+              || echo "WARN: 5/13 backfill failed (non-fatal)"
 
   smoke-tests:
     needs: deploy # Only run tests AFTER deployment succeeds
@@ -55,10 +89,11 @@ jobs:
       - name: Run Playwright smoke (unauth boundary only)
         run: npx playwright test --grep "API auth boundary"
         env:
-          # The staging container exposes the app on port 3000. Without
-          # the explicit port, requests hit port 80 (nothing there) and
-          # every route returns 404 instead of the expected 401.
-          BASE_URL: http://103.209.156.225:3000
+          # The container's port 3003 is firewalled from outside the host —
+          # external traffic goes through nginx on the staging-portal
+          # domain (443 → 3003 internal). Hit the domain directly so the
+          # GitHub runner doesn't get tripped by the firewall.
+          BASE_URL: https://staging-portal.ebright.my
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

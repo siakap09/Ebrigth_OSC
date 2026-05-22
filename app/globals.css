@@ -35,3 +35,12 @@ body {
 details[open] > summary svg.lucide-chevron-right {
   transform: rotate(90deg);
 }
+
+/* Sticky table header for manpower cost report. Applied to <thead>; targets
+   <th> cells directly because Tailwind's default border-collapse: collapse
+   makes <thead>/<tr> sticky unreliable in Chrome. */
+.sticky-thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}

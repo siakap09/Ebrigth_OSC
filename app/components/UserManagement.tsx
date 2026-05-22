@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { BRANCH_OPTIONS, DEPARTMENT_OPTIONS, ROLE_OPTIONS, CONTRACT_OPTIONS, GENDER_OPTIONS, ROLE_CODES } from "@/lib/constants";
-import { isAdmin, isAcademy } from "@/lib/roles";
+import { isAdmin, isAcademy, isHR } from "@/lib/roles";
 import { isInTraining } from "@/lib/training";
 import EmployeeIdInput from "@/app/components/EmployeeIdInput";
 import { splitEmployeeId, composeEmployeeId, isValidSuffix, isValidEmployeeId } from "@/lib/employeeId";
@@ -85,6 +85,7 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
   const targetEmployeeId = searchParams.get("employeeId");
 
   const academyView = isAcademy(userRole);
+  const hrView = isHR(userRole);
   const isAuthorized = isAdmin(userRole) || academyView;
 
   useEffect(() => {
@@ -170,16 +171,26 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
       const newEmployeeId = idChanged && idIsComplete
         ? composeEmployeeId(empIdPrefix, empIdSuffix)
         : undefined;
-      const fullPayload = newEmployeeId !== undefined
+      const fullPayload: Partial<User> = newEmployeeId !== undefined
         ? { ...editData, employeeId: newEmployeeId }
         : editData;
+      // HR can edit everything except training fields; strip them so the
+      // server-side guard (which 403s on any HR PUT containing those keys)
+      // doesn't reject unrelated edits.
+      const stripTraining = (p: typeof fullPayload) => {
+        const { trainingStartDate: _ts, trainingEndDate: _te, ...rest } = p;
+        void _ts; void _te;
+        return rest;
+      };
       const payload = academyView
         ? {
             id: editData.id,
             trainingStartDate: editData.trainingStartDate || "",
             trainingEndDate: editData.trainingEndDate || "",
           }
-        : fullPayload;
+        : hrView
+          ? stripTraining(fullPayload)
+          : fullPayload;
       const response = await fetch("/api/employees", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -521,16 +532,25 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
                     </div>
                   </section>
 
-                  {/* Training */}
+                  {/* Training — HR cannot edit; only Admin/SuperAdmin/Academy can */}
                   <section>
                     <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide border-b pb-2 mb-4">Training</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {inp("Training Start Date", "trainingStartDate", "date")}
-                      {inp("Training End Date", "trainingEndDate", "date")}
-                    </div>
-                    {editData?.trainingStartDate && editData?.trainingEndDate &&
-                      editData.trainingStartDate > editData.trainingEndDate && (
-                      <p className="text-xs text-red-600 mt-2">End date must be on or after start date.</p>
+                    {hrView ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        {field("Training Start Date", selectedUser.trainingStartDate)}
+                        {field("Training End Date", selectedUser.trainingEndDate)}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {inp("Training Start Date", "trainingStartDate", "date")}
+                          {inp("Training End Date", "trainingEndDate", "date")}
+                        </div>
+                        {editData?.trainingStartDate && editData?.trainingEndDate &&
+                          editData.trainingStartDate > editData.trainingEndDate && (
+                          <p className="text-xs text-red-600 mt-2">End date must be on or after start date.</p>
+                        )}
+                      </>
                     )}
                   </section>
 

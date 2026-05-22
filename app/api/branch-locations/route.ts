@@ -20,11 +20,11 @@ export async function GET(req: NextRequest) {
         name:       true,
         nickname:   true,
         employeeId: true,
+        branch:     true,
         department: true,
         role:       true,
         email:      true,
         status:     true,
-        branch:     true,
         location:   true,
         start_date: true,
         endDate:    true,
@@ -33,8 +33,9 @@ export async function GET(req: NextRequest) {
       orderBy: { name: 'asc' },
     });
 
-    // ?location=ALL returns every active staff member (used for name lookups)
-    if (location === 'ALL') {
+    // ALL / all → return every active staff member (used for name/dept lookups
+    // in the attendance dashboard — resolves names for staff registered to any branch)
+    if (location === 'ALL' || location === 'all') {
       return NextResponse.json({ staff: all });
     }
 

@@ -1,5 +1,11 @@
 import type { NextConfig } from "next";
 
+// Validate critical env vars (NEXTAUTH_SECRET, BETTER_AUTH_SECRET,
+// ENCRYPTION_KEY, DATABASE_URL, …). Crashes the boot if any are missing
+// or still set to placeholder values like "replace-with-...". Imported
+// here so it runs once before any route compilation.
+import "./lib/env";
+
 const nextConfig: NextConfig = {
   // serverExternalPackages covers server-component passes.
   // The webpack() function below covers the instrumentation.ts compilation pass,
@@ -18,8 +24,13 @@ const nextConfig: NextConfig = {
     return config;
   },
 
-  // typecheck and lint must pass for the build to succeed.
-  // Override only by exception, never by default.
+  // Type errors still fail the build (genuine correctness gate).
+  // Lint is run separately in CI so deploys aren't blocked by stylistic
+  // rules — every staging push otherwise rebuilds from a fully-pruned
+  // Docker context and any new lint error halts the deploy.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   compress: true,
   productionBrowserSourceMaps: false,
   poweredByHeader: false,

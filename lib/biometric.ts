@@ -1,10 +1,14 @@
 import crypto from "crypto";
 
-const _encKey = process.env.ENCRYPTION_KEY;
-if (!_encKey) {
-  throw new Error('ENCRYPTION_KEY environment variable is not set. Add it to your .env file.');
+// Read the key on first encrypt/decrypt, not at module load — `next build`
+// imports this file with no env, and a top-level throw crashes the build.
+function getEncryptionKey(): string {
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key) {
+    throw new Error('ENCRYPTION_KEY environment variable is not set. Add it to your .env file.');
+  }
+  return key;
 }
-const ENCRYPTION_KEY: string = _encKey;
 const CIPHER_ALGORITHM = "aes-256-cbc";
 
 export function encryptBiometricData(data: string): string {
@@ -12,7 +16,7 @@ export function encryptBiometricData(data: string): string {
     const iv = crypto.randomBytes(16);
     const key = crypto
       .createHash("sha256")
-      .update(ENCRYPTION_KEY)
+      .update(getEncryptionKey())
       .digest();
     const cipher = crypto.createCipheriv(CIPHER_ALGORITHM, key, iv);
     let encrypted = cipher.update(data, "utf8", "hex");
@@ -30,7 +34,7 @@ export function decryptBiometricData(encryptedData: string): string {
     const iv = Buffer.from(ivHex, "hex");
     const key = crypto
       .createHash("sha256")
-      .update(ENCRYPTION_KEY)
+      .update(getEncryptionKey())
       .digest();
     const decipher = crypto.createDecipheriv(CIPHER_ALGORITHM, key, iv);
     let decrypted = decipher.update(encrypted, "hex", "utf8");

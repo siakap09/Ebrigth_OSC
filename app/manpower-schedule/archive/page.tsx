@@ -210,7 +210,6 @@ export default function ArchiveSchedulePage() {
 
       uniqueEmployeesToTrack.forEach((emp: string) => {
         let coachingHoursForDay = 0;
-        let explicitExecHoursForDay = 0;
         let workedThatDay = false;
 
         getTimeSlotsForDay(day, selectedRecord.branch).forEach((slot: string) => {
@@ -218,24 +217,14 @@ export default function ArchiveSchedulePage() {
           COLUMNS.forEach((col) => {
             if (validData[`${day}-${slot}-${col.id}`] === emp) {
               workedThatDay = true;
-              if (col.type === "coach") {
-                  const slotDuration = isAdminSlot(slot, selectedRecord.branch) ? 0.25 : 1.25;
-                  coachingHoursForDay += slotDuration;
-              } else if (col.type === "exec") {
-                  const slotDuration = isAdminSlot(slot, selectedRecord.branch) ? 0.25 : 1.25;
-                  explicitExecHoursForDay += slotDuration;
-              }
+              if (col.type === "coach") coachingHoursForDay += isAdminSlot(slot, selectedRecord.branch) ? 0.25 : 1.25;
             }
           });
         });
-        
+
         if (workedThatDay) {
           staffStats[emp].coachHrs += coachingHoursForDay;
-          if (explicitExecHoursForDay > 0) {
-             staffStats[emp].execHrs += explicitExecHoursForDay;
-          } else {
-             staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
-          }
+          staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
           staffStats[emp].total = staffStats[emp].coachHrs + staffStats[emp].execHrs;
         }
       });
