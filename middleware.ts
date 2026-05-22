@@ -1,22 +1,30 @@
-import { withAuth } from "next-auth/middleware";
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
+import { prisma } from "@/lib/prisma";
 import { normalizeRole, ROLES, type Role } from "@/lib/roles";
 
+// Runs on the Node.js runtime, not Edge. The Edge runtime cannot load
+// @prisma/client without a driver adapter, and we need Prisma here to mirror
+// the session-invalidation check that lives in lib/nextauth.ts's jwt()
+// callback. getToken() only decrypts the JWT cookie — it does NOT invoke the
+// jwt() callback, which means a stale token (issued before a password
+// change on another device) would otherwise glide past middleware on direct
+// page navigation. One indexed findUnique per page request closes that
+// window.
+export const runtime = "nodejs";
+
+// ─── Role rules ─────────────────────────────────────────────────────────────
 // Path-prefix-based role rules. First matching prefix wins — so list more
 // specific prefixes before shorter ones that would also match.
 //
-// Any path NOT matched here only needs the user to be logged in (enforced by
-// the `authorized` callback below).
-//
-// SUPER_ADMIN is granted everything via an explicit bypass below; you do not
-// need to list SUPER_ADMIN in every allowlist (it's included for clarity).
+// Any path NOT matched here only needs the user to be logged in.
+// SUPER_ADMIN is granted everything via an explicit bypass below.
 //
 // Per-role intent:
 //   BRANCH_MANAGER → /manpower-schedule (+ Inventory tile, gated client-side)
 //   HR             → keeps prior management access EXCEPT /manpower-schedule
 //   ACADEMY        → keeps prior access (+ Inventory tile, client-side)
-//   FULL_TIME / PART_TIME → /manpower-cost-report ONLY (see EMPLOYEE_ONLY_PATH
-//                   below — every other path redirects there).
+//   FULL_TIME / PART_TIME → see EMPLOYEE_ALLOWED_PATHS below (very narrow)
 const ROLE_RULES: Array<{ prefix: string; allowed: readonly Role[] }> = [
   { prefix: "/user-management",               allowed: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR, ROLES.ACADEMY] },
   { prefix: "/account-management",            allowed: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR] },
@@ -30,7 +38,7 @@ const ROLE_RULES: Array<{ prefix: string; allowed: readonly Role[] }> = [
   { prefix: "/offboarding",                   allowed: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR, ROLES.HOD] },
 ];
 
-// PT/FT users see the same home/HRMS chrome as everyone else, with the
+// FT/PT users see the same home/HRMS chrome as everyone else, with the
 // locked-tile UI showing every other module as disabled. So we explicitly let
 // them VIEW the navigation pages they need to reach the cost report, and
 // redirect everything else back to the cost report.
@@ -50,50 +58,130 @@ const EMPLOYEE_LOCKED_ROLES: readonly Role[] = [ROLES.FULL_TIME, ROLES.PART_TIME
 
 function matchRule(pathname: string) {
   return ROLE_RULES.find(
-    (r) => pathname === r.prefix || pathname.startsWith(r.prefix + "/")
+    (r) => pathname === r.prefix || pathname.startsWith(r.prefix + "/"),
   );
 }
 
-export default withAuth(
-  function middleware(req) {
-    const { pathname } = req.nextUrl;
-    const role = normalizeRole(req.nextauth.token?.role);
+function isEmployeeAllowed(pathname: string): boolean {
+  return EMPLOYEE_ALLOWED_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
 
-    // Employee lockdown (PT/FT): allow the navigation shell paths so they can
-    // see the locked-tile chrome, and bounce anything else back to the cost
-    // report. The matcher already excludes /api, /_next, /login, and
-    // /forgot-password so those still work.
-    if (role && EMPLOYEE_LOCKED_ROLES.includes(role)) {
-      const onAllowedPath = EMPLOYEE_ALLOWED_PATHS.some(
-        (p) => pathname === p || pathname.startsWith(p + "/"),
-      );
-      if (onAllowedPath) return NextResponse.next();
-      return NextResponse.redirect(new URL(EMPLOYEE_FALLBACK_PATH, req.url));
-    }
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-    const rule = matchRule(pathname);
-    if (!rule) return NextResponse.next();
+// Covers dev (http, "next-auth.session-token") and prod (https,
+// "__Secure-next-auth.session-token"). Deleting both is cheap and safe.
+function clearSessionCookies(res: NextResponse): void {
+  res.cookies.delete("next-auth.session-token");
+  res.cookies.delete("__Secure-next-auth.session-token");
+}
 
-    if (role === ROLES.SUPER_ADMIN) return NextResponse.next();
-    if (role && rule.allowed.includes(role)) return NextResponse.next();
-
-    // Logged in but wrong role — send to /home with a flag so the UI can
-    // surface "you don't have access to X" if it wants to.
-    const homeUrl = new URL("/home", req.url);
-    homeUrl.searchParams.set("forbidden", pathname);
-    return NextResponse.redirect(homeUrl);
-  },
-  {
-    callbacks: {
-      authorized: ({ token }) => !!token,
-    },
-    pages: {
-      signIn: "/login",
-    },
+function redirectToLogin(
+  req: NextRequest,
+  opts: { withCallback: boolean; clearCookies: boolean },
+): NextResponse {
+  const url = new URL("/login", req.url);
+  if (opts.withCallback) {
+    const { pathname, search } = req.nextUrl;
+    url.searchParams.set("callbackUrl", pathname + search);
   }
-);
+  const res = NextResponse.redirect(url);
+  if (opts.clearCookies) clearSessionCookies(res);
+  return res;
+}
+
+// ─── Middleware ─────────────────────────────────────────────────────────────
+
+export async function middleware(req: NextRequest) {
+  // 1. Decrypt the JWT cookie. A malformed cookie or missing secret throws —
+  //    we treat that the same as "no session".
+  let token: Awaited<ReturnType<typeof getToken>>;
+  try {
+    token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  } catch {
+    token = null;
+  }
+
+  if (!token) {
+    return redirectToLogin(req, { withCallback: true, clearCookies: false });
+  }
+
+  // 2. Token must normalize to a known role. A null result here means the
+  //    DB role column was hand-edited to something off-list, or the token is
+  //    forged. Either way: clear the cookie and force re-login. Without this
+  //    branch, ROLE_RULES would receive null elsewhere and a coach with a
+  //    corrupted role could loop redirecting to /home.
+  const role = normalizeRole(token.role);
+  if (!role) {
+    return redirectToLogin(req, { withCallback: false, clearCookies: true });
+  }
+
+  // 3. Session-revocation check. Mirrors lib/nextauth.ts's jwt() callback so
+  //    the kick is immediate even on a pure middleware navigation —
+  //    getToken() only decrypts the cookie, it doesn't trigger that callback.
+  //    Reads from crm.SessionRevocation (a local OSC table, not the User
+  //    FDW view), so the lookup is one indexed PK query against a tiny
+  //    table.
+  //
+  //    Fail OPEN on DB error: a brief outage shouldn't sign everyone out at
+  //    once. The jwt() callback will catch up the next time
+  //    /api/auth/session fires.
+  if (token.email && typeof token.iat === "number") {
+    try {
+      const revocation = await prisma.sessionRevocation.findUnique({
+        where:  { email: String(token.email) },
+        select: { revokedAfter: true },
+      });
+
+      // No row = no recorded revocation, trust the token. Otherwise compare
+      // iat (seconds since epoch) against revokedAfter and clear the cookie
+      // on a stale token.
+      if (revocation?.revokedAfter) {
+        const revokedAfterSec = Math.floor(revocation.revokedAfter.getTime() / 1000);
+        if (token.iat < revokedAfterSec) {
+          return redirectToLogin(req, { withCallback: false, clearCookies: true });
+        }
+      }
+    } catch (err) {
+      // Log so an outage is visible in monitoring, but continue.
+      console.error("[middleware] revocation check DB error — failing open:", err);
+    }
+  }
+
+  const { pathname } = req.nextUrl;
+
+  // 4. Employee lockdown (PT/FT): allow the navigation shell paths so they
+  //    can see the locked-tile chrome, and bounce anything else back to the
+  //    cost report. Runs BEFORE ROLE_RULES so adding a new rule that
+  //    accidentally includes FT/PT can't widen their access.
+  if (EMPLOYEE_LOCKED_ROLES.includes(role)) {
+    if (isEmployeeAllowed(pathname)) return NextResponse.next();
+    return NextResponse.redirect(new URL(EMPLOYEE_FALLBACK_PATH, req.url));
+  }
+
+  // 5. SUPER_ADMIN bypasses every per-route rule.
+  if (role === ROLES.SUPER_ADMIN) return NextResponse.next();
+
+  // 6. Per-prefix role rules. Any path not in ROLE_RULES is allowed for any
+  //    authenticated, non-locked role — the API layer is the actual data
+  //    boundary, and this middleware is just navigation UX.
+  const rule = matchRule(pathname);
+  if (!rule) return NextResponse.next();
+  if (rule.allowed.includes(role)) return NextResponse.next();
+
+  // Logged in but wrong role — send to /home with a flag so the UI can
+  // surface "you don't have access to X" if it wants to.
+  const homeUrl = new URL("/home", req.url);
+  homeUrl.searchParams.set("forbidden", pathname);
+  return NextResponse.redirect(homeUrl);
+}
 
 export const config = {
+  // Run on every page navigation, but skip:
+  //   - API routes (they enforce their own role/scope and return JSON 401/403)
+  //   - Static assets (_next/static, _next/image, favicon)
+  //   - /login and /forgot-password (public auth pages)
   matcher: [
     "/((?!api|_next/static|_next/image|favicon.ico|login|forgot-password).*)",
   ],

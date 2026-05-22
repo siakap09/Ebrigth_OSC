@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession, requireRole, assertSameBranch, canSeeAllBranches } from "@/lib/auth";
-import { MANAGEMENT_ROLES, hasAnyRole } from "@/lib/roles";
+import { MANAGEMENT_ROLES, hasAnyRole, isEmployee } from "@/lib/roles";
 
 export async function GET(request: Request) {
   const { session, error } = await requireSession();
@@ -74,18 +74,33 @@ export async function GET(request: Request) {
         };
       });
 
-    // Interim branch scoping: non-management users see only their own branch.
-    // The DB stores branch as short codes; we filter on the mapped full names so
-    // a session with branchName "Ampang" matches mapped.branch "Ampang".
+    // Scoping rules:
+    //   Admin / HOD            → all branches.
+    //   Branch Manager         → own branch only (can opt into ?include=all
+    //                            to fetch cross-branch replacements).
+    //   Part_Time / Full_Time  → own row only, matched by email.
+    //   Anyone else            → empty (fail closed).
     //
-    // Cross-branch escape hatch for the manpower planning UI: callers with a
-    // management role can pass `?include=all` to bypass scoping when they need
-    // staff from other branches (e.g. Branch Manager taking a replacement from
-    // another branch). Non-management roles cannot escalate via this param.
+    // The DB stores branch as short codes; mapped.branch was already converted
+    // to full names, so we compare against session.branchName (full name).
+    const sessionUser = session.user as { role?: unknown; email?: string | null; branchName?: string };
+
+    if (isEmployee(sessionUser?.role)) {
+      if (!sessionUser.email) return NextResponse.json([]);
+      const self = await prisma.branchStaff.findFirst({
+        where: { email: { equals: sessionUser.email, mode: 'insensitive' } },
+        select: { id: true, nickname: true },
+      });
+      if (!self || !self.nickname) return NextResponse.json([]);
+      // Build a single-element response in the same shape as `mapped`.
+      const own = mapped.find(m => m.id === self.id);
+      return NextResponse.json(own ? [own] : []);
+    }
+
     const includeAll =
       new URL(request.url).searchParams.get('include') === 'all' &&
-      hasAnyRole((session.user as { role?: unknown } | undefined)?.role, MANAGEMENT_ROLES);
-    const userBranch = (session.user as { branchName?: string }).branchName;
+      hasAnyRole(sessionUser?.role, MANAGEMENT_ROLES);
+    const userBranch = sessionUser.branchName;
     const scoped = canSeeAllBranches(session) || includeAll
       ? mapped
       : mapped.filter(m => m.branch === userBranch);

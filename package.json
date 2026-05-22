@@ -11,6 +11,7 @@
     "test": "playwright test",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:unit": "vitest run",
     "seed:test": "tsx scripts/seed-test.ts",
     "worker": "tsx server/workers/index.ts",
     "seed:leads": "tsx prisma/seed-from-powerbi.ts",

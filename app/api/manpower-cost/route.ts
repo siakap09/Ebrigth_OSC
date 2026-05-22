@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireSession } from "@/lib/auth";
+import { requireSession, canSeeAllBranches } from "@/lib/auth";
 import {
   getWorkingDaysForBranch,
   getTimeSlotsForDay,
@@ -8,7 +8,7 @@ import {
   isAdminSlot,
   COLUMNS,
 } from "@/lib/manpowerUtils";
-import { isEmployee } from "@/lib/roles";
+import { isEmployee, isBranchManager, isAcademy } from "@/lib/roles";
 import { normalizeLocation } from "@/lib/constants";
 
 const EXECUTIVE_RATE = 11;
@@ -491,14 +491,31 @@ export async function GET(request: Request) {
         };
       });
 
-    // Employee self-view: filter to just the logged-in person's row by
-    // BranchStaff.id. Fail closed if we couldn't resolve them.
+    // Role-based scoping. Fail closed: anything we can't resolve becomes [].
+    //   FT / PT (isEmployeeView)   → own row only via loggedInStaffId.
+    //   Branch Manager              → own branch only.
+    //   Admin / HOD / HR / Academy → see everything (no filter).
+    //   Executive / Intern / other → no pay data (fail closed).
     if (isEmployeeView) {
+      // Employee self-view: filter to just the logged-in person's row by
+      // BranchStaff.id. Fail closed if we couldn't resolve them.
       const filtered = loggedInStaffId === null
         ? []
         : results.filter((r) => r.staffId === loggedInStaffId);
       results.length = 0;
       results.push(...filtered);
+    } else if (isBranchManager(userRole)) {
+      const userBranch = sessionUser?.branchName as string | null | undefined;
+      const filtered = userBranch
+        ? results.filter((r) => r.branch === userBranch)
+        : [];
+      results.length = 0;
+      results.push(...filtered);
+    } else if (canSeeAllBranches(auth.session) || isAcademy(userRole)) {
+      // No filter — caller sees all branches.
+    } else {
+      // Executive / Intern / unknown role → no pay-data access.
+      results.length = 0;
     }
 
     results.sort((a, b) => {

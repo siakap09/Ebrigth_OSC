@@ -31,6 +31,19 @@ model User {
   dashboardOverrides   Json?
 }
 
+// Tracks when a user's active sessions should be invalidated. Written by
+// /api/auth/change-password on a successful password update; consulted by
+// lib/nextauth.ts's jwt() callback and by middleware.ts on every page nav.
+//
+// Lives in the local `crm` schema (NOT on the User table) because crm."User"
+// is an FDW view of ebright_hrfs.public."User" and the FDW source doesn't
+// know about OSC's session lifecycle. Decoupling this row from the User
+// model means OSC owns its own revocation history end-to-end.
+model SessionRevocation {
+  email        String   @id
+  revokedAfter DateTime
+}
+
 model ManpowerSchedule {
   id                 String   @id
   branch             String

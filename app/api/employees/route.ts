@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireSession, requireRole, assertSameBranch, canSeeAllBranches } from '@/lib/auth';
-import { ADMIN_ROLES, isAcademy, isAdmin, isHR } from '@/lib/roles';
+import {
+  ADMIN_ROLES,
+  isAcademy, isAdmin, isHR,
+  isEmployee, isExecutive, isIntern,
+} from '@/lib/roles';
 import { isValidEmployeeId } from '@/lib/employeeId';
 
 // Map BranchStaff DB row → Employee shape expected by the frontend
@@ -74,6 +78,29 @@ export async function GET(request: Request) {
   const role = searchParams.get('role') || '';
   const accessStatus = searchParams.get('accessStatus') || '';
 
+  const sessionUser = session.user as { role?: unknown; email?: string | null; branchName?: string };
+  const callerRole = sessionUser?.role;
+
+  // FT/PT/Executive/Intern: own row only. The full toEmployee payload includes
+  // salary rate, bank account, NRIC and emergency contact — leaking a
+  // branch-wide list lets a part-time coach read every coworker's pay and
+  // bank details, which is what /profile (UserProfile.tsx) was inadvertently
+  // displaying via employees[0]. Fail closed: if we can't tie the session to
+  // a BranchStaff row by email, return an empty list rather than falling back
+  // to the branch.
+  //
+  // Academy callers fall THROUGH this check intentionally — they need a
+  // filtered list of coaches and get the toEmployeeForAcademy mapper below.
+  if (isEmployee(callerRole) || isExecutive(callerRole) || isIntern(callerRole)) {
+    const email = sessionUser?.email;
+    if (!email) return NextResponse.json([]);
+    const self = await prisma.branchStaff.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      orderBy: { id: 'asc' },
+    });
+    return NextResponse.json(self ? [toEmployee(self as Record<string, unknown>)] : []);
+  }
+
   const where: Record<string, unknown> = {};
   if (branch) where.branch = branch;
   if (role) where.role = role;
@@ -84,13 +111,12 @@ export async function GET(request: Request) {
   // Step 3 replaces this with scopedDb(session) once the schema gets a
   // proper tenantId/branchId foreign key.
   if (!canSeeAllBranches(session)) {
-    const userBranch = (session.user as { branchName?: string }).branchName;
+    const userBranch = sessionUser.branchName;
     where.branch = userBranch ?? '__none__';
   }
 
   // Academy callers are restricted to FT/PT coaches. This intersects with any
   // client-supplied role filter, so passing role=BM yields an empty result.
-  const callerRole = (session.user as { role?: unknown } | undefined)?.role;
   if (isAcademy(callerRole)) {
     where.role = { in: ["FT - Coach", "PT - Coach"] };
   }

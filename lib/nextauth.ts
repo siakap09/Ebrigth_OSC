@@ -2,6 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { isSessionValid } from "@/lib/session-validity";
 
 // Max staleness for the role/status cached in a JWT. After this window, the
 // next request triggers a DB lookup so demoting/deactivating a user takes
@@ -40,6 +41,21 @@ async function findAuthUserByEmail(email: string): Promise<AuthUserRow | null> {
   // Local fallback (matches the legacy behavior).
   const local = await prisma.user.findUnique({ where: { email } });
   return local ? (local as unknown as AuthUserRow) : null;
+}
+
+// Session revocation lives on a local crm.SessionRevocation table that OSC
+// owns end-to-end — separate from crm."User" (an FDW view of HRFS, where DDL
+// can't run). A null return means "no recorded revocation, trust the token".
+async function readRevokedAfter(email: string): Promise<Date | null> {
+  try {
+    const row = await prisma.sessionRevocation.findUnique({
+      where:  { email },
+      select: { revokedAfter: true },
+    });
+    return row?.revokedAfter ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export const authOptions: NextAuthOptions = {
@@ -93,29 +109,38 @@ export const authOptions: NextAuthOptions = {
         return token;
       }
 
-      // On every subsequent request NextAuth re-decodes the JWT and calls this
-      // callback. Re-read from the DB at most once per ROLE_REFRESH_MS so that:
-      //   (a) a role change in the DB is reflected within ~60s, and
-      //   (b) a deactivated user loses effective privileges within ~60s.
+      if (!token.email) return token;
+
+      const email  = String(token.email);
+      const dbUser = await findAuthUserByEmail(email);
+
+      // Account gone (or never existed) → kill the session.
+      if (!dbUser) {
+        return null as unknown as typeof token;
+      }
+
+      const revokedAfter = await readRevokedAfter(email);
+
+      // Inactive or revoked (iat predates the latest revocation) → kill.
+      // Same check middleware.ts runs, kept in one place via isSessionValid().
+      //
+      // NextAuth v4 accepts a null return from jwt() at runtime (it clears
+      // the session cookie and the next getToken() returns null), but its
+      // public TypeScript signature only exposes Awaitable<JWT>. The cast
+      // matches the documented runtime contract.
+      if (!isSessionValid(token, { status: dbUser.status, revokedAfter })) {
+        return null as unknown as typeof token;
+      }
+
+      // Re-read role/branch at most once per ROLE_REFRESH_MS. A role change
+      // in the DB takes effect within ~60s without forcing the user to log
+      // out.
       const checkedAt = token.checkedAt ?? 0;
-      if (Date.now() - checkedAt < ROLE_REFRESH_MS) return token;
-
-      if (token.email) {
-        const dbUser = await findAuthUserByEmail(String(token.email));
-
-        if (!dbUser || dbUser.status !== "ACTIVE") {
-          // Missing or deactivated. We can't fully kill the session from here
-          // (NextAuth's JWT strategy has no server-side revocation), but we
-          // can zero out the role so every requireRole check and the
-          // middleware's role rules fail closed.
-          token.role       = "";
-          token.branchName = null;
-        } else {
-          token.role       = dbUser.role;
-          token.branchName = dbUser.branchName;
-          token.name       = dbUser.name;
-        }
-        token.checkedAt = Date.now();
+      if (Date.now() - checkedAt >= ROLE_REFRESH_MS) {
+        token.role       = dbUser.role;
+        token.branchName = dbUser.branchName;
+        token.name       = dbUser.name;
+        token.checkedAt  = Date.now();
       }
       return token;
     },

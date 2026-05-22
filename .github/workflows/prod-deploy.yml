@@ -16,4 +16,26 @@ jobs:
           username: staff1
           key: ${{ secrets.PROD_SSH_KEY }}
           command_timeout: 30m
-          script: /home/staff1/deploy-prod.sh osc
+          # Env vars are exported in the SSH shell BEFORE deploy-prod.sh runs
+          # so the Next.js production build sees them at `next build` time
+          # (and so does prisma generate + the runtime container). The
+          # validator in lib/env.ts will refuse to start the app if any of
+          # these are missing or look like placeholders. Mirrors the export
+          # block in staging-deploy.yml so the two environments stay aligned.
+          script: |
+            export NEXTAUTH_SECRET='${{ secrets.NEXTAUTH_SECRET }}'
+            export BETTER_AUTH_SECRET='${{ secrets.BETTER_AUTH_SECRET }}'
+            export ENCRYPTION_KEY='${{ secrets.ENCRYPTION_KEY }}'
+            export DATABASE_URL='${{ secrets.DATABASE_URL }}'
+            export CRM_PREVIEW_MODE='${{ secrets.CRM_PREVIEW_MODE }}'
+            export SHARED_SSO_SECRET='${{ secrets.SHARED_SSO_SECRET }}'
+            export INVENTORY_URL='${{ secrets.INVENTORY_URL }}'
+            /home/staff1/deploy-prod.sh osc
+
+            # Self-healing burnlist tables: idempotent DDL run inside the
+            # worker container. Creates burnlist_week / burnlist_entry in
+            # both `crm` and `public` schemas of whichever DATABASE_URL
+            # the prod env points at. No-op on subsequent deploys.
+            echo "===== ensuring burnlist tables exist ====="
+            docker exec ebright-osc-worker-1 node scripts/ensure-burnlist-tables.mjs \
+              || echo "WARN: burnlist tables ensure failed (non-fatal — page may show DB error until fixed)"

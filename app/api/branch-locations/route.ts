@@ -1,17 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireSession } from '@/lib/auth';
+import { requireSession, canSeeAllBranches } from '@/lib/auth';
+import { isEmployee } from '@/lib/roles';
 import { BRANCH_LIST, normalizeLocation } from '@/lib/constants';
 
+// Scoping:
+//   Admin / HOD            → any location.
+//   Branch Manager         → only their own branch's location.
+//   Part_Time / Full_Time  → only their own row.
+//   Anyone else            → empty (fail closed).
+
 export async function GET(req: NextRequest) {
-  const { error } = await requireSession();
+  const { session, error } = await requireSession();
   if (error) return error;
 
   try {
     const location = req.nextUrl.searchParams.get('location');
+    const sessionUser = session.user as { role?: unknown; email?: string | null; branchName?: string };
 
     if (!location) {
       return NextResponse.json({ locations: BRANCH_LIST });
+    }
+
+    if (!canSeeAllBranches(session)) {
+      if (isEmployee(sessionUser?.role)) {
+        if (!sessionUser.email) return NextResponse.json({ staff: [] });
+        const self = await prisma.branchStaff.findFirst({
+          where: {
+            email:  { equals: sessionUser.email, mode: 'insensitive' },
+            status: 'Active',
+          },
+          select: {
+            id:         true,
+            name:       true,
+            nickname:   true,
+            employeeId: true,
+            department: true,
+            role:       true,
+            email:      true,
+            status:     true,
+            location:   true,
+          },
+        });
+        if (!self || normalizeLocation(self.location) !== location) {
+          return NextResponse.json({ staff: [] });
+        }
+        return NextResponse.json({ staff: [self] });
+      }
+      // BM and other non-admins: must match own branch.
+      // We treat `branchName` and the `location` query as both running through
+      // normalizeLocation so short codes (KLG) and full names (Klang) resolve
+      // to the same canonical key. 'Unknown' fails closed.
+      const userBranchKey = normalizeLocation(sessionUser?.branchName ?? null);
+      if (userBranchKey === 'Unknown' || userBranchKey !== location) {
+        return NextResponse.json({ staff: [] });
+      }
     }
 
     const all = await prisma.branchStaff.findMany({

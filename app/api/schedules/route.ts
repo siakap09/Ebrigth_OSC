@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireSession, requireRole } from '@/lib/auth';
+import { requireRole, canSeeAllBranches, assertSameBranch } from '@/lib/auth';
 import { MANAGEMENT_ROLES } from '@/lib/roles';
 
 type ScheduleBody = {
@@ -42,13 +42,22 @@ function parseSchedule(raw: unknown): { ok: true; data: ScheduleBody } | { ok: f
   };
 }
 
-// GET /api/schedules — return all schedules, newest first
+// GET /api/schedules — return all schedules, newest first.
+//   Management-only (admins, HOD, BM). Branch Managers see only their branch;
+//   admins/HOD see all. Employees never hit this — they read their own report
+//   via /api/manpower-cost which scopes server-side.
 export async function GET() {
-  const { error } = await requireSession();
+  const { session, error } = await requireRole(MANAGEMENT_ROLES);
   if (error) return error;
 
   try {
+    const where: Record<string, unknown> = {};
+    if (!canSeeAllBranches(session)) {
+      const userBranch = (session.user as { branchName?: string }).branchName;
+      where.branch = userBranch ?? '__none__';
+    }
     const schedules = await prisma.manpowerSchedule.findMany({
+      where,
       orderBy: { startDate: 'desc' },
     });
     return NextResponse.json({ success: true, schedules });
@@ -69,6 +78,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: parsed.error }, { status: 400 });
     }
     const body = parsed.data;
+
+    // BM cannot create/update schedules for other branches.
+    const branchGuard = assertSameBranch(session, body.branch);
+    if (branchGuard) return branchGuard;
 
     // Manual upsert (findUnique + update/create) instead of prisma.upsert,
     // because Prisma's upsert generates `INSERT ... ON CONFLICT DO UPDATE` SQL

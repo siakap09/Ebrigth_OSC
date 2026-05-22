@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
-import { requireRole } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { requireRole, canSeeAllBranches } from "@/lib/auth";
 import { MANAGEMENT_ROLES } from "@/lib/roles";
+import { normalizeLocation } from "@/lib/constants";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -43,22 +45,36 @@ const offboardingRaw = [
 // MC data is now fetched from the MedicalLeave table (see below)
 
 export async function GET() {
-  const { error } = await requireRole(MANAGEMENT_ROLES);
+  const { session, error } = await requireRole(MANAGEMENT_ROLES);
   if (error) return error;
+
+  // Branch Managers see only their own branch's HR activity. Admin/HOD see all.
+  // We normalize both sides to canonical branch names so "KLG" / "Klang" /
+  // "klang" all collapse to the same key.
+  const scopeToBranch = !canSeeAllBranches(session);
+  const bmBranchKey = scopeToBranch
+    ? normalizeLocation((session.user as { branchName?: string | null }).branchName ?? null)
+    : null;
+  const matchesBranch = (raw: string | null | undefined) =>
+    !scopeToBranch || (bmBranchKey !== 'Unknown' && normalizeLocation(raw ?? null) === bmBranchKey);
 
   const client = await pool.connect();
   try {
     // --- Onboarding (hardcoded) ---
-    const onboarding = onboardingRaw.map((r) => ({
-      ...r,
-      isHighlight: isWithinDays(r.date, 0, 14),
-    }));
+    const onboarding = onboardingRaw
+      .filter((r) => matchesBranch(r.branch))
+      .map((r) => ({
+        ...r,
+        isHighlight: isWithinDays(r.date, 0, 14),
+      }));
 
     // --- Offboarding (hardcoded) ---
-    const offboarding = offboardingRaw.map((r) => ({
-      ...r,
-      isHighlight: isWithinDays(r.date, 0, 14),
-    }));
+    const offboarding = offboardingRaw
+      .filter((r) => matchesBranch(r.branch))
+      .map((r) => ({
+        ...r,
+        isHighlight: isWithinDays(r.date, 0, 14),
+      }));
 
     // --- MC (from MedicalLeave table) ---
     const twoWeeksAgoMc = new Date();
@@ -74,22 +90,24 @@ export async function GET() {
       [twoWeeksAgoMc.toISOString(), todayMc.toISOString()]
     );
 
-    const mc = mcRes.rows.map((row: any) => {
-      const ld = new Date(row.leaveDate);
-      const dateStr = ld.toISOString().split("T")[0];
-      return {
-        employeeCode: row.employeeCode,
-        name: row.name || row.employeeCode,
-        position: row.position || "-",
-        dept: row.dept || "-",
-        branch: row.branch || "-",
-        date: dateStr,
-        reason: (row.reason || "").replace(/\r\n|\r|\n/g, " ").trim(),
-        status: row.status,
-        days: row.days,
-        isHighlight: isWithinDays(dateStr, -3, 0),
-      };
-    });
+    const mc = mcRes.rows
+      .filter((row: any) => matchesBranch(row.branch))
+      .map((row: any) => {
+        const ld = new Date(row.leaveDate);
+        const dateStr = ld.toISOString().split("T")[0];
+        return {
+          employeeCode: row.employeeCode,
+          name: row.name || row.employeeCode,
+          position: row.position || "-",
+          dept: row.dept || "-",
+          branch: row.branch || "-",
+          date: dateStr,
+          reason: (row.reason || "").replace(/\r\n|\r|\n/g, " ").trim(),
+          status: row.status,
+          days: row.days,
+          isHighlight: isWithinDays(dateStr, -3, 0),
+        };
+      });
 
     // --- Annual Leave (from database) ---
     const oneWeekAgo = new Date();
@@ -110,24 +128,42 @@ export async function GET() {
       [oneWeekAgo.toISOString(), twoWeeksLater.toISOString()]
     );
 
-    const annualLeave = alRes.rows.map((row: any) => {
-      const ld = new Date(row.LeaveDate);
-      // Extract approver/remark name if present
-      const remark = (row.ActionRemark || "").replace(/\r\n|\r|\n/g, " ").trim();
-      return {
-        employeeCode: row.EmployeeCode,
-        name: row.EmployeeCode,
-        position: "-",
-        dept: "-",
-        branch: "-",
-        date: ld.toISOString().split("T")[0],
-        reason: (row.ApplyReason || "").replace(/\r\n|\r|\n/g, " ").trim(),
-        status: row.ApplyStatus,
-        days: row.Days,
-        remark: remark.substring(0, 80),
-        isHighlight: ld >= todayStart && ld <= oneWeekLater,
-      };
-    });
+    // Build the set of EmployeeCodes belonging to the BM's branch so we can
+    // filter Annual Leave (LeaveTransaction has no branch column). Admin/HOD
+    // skip this and see all rows.
+    let allowedEmpCodes: Set<string> | null = null;
+    if (scopeToBranch) {
+      const allStaff = await prisma.branchStaff.findMany({
+        select: { employeeId: true, branch: true },
+      });
+      allowedEmpCodes = new Set(
+        allStaff
+          .filter(s => bmBranchKey !== 'Unknown' && normalizeLocation(s.branch ?? null) === bmBranchKey)
+          .map(s => s.employeeId)
+          .filter((id): id is string => !!id)
+      );
+    }
+
+    const annualLeave = alRes.rows
+      .filter((row: any) => !allowedEmpCodes || allowedEmpCodes.has(String(row.EmployeeCode)))
+      .map((row: any) => {
+        const ld = new Date(row.LeaveDate);
+        // Extract approver/remark name if present
+        const remark = (row.ActionRemark || "").replace(/\r\n|\r|\n/g, " ").trim();
+        return {
+          employeeCode: row.EmployeeCode,
+          name: row.EmployeeCode,
+          position: "-",
+          dept: "-",
+          branch: "-",
+          date: ld.toISOString().split("T")[0],
+          reason: (row.ApplyReason || "").replace(/\r\n|\r|\n/g, " ").trim(),
+          status: row.ApplyStatus,
+          days: row.Days,
+          remark: remark.substring(0, 80),
+          isHighlight: ld >= todayStart && ld <= oneWeekLater,
+        };
+      });
 
     // --- Today-only lists for overview cards ---
     const todayStr = new Date().toISOString().split("T")[0];

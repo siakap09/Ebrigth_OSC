@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { CircleCheck, Eye, EyeOff, Lock, User } from "lucide-react";
 import { signIn } from "next-auth/react";
+import { sanitiseCallbackUrl } from "@/lib/callback-url";
 
 // Reads the ?reset=1 query param. Isolated in its own component so the
 // useSearchParams() call lives inside a Suspense boundary — Next.js 15
@@ -47,8 +48,13 @@ export default function LoginPage() {
       if (res?.error) {
         setError("Invalid username or password");
       } else if (res?.ok) {
-        // SUCCESS! Send them to the home dashboard
-        router.push("/home");
+        // Honour ?callbackUrl=... when set by the middleware so the user
+        // lands back where they were trying to go. sanitiseCallbackUrl
+        // guarantees the value is a same-origin path; anything else falls
+        // back to /home.
+        const params = new URLSearchParams(window.location.search);
+        const target = sanitiseCallbackUrl(params.get("callbackUrl"));
+        router.push(target);
       }
     } catch (err) {
       console.error(err);
