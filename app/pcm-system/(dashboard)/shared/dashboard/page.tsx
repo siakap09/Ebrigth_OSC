@@ -22,7 +22,10 @@ export default function DashboardPage() {
   const sessions = useFAStore(s => s.sessions);
   const invitations = useFAStore(s => s.invitations);
 
-  const [rangePreset, setRangePreset] = useState<RangePreset>("thisMonth");
+  // Default to "all" so the dashboard isn't accidentally empty when the
+  // current month happens to have no events yet. BMs can narrow down with
+  // the range buttons.
+  const [rangePreset, setRangePreset] = useState<RangePreset>("all");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd]     = useState("");
   const [branchFilter, setBranchFilter] = useState<BranchCode | "all">(
