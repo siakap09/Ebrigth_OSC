@@ -157,8 +157,24 @@ export function SessionInvitesPanel({
             </thead>
             <tbody>
               {invitations.map(inv => {
-                const student = studentsById.get(inv.studentId);
-                if (!student) return null;
+                // Fall back to the denormalised name attached to the
+                // invitation row when /api/pcm/students dropped this
+                // record — better to render a usable row than to silently
+                // hide the BM's invite.
+                const looked = studentsById.get(inv.studentId);
+                const student: Student = looked ?? {
+                  id: inv.studentId,
+                  name: inv.studentName ?? `#${inv.studentId} (not in roster)`,
+                  branch: inv.branch,
+                  grade: inv.studentGrade ?? inv.targetGrade ?? 0,
+                  ageCategory: "Junior",
+                  credit: 1,
+                  faHistory: {},
+                  parentName: inv.studentParentName ?? "",
+                  parentPhone: inv.studentParentPhone ?? "",
+                  enrolmentDate: "",
+                  active: false,
+                };
                 const backlog = hasBacklog(student);
                 const isProgress = inv.inviteType === "progress";
                 const reportFilled = reportByInvitationId.get(inv.id) === true;

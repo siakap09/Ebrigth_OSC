@@ -80,6 +80,13 @@ interface InvitationRow {
   coach_id: string | null;
   coach_name: string | null;
   paid: boolean;
+  // LEFT-JOINed from studentrecords so the UI can render a row's name even
+  // when /api/pcm/students drops the student for strict-validation reasons
+  // (missing branch/grade/etc).
+  student_name: string | null;
+  student_grade_chapter: string | null;
+  student_parent_name: string | null;
+  student_parent_phone: string | null;
 }
 
 interface EventBranchOverrideRow {
@@ -151,6 +158,18 @@ function rowToOverride(r: EventBranchOverrideRow): EventBranchOverride {
   };
 }
 
+// Lightweight grade parser — matches the same "G3" / "G3-C5" patterns the
+// students loader handles, but tolerates a missing/garbled value by
+// returning undefined instead of throwing. We only need the integer grade
+// here, not the chapter.
+function parseGradeFromChapter(raw: string | null): number | undefined {
+  if (!raw) return undefined;
+  const m = raw.match(/g\s*(\d+)/i);
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n >= 1 && n <= 12 ? n : undefined;
+}
+
 function rowToInvitation(r: InvitationRow): Invitation {
   return {
     id: r.id,
@@ -170,6 +189,10 @@ function rowToInvitation(r: InvitationRow): Invitation {
     attendanceMarkedAt: isoTimestamp(r.attendance_marked_at),
     attendanceMarkedBy: r.attendance_marked_by ?? undefined,
     notes: r.notes ?? undefined,
+    studentName: r.student_name ?? undefined,
+    studentGrade: parseGradeFromChapter(r.student_grade_chapter),
+    studentParentName: r.student_parent_name ?? undefined,
+    studentParentPhone: r.student_parent_phone ?? undefined,
   };
 }
 
@@ -206,10 +229,26 @@ export async function fetchAllEventData(): Promise<{
       [TENANT]
     ),
     pool.query<InvitationRow>(
-      `SELECT id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-              invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name, paid
-         FROM pcm_invitations
-        WHERE tenant_id = $1`,
+      // LEFT JOIN studentrecords so we ship the student name/grade/parent
+      // details inline. The dedicated /api/pcm/students endpoint applies
+      // strict validation (must have a known branch + parseable grade) and
+      // silently drops records that fail; rather than rebuild that here,
+      // the invitations payload now denormalises whatever Heidi has so the
+      // list view can always render a name. CAST student_id → bigint
+      // because studentrecords.id is numeric while pcm_invitations.student_id
+      // is text.
+      `SELECT i.id, i.event_id, i.session_id, i.student_id, i.branch, i.target_grade,
+              i.status, i.invited_by, i.invited_at, i.confirmed_at,
+              i.attendance_marked_at, i.attendance_marked_by, i.notes, i.invite_type,
+              i.coach_id, i.coach_name, i.paid,
+              s.name           AS student_name,
+              s.grade_chapter  AS student_grade_chapter,
+              s.guardian_name  AS student_parent_name,
+              s.guardian_mobile AS student_parent_phone
+         FROM pcm_invitations i
+         LEFT JOIN studentrecords s
+                ON s.id::text = i.student_id
+        WHERE i.tenant_id = $1`,
       [TENANT]
     ),
     // Per-event per-branch multi-grade overrides. The pcm_event_branch_overrides

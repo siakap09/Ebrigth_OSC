@@ -103,8 +103,23 @@ export function AttendanceRoster({
             <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
               <tbody>
                 {orderedInvitations.map((inv, idx) => {
-                  const student = students.find(s => s.id === inv.studentId);
-                  if (!student) return null;
+                  // Fall back to the denormalised name/grade/parent fields on
+                  // the invitation row so a missing Heidi record doesn't make
+                  // a confirmed student vanish from the roster.
+                  const looked = students.find(s => s.id === inv.studentId);
+                  const student: Student = looked ?? {
+                    id: inv.studentId,
+                    name: inv.studentName ?? `#${inv.studentId} (not in roster)`,
+                    branch: inv.branch,
+                    grade: inv.studentGrade ?? inv.targetGrade ?? 0,
+                    ageCategory: "Junior",
+                    credit: 1,
+                    faHistory: {},
+                    parentName: inv.studentParentName ?? "",
+                    parentPhone: inv.studentParentPhone ?? "",
+                    enrolmentDate: "",
+                    active: false,
+                  };
                   return (
                     <SortableInvitationRow
                       key={inv.id}

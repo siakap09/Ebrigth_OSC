@@ -352,6 +352,13 @@ export interface Invitation {
   attendanceMarkedAt?: string;
   attendanceMarkedBy?: string;
   notes?: string;
+  /** Denormalised from studentrecords at fetch time. Lets the list/roster
+   *  views show a student name even when /api/pcm/students skipped the
+   *  record for strict-validation reasons. All optional. */
+  studentName?: string;
+  studentGrade?: number;
+  studentParentName?: string;
+  studentParentPhone?: string;
 }
 
 // ----------------------------------------------------------------------------

@@ -167,10 +167,10 @@ export default function InvitationsListPage() {
         idx = 0;
       }
       idx++;
-      const grade = `G${inv.targetGrade ?? student?.grade ?? "?"}`;
+      const grade = `G${inv.targetGrade ?? student?.grade ?? inv.studentGrade ?? "?"}`;
       const tpe = inv.inviteType === "renewal" ? "RENEW" : "PROG";
       const coach = inv.coachName ? ` · Coach ${inv.coachName}` : "";
-      const name = student?.name ?? `#${inv.studentId} (student not in roster)`;
+      const name = student?.name ?? inv.studentName ?? `#${inv.studentId} (not in roster)`;
       lines.push(`  ${idx}. ${name} (${grade}, ${tpe})${coach}`);
     }
     if (rows.length === 0) lines.push("(no invitations match these filters)");
@@ -201,8 +201,8 @@ export default function InvitationsListPage() {
         sess?.startTime ?? "",
         sess?.endTime ?? "",
         student?.id ?? inv.studentId,
-        student?.name ?? "(not in roster)",
-        `G${inv.targetGrade ?? student?.grade ?? "?"}`,
+        student?.name ?? inv.studentName ?? "(not in roster)",
+        `G${inv.targetGrade ?? student?.grade ?? inv.studentGrade ?? "?"}`,
         inv.inviteType,
         inv.status,
         inv.coachName ?? "",
@@ -483,12 +483,13 @@ export default function InvitationsListPage() {
             <tbody>
               {rows.map((inv, idx) => {
                 const sess = sessionsById.get(inv.sessionId);
+                // Prefer the loaded Student object, but fall back to the
+                // denormalised name/grade attached to the invitation row
+                // (LEFT-JOINed server-side) so we still get a real name even
+                // when /api/pcm/students dropped the record during validation.
                 const student = studentsById.get(inv.studentId);
-                // Render even when the student lookup misses — otherwise an
-                // orphan invitation (student row removed/skipped in Heidi)
-                // makes the whole table look empty even though the counts
-                // strip says we have 107 rows. Show the raw ID so academy
-                // can chase it down.
+                const displayName  = student?.name ?? inv.studentName ?? null;
+                const displayGrade = inv.targetGrade ?? student?.grade ?? inv.studentGrade ?? null;
                 const isProgress = inv.inviteType === "progress";
                 return (
                   <tr key={inv.id}>
@@ -508,10 +509,10 @@ export default function InvitationsListPage() {
                     </td>
                     <td className="font-mono text-xs text-ink-500">{sess?.startTime}–{sess?.endTime}</td>
                     <td>
-                      {student ? (
+                      {displayName ? (
                         <>
-                          <div className="font-medium text-ink-900">{student.name}</div>
-                          <div className="text-xs text-ink-400">#{student.id}</div>
+                          <div className="font-medium text-ink-900">{displayName}</div>
+                          <div className="text-xs text-ink-400">#{inv.studentId}</div>
                         </>
                       ) : (
                         <>
@@ -520,7 +521,7 @@ export default function InvitationsListPage() {
                         </>
                       )}
                     </td>
-                    <td className="font-mono text-sm">G{inv.targetGrade ?? student?.grade ?? "?"}</td>
+                    <td className="font-mono text-sm">G{displayGrade ?? "?"}</td>
                     <td>
                       <span
                         className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase text-white ${
