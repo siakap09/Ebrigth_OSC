@@ -20,11 +20,6 @@ interface Employee {
   scannerRef: string; // derived from EID last col: parts[1]+parts[0].slice(0,2)+parts[2] e.g. "22030001"
 }
 
-interface RawScanEvent {
-  employeeNoString: string;
-  time: string;
-}
-
 interface AttendanceRecord {
   // Keyed by employeeNoString so each person has exactly one row per day
   empNo: string;
@@ -118,61 +113,6 @@ function formatDate(d: Date): string {
   });
 }
 
-// ─── Core logic: build one row per employee from raw scan events ───────────────
-//
-// Rules:
-//   • 1st scan (chronologically) = Check In — NEVER overwritten
-//   • 2nd scan onward = Check Out, always updating to the LATEST scan time
-//     (so an accidental early scan gets corrected by the real departure scan)
-
-function buildAttendanceLogs(
-  rawEvents: RawScanEvent[],
-  employees: Employee[]
-): AttendanceRecord[] {
-  // Group events by employeeNoString
-  const groups = new Map<string, Date[]>();
-  for (const event of rawEvents) {
-    const t = new Date(event.time);
-    if (isNaN(t.getTime())) continue;
-    if (!groups.has(event.employeeNoString)) groups.set(event.employeeNoString, []);
-    groups.get(event.employeeNoString)!.push(t);
-  }
-
-  const records: AttendanceRecord[] = [];
-
-  for (const [empNo, times] of groups) {
-    const sorted = [...times].sort((a, b) => a.getTime() - b.getTime());
-    const first = sorted[0];
-    const last = sorted[sorted.length - 1];
-    const hasCheckOut = sorted.length > 1;
-
-    const checkInStr = formatTime(first);
-    const checkOutStr = hasCheckOut ? formatTime(last) : null;
-
-    // Look up employee directly by scannerRef derived from CSV EID column
-    const emp = employees.find((e) => e.scannerRef === empNo);
-    const isSaturday = first.getDay() === 6;
-
-    records.push({
-      empNo,
-      name: emp?.name ?? "Unknown",
-      dept: emp?.dept ?? "—",
-      position: emp?.position ?? "—",
-      checkInTime: first,
-      checkInStr,
-      checkInStatus: getCheckInStatus(checkInStr),
-      checkOutTime: hasCheckOut ? last : null,
-      checkOutStr,
-      checkOutStatus: checkOutStr ? getCheckOutStatus(checkOutStr, isSaturday) : null,
-      scanCount: sorted.length,
-      scannerLocation: null,
-    });
-  }
-
-  // Sort: most recent check-in first
-  return records.sort((a, b) => b.checkInTime.getTime() - a.checkInTime.getTime());
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getTodayStr(): string {
@@ -183,6 +123,31 @@ function getTodayStr(): string {
 // YYYY-MM-DD in Kuala Lumpur — matches the DB date column and <input type="date"> value.
 function todayKLStr(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
+}
+
+/**
+ * Parse a date string stored in Heidi — handles YYYY-MM-DD and DD/MM/YYYY.
+ * Returns null for any unrecognised / invalid value.
+ */
+function parseDateStr(s: string): Date | null {
+  if (!s) return null;
+  // Reject MySQL zero-date sentinel ("0000-00-00", "00/00/0000", etc.)
+  if (/^0+[-/]0+[-/]0+$/.test(s)) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    // Guard against year < 1970 (MySQL zero-dates that slipped through)
+    const d = new Date(s + 'T00:00:00');
+    if (isNaN(d.getTime()) || d.getFullYear() < 1970) return null;
+    return d;
+  }
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    const [dd, mm, yyyy] = s.split('/');
+    const d = new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
+    if (isNaN(d.getTime()) || d.getFullYear() < 1970) return null;
+    return d;
+  }
+  const d = new Date(s);
+  if (isNaN(d.getTime()) || d.getFullYear() < 1970) return null;
+  return d;
 }
 
 // Pretty label for the date selector ("Mon, 27 Apr 2026")
@@ -204,7 +169,10 @@ interface BranchStaffMember {
   role: string | null;
   email: string | null;
   status: string | null;
+  branch: string | null;
   location: string | null;
+  start_date: string | null;
+  endDate: string | null;
 }
 
 export default function AttendanceSummary() {
@@ -222,6 +190,10 @@ export default function AttendanceSummary() {
   const [locations, setLocations] = useState<string[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<string>("HQ");
   const [branchStaff, setBranchStaff] = useState<BranchStaffMember[]>([]);
+  // All active staff across all locations — used for name resolution in the attendance table
+  const [allBranchStaff, setAllBranchStaff] = useState<BranchStaffMember[]>([]);
+  const allBranchStaffRef = useRef<BranchStaffMember[]>([]);
+  useEffect(() => { allBranchStaffRef.current = allBranchStaff; }, [allBranchStaff]);
 
   // ── Date picker (defaults to today KL; auto-refresh only runs when on today) ──
   const [selectedDate, setSelectedDate] = useState<string>(todayKLStr());
@@ -265,13 +237,38 @@ export default function AttendanceSummary() {
   }, []);
 
   // ── Load staff for selected location ──────────────────────────────────────
-  useEffect(() => {
+  const fetchBranchStaff = useCallback(() => {
     if (!selectedLocation) return;
     fetch(`/api/branch-locations?location=${encodeURIComponent(selectedLocation)}`)
       .then(r => r.json())
       .then(d => setBranchStaff(d.staff ?? []))
       .catch(() => console.error("Failed to load branch staff"));
   }, [selectedLocation]);
+
+  useEffect(() => {
+    fetchBranchStaff();
+  }, [fetchBranchStaff]);
+
+  // ── Load all active staff — used for name/dept resolution in attendance table ──
+  const fetchAllBranchStaff = useCallback(() => {
+    fetch('/api/branch-locations?location=ALL')
+      .then(r => r.json())
+      .then(d => setAllBranchStaff(d.staff ?? []))
+      .catch(() => console.error("Failed to load all branch staff"));
+  }, []);
+
+  useEffect(() => {
+    fetchAllBranchStaff();
+  }, [fetchAllBranchStaff]);
+
+  // ── Refresh staff data every 60 s so employee dashboard edits are reflected ──
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchBranchStaff();
+      fetchAllBranchStaff();
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchBranchStaff, fetchAllBranchStaff]);
 
   // ── Poll /api/attendance-today every 5 seconds (reads from DB, written by office sync script) ──
   const fetchScans = useCallback(async () => {
@@ -295,15 +292,18 @@ export default function AttendanceSummary() {
 
       // Build AttendanceRecord from DB rows
       const records: AttendanceRecord[] = dbRows.map(row => {
-        const emp = employeesRef.current.find(e => e.scannerRef === row.empNo);
+        // Name resolution priority: BranchStaff full name → employees.csv → DB empName → "Unknown"
+        const staff = allBranchStaffRef.current.find(s => s.employeeId === row.empNo);
+        const emp   = employeesRef.current.find(e => e.scannerRef === row.empNo);
+        const resolvedName = staff?.name || emp?.name || row.empName || "Unknown";
         const checkInDate = new Date(`${row.date}T${row.clockInTime}`);
         const checkOutDate = row.clockOutTime ? new Date(`${row.date}T${row.clockOutTime}`) : null;
         const isSaturday = new Date().getDay() === 6;
         return {
           empNo: row.empNo,
-          name: emp?.name ?? row.empName,
-          dept: emp?.dept ?? "—",
-          position: emp?.position ?? "—",
+          name: resolvedName,
+          dept: staff?.department || "—",
+          position: staff?.role || "—",
           checkInTime: checkInDate,
           checkInStr: row.clockInTime,
           checkInStatus: getCheckInStatus(row.clockInTime),
@@ -340,6 +340,28 @@ export default function AttendanceSummary() {
     setSeenScannerIds([]);
     setRawCount(null);
   }, []);
+
+  // ── Pull all history from scanner ──────────────────────────────────────────
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
+
+  const handleBackfill = useCallback(async () => {
+    if (!window.confirm("Pull attendance history from the scanner for the past 90 days?\nThis may take a few minutes.")) return;
+    setBackfilling(true);
+    setBackfillResult(null);
+    try {
+      const res = await fetch('/api/backfill-scanner', { method: 'POST' });
+      const data = await res.json() as { processed?: number; skipped?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? 'Unknown error');
+      setBackfillResult(`Done — ${data.processed} days synced, ${data.skipped} skipped.`);
+      // Reload today's data after backfill
+      fetchScans();
+    } catch (e) {
+      setBackfillResult(`Failed: ${(e as Error).message}`);
+    } finally {
+      setBackfilling(false);
+    }
+  }, [fetchScans]);
 
   // ── Filter logs to the selected branch ────────────────────────────────────
   // Show records where the scanner that recorded them is tagged to this location.
@@ -385,9 +407,30 @@ export default function AttendanceSummary() {
     .map(r => (r.name ?? '').toUpperCase().trim())
     .filter(n => n.length >= 3); // ignore empty / 1–2 char tokens
 
+  // Date object for the currently viewed day — used for robust date comparisons
+  // regardless of whether Heidi stores dates as YYYY-MM-DD or DD/MM/YYYY.
+  const viewDate = new Date(selectedDate + 'T00:00:00');
+
+  // Returns true if the employee is considered "active" on the viewed date
+  // (started on or before selectedDate AND hasn't ended before selectedDate).
+  function isEffectivelyActive(s: BranchStaffMember): boolean {
+    if (s.status !== 'Active') return false;
+    if (s.endDate) {
+      const end = parseDateStr(s.endDate);
+      if (end && end < viewDate) return false;
+    }
+    if (s.start_date) {
+      const start = parseDateStr(s.start_date);
+      if (start && start > viewDate) return false;
+    }
+    return true;
+  }
+
+  const effectivelyActiveCount = branchStaff.filter(isEffectivelyActive).length;
+
   const missingEmployees = branchStaff.filter(s => {
     if (!s.name) return false;
-    if (s.status !== 'Active') return false;   // hide Inactive / Archived / null
+    if (!isEffectivelyActive(s)) return false;
     if (s.employeeId && scannedEmpNos.has(s.employeeId)) return false; // exact-ID hit
     const fullName = s.name.toUpperCase();
     return !scannedNames.some(sn => fullName.includes(sn) || sn.includes(fullName));
@@ -490,15 +533,35 @@ export default function AttendanceSummary() {
                 )}
               </div>
 
-              {isViewingToday && (
-                <button
-                  onClick={handleReset}
-                  className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-red-200 text-red-700 text-sm font-medium rounded-lg hover:bg-red-50 hover:border-red-300 transition-all"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  End of Day Reset
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={handleBackfill}
+                      disabled={backfilling}
+                      className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {backfilling
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Database className="w-4 h-4" />}
+                      {backfilling ? 'Pulling…' : 'Pull History'}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {backfillResult ?? 'Fetch past 90 days of thumbprint data from the scanner'}
+                  </TooltipContent>
+                </Tooltip>
+
+                {isViewingToday && (
+                  <button
+                    onClick={handleReset}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-red-200 text-red-700 text-sm font-medium rounded-lg hover:bg-red-50 hover:border-red-300 transition-all"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    End of Day Reset
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </header>
@@ -537,7 +600,7 @@ export default function AttendanceSummary() {
               value={missingEmployees.length}
               icon={UserX}
               tone="red"
-              subtitle={`of ${branchStaff.filter(s => s.status === 'Active').length} active`}
+              subtitle={`of ${effectivelyActiveCount} active`}
               tooltip={`Active staff registered to ${selectedLocation} who haven't scanned today.`}
             />
           </motion.div>
@@ -847,7 +910,7 @@ export default function AttendanceSummary() {
             ) : (
               <div className="max-h-[680px] overflow-y-auto divide-y divide-gray-100">
                 {missingEmployees.map((s, i) => {
-                  const display = s.nickname ?? s.name ?? "—";
+                  const display = s.name ?? "—";
                   const initial = display.charAt(0).toUpperCase();
                   const tones = [
                     "bg-rose-50 text-rose-600 ring-rose-100",
@@ -870,9 +933,9 @@ export default function AttendanceSummary() {
                               {s.role && (
                                 <span className="text-[11px] text-gray-500 truncate">{s.role}</span>
                               )}
-                              {s.role && s.location && <span className="text-gray-300 text-[11px]">·</span>}
-                              {s.location && (
-                                <span className="text-[11px] text-gray-400 truncate">{s.location}</span>
+                              {s.role && s.branch && <span className="text-gray-300 text-[11px]">·</span>}
+                              {s.branch && (
+                                <span className="text-[11px] text-gray-400 truncate">{s.branch}</span>
                               )}
                             </div>
                           </div>
@@ -892,8 +955,8 @@ export default function AttendanceSummary() {
                             <span className="font-medium text-gray-800">{s.department ?? "—"}</span>
                             <span className="text-gray-500">Role</span>
                             <span className="font-medium text-gray-800">{s.role ?? "—"}</span>
-                            <span className="text-gray-500">Location</span>
-                            <span className="font-medium text-gray-800">{s.location}</span>
+                            <span className="text-gray-500">Branch</span>
+                            <span className="font-medium text-gray-800">{s.branch ?? "—"}</span>
                             <span className="text-gray-500">Email</span>
                             <span className="font-medium text-gray-800 truncate">{s.email ?? "—"}</span>
                           </div>

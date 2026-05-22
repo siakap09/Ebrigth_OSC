@@ -18,6 +18,7 @@ function toEmployee(s: Record<string, unknown>) {
     dob: (s.dob as string) || '',
     homeAddress: (s.home_address as string) || '',
     branch: (s.branch as string) || '',
+    department: (s.department as string) || '',
     role: (s.role as string) || '',
     contract: (s.contract as string) || '',
     startDate: (s.start_date as string) || '',
@@ -118,9 +119,9 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { employeeId, fullName, email, phone, branch, role, gender, nickName, nric, dob,
+    const { employeeId, fullName, email, phone, branch, department, role, gender, nickName, nric, dob,
             homeAddress, contract, startDate, endDate, probation, rate,
-            Emc_Number, Emc_Email, Emc_Relationship, Signed_Date, Emp_Hire_Date,
+            Emc_Number, Emc_Email, Emc_Relationship, Signed_Date,
             Emp_Type, Emp_Status, Bank, Bank_Name, Bank_Account, University } = body;
 
     if (!fullName || !email || !phone || !branch || !role) {
@@ -160,6 +161,7 @@ export async function POST(request: Request) {
         dob: dob || null,
         home_address: normalizedHomeAddress,
         branch,
+        department: department || null,
         role,
         contract: contract || '12 MONTH',
         start_date: startDate || null,
@@ -204,9 +206,9 @@ export async function PUT(request: Request) {
 
   try {
     const body = await request.json();
-    const { id, fullName, email, phone, branch, role, gender, nickName, nric, dob,
+    const { id, fullName, email, phone, branch, department, role, gender, nickName, nric, dob,
             homeAddress, contract, startDate, endDate, probation, rate, accessStatus,
-            Emc_Number, Emc_Email, Emc_Relationship, Signed_Date, Emp_Hire_Date,
+            Emc_Number, Emc_Email, Emc_Relationship, Signed_Date,
             Emp_Type, Emp_Status, Bank, Bank_Name, Bank_Account, University,
             employeeId, biometricTemplate,
             trainingStartDate, trainingEndDate } = body;
@@ -294,6 +296,7 @@ export async function PUT(request: Request) {
         ...(dob !== undefined && { dob }),
         ...(homeAddress !== undefined && { home_address: homeAddress.toUpperCase() }),
         ...(branch !== undefined && { branch }),
+        ...(department !== undefined && { department: department || null }),
         ...(role !== undefined && { role }),
         ...(contract !== undefined && { contract }),
         ...(startDate !== undefined && { start_date: startDate }),

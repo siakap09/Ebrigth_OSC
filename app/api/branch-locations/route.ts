@@ -24,13 +24,23 @@ export async function GET(req: NextRequest) {
         role:       true,
         email:      true,
         status:     true,
+        branch:     true,
         location:   true,
+        start_date: true,
+        endDate:    true,
       },
       where:   { status: 'Active' },
       orderBy: { name: 'asc' },
     });
 
-    const filtered = all.filter(s => normalizeLocation(s.location) === location);
+    // ?location=ALL returns every active staff member (used for name lookups)
+    if (location === 'ALL') {
+      return NextResponse.json({ staff: all });
+    }
+
+    // Filter by `branch` (the BRANCH/DEPT field set in the staff form, e.g. "ST", "HQ").
+    // Fall back to `location` when `branch` is empty — some older records only have location set.
+    const filtered = all.filter(s => normalizeLocation(s.branch || s.location) === location);
     return NextResponse.json({ staff: filtered });
   } catch (err) {
     console.error('/api/branch-locations error:', err);

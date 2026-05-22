@@ -13,13 +13,22 @@ const SYNC_INTERVAL_MS = 10_000; // 10 seconds — tune as needed
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
-  const { syncScannerToDb } = await import('@/lib/scanner-sync');
+  const { syncScannerToDb, syncDateToDb, yesterdayKL } = await import('@/lib/scanner-sync');
 
   console.log(
     `[scanner-sync] Background sync starting — polling every ${SYNC_INTERVAL_MS / 1000}s`
   );
 
-  // Run once immediately on boot so we don't wait for the first interval
+  // On boot: backfill yesterday without sending emails (data already happened).
+  // This ensures yesterday's records are always present even if the server was
+  // down or restarted overnight.
+  const yesterday = yesterdayKL();
+  console.log(`[scanner-sync] Backfilling yesterday (${yesterday}) from device…`);
+  syncDateToDb(yesterday, false).catch(err => {
+    console.error('[scanner-sync] Yesterday backfill error:', err);
+  });
+
+  // Run today's sync once immediately on boot so we don't wait for the first interval
   syncScannerToDb().catch(err => {
     console.error('[scanner-sync] Initial sync error:', err);
   });

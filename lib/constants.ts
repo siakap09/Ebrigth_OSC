@@ -12,7 +12,9 @@ export function normalizeLocation(raw: string | null): string {
   if (!raw) return 'Unknown';
   const clean = raw.trim().replace(/[\r\n]+/g, ' ').trim();
   const key   = clean.toLowerCase();
-  if (key.includes('hq')) return 'HQ';
+  // All HQ codes — internal departments that are physically at HQ
+  const HQ_CODES = new Set(['hq', 'od', 'op', 'ceo', 'mkt', 'acd', 'iop', 'fnc', 'fin', 'hr', 'hr/iop', 'marketing']);
+  if (HQ_CODES.has(key) || key.includes('hq')) return 'HQ';
   const MAP: Record<string, string> = {
     'onl': 'Online', 'online': 'Online',
     'st': 'Subang Taipan', 'subang taipan': 'Subang Taipan', 'subang taipan & ampang': 'Subang Taipan',
@@ -34,12 +36,22 @@ export function normalizeLocation(raw: string | null): string {
     'tsg': 'Taman Sri Gombak',
     'ktg': 'Kota Warisan', 'kota warisan': 'Kota Warisan',
     'kajang': 'Kajang',
-    'marketing': 'HQ',
   };
   return MAP[key] ?? clean;
 }
 
 // ─── Role / branch / contract options ─────────────────────────────────────────
+
+export const DEPARTMENT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "",       label: "— None —" },
+  { value: "CEO",    label: "CEO" },
+  { value: "OD",     label: "OD" },
+  { value: "OP",     label: "OP" },
+  { value: "MKT",    label: "MKT" },
+  { value: "ACD",    label: "ACD" },
+  { value: "FIN",    label: "FIN" },
+  { value: "HR/IOP", label: "HR/IOP" },
+];
 
 export const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "CEO", label: "CEO" },

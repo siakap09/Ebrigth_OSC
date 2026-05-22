@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { BRANCH_OPTIONS, ROLE_OPTIONS, CONTRACT_OPTIONS, GENDER_OPTIONS, ROLE_CODES } from "@/lib/constants";
+import { BRANCH_OPTIONS, DEPARTMENT_OPTIONS, ROLE_OPTIONS, CONTRACT_OPTIONS, GENDER_OPTIONS, ROLE_CODES } from "@/lib/constants";
 import { isAdmin, isAcademy } from "@/lib/roles";
 import { isInTraining } from "@/lib/training";
 import EmployeeIdInput from "@/app/components/EmployeeIdInput";
@@ -22,6 +22,7 @@ interface User {
   dob: string;
   homeAddress: string;
   branch: string;
+  department: string;
   role: string;
   contract: string;
   startDate: string;
@@ -385,7 +386,8 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
                       {field("Full Name", getDisplayName(selectedUser))}
                       {field("Phone", selectedUser.phone)}
                       {field("Role", selectedUser.role)}
-                      {field("Branch/Dept", selectedUser.branch)}
+                      {field("Branch", selectedUser.branch)}
+                      {field("Department", selectedUser.department)}
                       {field("Contract", selectedUser.contract)}
                       {field("Start Date", selectedUser.startDate)}
                       {field("Status", selectedUser.Emp_Status)}
@@ -464,10 +466,18 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
                     <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide border-b pb-2 mb-4">Employment</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Branch/Dept</label>
-                        <select name="branch" value={editData?.branch || "HQ"} onChange={handleInputChange}
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Branch</label>
+                        <select name="branch" value={editData?.branch || ""} onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                          <option value="">— None —</option>
                           {BRANCH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Department</label>
+                        <select name="department" value={editData?.department || ""} onChange={handleInputChange}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                          {DEPARTMENT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
                       <div>
@@ -569,7 +579,8 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
                       {field("Full Name", getDisplayName(selectedUser))}
                       {field("Phone", selectedUser.phone)}
                       {field("Role", selectedUser.role)}
-                      {field("Branch/Dept", selectedUser.branch)}
+                      {field("Branch", selectedUser.branch)}
+                      {field("Department", selectedUser.department)}
                       {field("Contract", selectedUser.contract)}
                       {field("Start Date", selectedUser.startDate)}
                       {field("Status", selectedUser.Emp_Status)}
@@ -606,7 +617,8 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
                   <section>
                     <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide border-b pb-2 mb-4">Employment</h4>
                     <div className="grid grid-cols-2 gap-3">
-                      {field("Branch/Dept", selectedUser.branch)}
+                      {field("Branch", selectedUser.branch)}
+                      {field("Department", selectedUser.department)}
                       {field("Role", selectedUser.role)}
                       {field("Contract", selectedUser.contract)}
                       {field("Start Date", selectedUser.startDate)}
