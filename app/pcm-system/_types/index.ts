@@ -28,6 +28,51 @@ export const BRANCHES = [
 
 export type BranchCode = typeof BRANCHES[number]["code"];
 
+/**
+ * Operational regions used by Academy for cross-branch comparison.
+ * Branches in our BRANCHES list are bucketed into the three regions the
+ * academy uses internally. When a new branch is added to BRANCHES it MUST
+ * be added here too — the multi-select picker iterates BRANCH_REGIONS to
+ * group choices, and an un-mapped branch would simply not appear.
+ *
+ * If the academy renames a region or splits one, only this map needs to
+ * change — every consumer (Invitations page filter, Dashboard, etc.)
+ * reads it through the helpers below.
+ */
+export type BranchRegion = "A" | "B" | "C";
+
+export const BRANCH_REGIONS: Record<BranchCode, BranchRegion> = {
+  // Region A
+  ST:   "A",
+  SA:   "A",
+  DA:   "A",
+  EGR:  "A",
+  KLG:  "A",
+  RBY:  "A",
+  SHA:  "A",
+  // Region B
+  AMP:  "B",
+  BTHO: "B",
+  DK:   "B",
+  KTG:  "B",
+  KD:   "B",
+  SP:   "B",
+  TSG:  "B",
+  // Region C
+  BBB:  "C",
+  BSP:  "C",
+  CJY:  "C",
+  KW:   "C",
+  PJY:  "C",
+  ONL:  "C",
+};
+
+export const BRANCHES_BY_REGION: Record<BranchRegion, BranchCode[]> = (() => {
+  const out: Record<BranchRegion, BranchCode[]> = { A: [], B: [], C: [] };
+  for (const b of BRANCHES) out[BRANCH_REGIONS[b.code as BranchCode]].push(b.code as BranchCode);
+  return out;
+})();
+
 /** NextAuth roles that count as "back-office" for PCM — they default to
  *  the Academy view but can switch into any Branch Manager view through
  *  the /pcm-system/login picker. PCM is academy-owned, so MARKETING is

@@ -4,12 +4,13 @@ import { useMemo, useState } from "react";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { AppShell } from "@pcm/_components/shared/AppShell";
-import { BRANCHES, BranchCode, FAEvent, Invitation } from "@pcm/_types";
+import { BranchCode, FAEvent, Invitation } from "@pcm/_types";
 import {
   Users, Download, Copy, Check, ListOrdered, Search,
-  CalendarDays, MapPin,
+  CalendarDays,
 } from "lucide-react";
 import { addDays, format, parseISO } from "date-fns";
+import { BranchMultiSelect } from "@pcm/_components/fa/BranchMultiSelect";
 
 type StatusFilter = "all" | "invited" | "confirmed" | "attended" | "rescheduled" | "declined" | "no_show";
 type TypeFilter   = "all" | "progress" | "renewal";
@@ -22,11 +23,14 @@ export default function InvitationsListPage() {
   const invitations = useFAStore(s => s.invitations);
   const students = useFAStore(s => s.students);
 
-  // BMs are locked to their branch; Academy can pick any branch or All.
+  // BMs are locked to their branch (set automatically). Academy picks any
+  // combination via the multi-select. An empty set means "all branches"
+  // (no filter), keeping the no-op case cheap and the type simple.
   const [eventId, setEventId]   = useState<string>("");   // empty = pick one
-  const [branch, setBranch]     = useState<BranchCode | "all">(
-    user?.role === "BM" && user.branch ? user.branch : "all"
-  );
+  const [selectedBranches, setSelectedBranches] = useState<Set<BranchCode>>(() => {
+    if (user?.role === "BM" && user.branch) return new Set([user.branch]);
+    return new Set();
+  });
   const [status, setStatus]     = useState<StatusFilter>("all");
   const [type, setType]         = useState<TypeFilter>("all");
   /** Day filter — "all" or 1..numberOfDays of the selected event. */
@@ -37,8 +41,13 @@ export default function InvitationsListPage() {
   const [search, setSearch]     = useState("");
   const [copied, setCopied]     = useState(false);
 
-  const effectiveBranch: BranchCode | "all" =
-    user?.role === "BM" ? (user.branch ?? "all") : branch;
+  // BM users are locked to their own branch; the multi-select isn't even
+  // rendered for them. `branchAllowed` returns true when an invitation's
+  // branch is in scope for the current filter.
+  const branchAllowed = (b: BranchCode): boolean => {
+    if (user?.role === "BM") return user.branch === b;
+    return selectedBranches.size === 0 || selectedBranches.has(b);
+  };
 
   // Sort events by date desc so the newest one is the natural default.
   const sortedEvents = useMemo(
@@ -89,7 +98,7 @@ export default function InvitationsListPage() {
   const rows = useMemo(() => {
     if (!event) return [];
     let list: Invitation[] = invitations.filter(i => i.eventId === event.id);
-    if (effectiveBranch !== "all") list = list.filter(i => i.branch === effectiveBranch);
+    list = list.filter(i => branchAllowed(i.branch));
     if (status !== "all") list = list.filter(i => i.status === status);
     if (type !== "all")   list = list.filter(i => i.inviteType === type);
     if (day !== "all") {
@@ -126,7 +135,7 @@ export default function InvitationsListPage() {
       const nb = studentsById.get(b.studentId)?.name ?? "";
       return na.localeCompare(nb);
     });
-  }, [event, invitations, effectiveBranch, status, type, day, sessionFilter, search, studentsById, sessionsById]);
+  }, [event, invitations, selectedBranches, user?.role, user?.branch, status, type, day, sessionFilter, search, studentsById, sessionsById]);
 
   // ─── Export helpers ────────────────────────────────────────────────
 
@@ -135,7 +144,11 @@ export default function InvitationsListPage() {
     const lines: string[] = [];
     lines.push(`📋 ${event.name}`);
     lines.push(`${format(parseISO(event.startDate), "d MMM")} – ${format(parseISO(event.endDate), "d MMM yyyy")}`);
-    if (effectiveBranch !== "all") lines.push(`Branch: ${effectiveBranch}`);
+    if (user?.role === "BM" && user.branch) {
+      lines.push(`Branch: ${user.branch}`);
+    } else if (selectedBranches.size > 0 && selectedBranches.size < 20) {
+      lines.push(`Branches: ${Array.from(selectedBranches).sort().join(", ")}`);
+    }
     lines.push("");
     // Group by (branch, day) so a WhatsApp message reads "ST, Mon: …"
     let lastHeader = "";
@@ -342,20 +355,10 @@ export default function InvitationsListPage() {
           )}
 
           {user?.role !== "BM" && (
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-violet-500" />
-              <select
-                className="fa-input text-xs"
-                style={{ minWidth: "180px", height: "30px", paddingTop: "0.15rem", paddingBottom: "0.15rem" }}
-                value={branch}
-                onChange={e => setBranch(e.target.value as BranchCode | "all")}
-              >
-                <option value="all">All branches</option>
-                {BRANCHES.map(b => (
-                  <option key={b.code} value={b.code}>{b.code} — {b.name}</option>
-                ))}
-              </select>
-            </div>
+            <BranchMultiSelect
+              selected={selectedBranches}
+              onChange={setSelectedBranches}
+            />
           )}
 
           <select

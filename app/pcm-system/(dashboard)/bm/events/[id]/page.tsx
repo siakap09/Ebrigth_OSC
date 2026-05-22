@@ -226,8 +226,11 @@ export default function BMEventDetailPage() {
                 return (
                   <div key={dayNum}>
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="w-6 h-6 rounded bg-brand-900 text-white flex items-center justify-center text-xs font-semibold">
-                        D{dayNum}
+                      {/* Weekday abbreviation badge — academy feedback: bare
+                          day-numbers (D2/D3) were confusing. Show "Wed",
+                          "Thu" instead, sized a bit wider to fit. */}
+                      <div className="px-2 h-6 min-w-[36px] rounded bg-brand-900 text-white flex items-center justify-center text-[11px] font-bold uppercase tracking-wider">
+                        {dayDate.toLocaleDateString(undefined, { weekday: "short" })}
                       </div>
                       <div className="text-xs text-ink-500">
                         {dayDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
