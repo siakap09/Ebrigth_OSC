@@ -156,9 +156,6 @@ export default function InvitationsListPage() {
     for (const inv of rows) {
       const sess = sessionsById.get(inv.sessionId);
       const student = studentsById.get(inv.studentId);
-      if (!student) continue;
-      // Weekday name reads more naturally than a bare "Day 2" in a chat
-      // message (parents don't think in day-numbers).
       const dayLabel = sess && event
         ? format(addDays(parseISO(event.startDate), sess.dayNumber - 1), "EEEE")
         : `Day ${sess?.dayNumber ?? "?"}`;
@@ -170,10 +167,11 @@ export default function InvitationsListPage() {
         idx = 0;
       }
       idx++;
-      const grade = `G${inv.targetGrade ?? student.grade}`;
+      const grade = `G${inv.targetGrade ?? student?.grade ?? "?"}`;
       const tpe = inv.inviteType === "renewal" ? "RENEW" : "PROG";
       const coach = inv.coachName ? ` · Coach ${inv.coachName}` : "";
-      lines.push(`  ${idx}. ${student.name} (${grade}, ${tpe})${coach}`);
+      const name = student?.name ?? `#${inv.studentId} (student not in roster)`;
+      lines.push(`  ${idx}. ${name} (${grade}, ${tpe})${coach}`);
     }
     if (rows.length === 0) lines.push("(no invitations match these filters)");
     return lines.join("\n");
@@ -193,7 +191,6 @@ export default function InvitationsListPage() {
     for (const inv of rows) {
       const sess = sessionsById.get(inv.sessionId);
       const student = studentsById.get(inv.studentId);
-      if (!student) continue;
       lines.push([
         event.name,
         inv.branch,
@@ -203,9 +200,9 @@ export default function InvitationsListPage() {
         sess?.sessionNumber.toString() ?? "",
         sess?.startTime ?? "",
         sess?.endTime ?? "",
-        student.id,
-        student.name,
-        `G${inv.targetGrade ?? student.grade}`,
+        student?.id ?? inv.studentId,
+        student?.name ?? "(not in roster)",
+        `G${inv.targetGrade ?? student?.grade ?? "?"}`,
         inv.inviteType,
         inv.status,
         inv.coachName ?? "",
@@ -487,7 +484,11 @@ export default function InvitationsListPage() {
               {rows.map((inv, idx) => {
                 const sess = sessionsById.get(inv.sessionId);
                 const student = studentsById.get(inv.studentId);
-                if (!student) return null;
+                // Render even when the student lookup misses — otherwise an
+                // orphan invitation (student row removed/skipped in Heidi)
+                // makes the whole table look empty even though the counts
+                // strip says we have 107 rows. Show the raw ID so academy
+                // can chase it down.
                 const isProgress = inv.inviteType === "progress";
                 return (
                   <tr key={inv.id}>
@@ -507,10 +508,19 @@ export default function InvitationsListPage() {
                     </td>
                     <td className="font-mono text-xs text-ink-500">{sess?.startTime}–{sess?.endTime}</td>
                     <td>
-                      <div className="font-medium text-ink-900">{student.name}</div>
-                      <div className="text-xs text-ink-400">#{student.id}</div>
+                      {student ? (
+                        <>
+                          <div className="font-medium text-ink-900">{student.name}</div>
+                          <div className="text-xs text-ink-400">#{student.id}</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="font-medium text-amber-700 italic">Student not in roster</div>
+                          <div className="text-xs text-ink-400">#{inv.studentId}</div>
+                        </>
+                      )}
                     </td>
-                    <td className="font-mono text-sm">G{inv.targetGrade ?? student.grade}</td>
+                    <td className="font-mono text-sm">G{inv.targetGrade ?? student?.grade ?? "?"}</td>
                     <td>
                       <span
                         className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase text-white ${
