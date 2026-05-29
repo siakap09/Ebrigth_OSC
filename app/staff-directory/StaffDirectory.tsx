@@ -13,8 +13,10 @@ import {
   Network,
   LayoutGrid,
   History,
+  Table as TableIcon,
+  Users,
 } from "lucide-react";
-import { saveWorkingHours } from "./actions";
+import { saveWorkingHours, saveWorkingHoursBatch } from "./actions";
 
 export interface DirectoryPerson {
   id: number;
@@ -411,7 +413,26 @@ function computeLayout(tree: Map<number, TreeNode>): {
 const ALL = "all";
 const CEO_DEPT_ID = -1;
 
-type ViewMode = "chart" | "card" | "timeline";
+type ViewMode = "chart" | "card" | "timeline" | "table";
+
+// Deterministic per-person avatar palette for the table view — gives each row
+// its own colour the way the design mockup does. Indexed by BranchStaff.id so
+// the same person keeps the same colour across re-renders.
+const TABLE_AVATAR_PALETTE = [
+  "bg-gradient-to-br from-purple-400 to-purple-500",
+  "bg-gradient-to-br from-teal-400 to-emerald-500",
+  "bg-gradient-to-br from-amber-400 to-orange-500",
+  "bg-gradient-to-br from-green-400 to-emerald-500",
+  "bg-gradient-to-br from-pink-400 to-rose-500",
+  "bg-gradient-to-br from-blue-400 to-indigo-500",
+  "bg-gradient-to-br from-fuchsia-400 to-pink-500",
+  "bg-gradient-to-br from-cyan-400 to-blue-500",
+];
+
+function tableAvatarColor(id: number): string {
+  const idx = ((id % TABLE_AVATAR_PALETTE.length) + TABLE_AVATAR_PALETTE.length) % TABLE_AVATAR_PALETTE.length;
+  return TABLE_AVATAR_PALETTE[idx];
+}
 
 export default function StaffDirectory({
   people,
@@ -447,20 +468,28 @@ export default function StaffDirectory({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("chart");
+  const [viewMode, setViewMode] = useState<ViewMode>("table");
+  const [batchOpen, setBatchOpen] = useState(false);
 
   // Show every canonical department in the dropdown, even if it has no staff
   // yet — the list is fixed by company structure, not by data presence.
   const populatedDepartments = departments;
 
   // Branch/dept scope — applies to every view (chart, card, timeline).
+  // Symmetric "All X" rule: when the type toggle is set to Branch and no
+  // specific branch is chosen, scope to staff who actually belong to a
+  // branch (branchId !== null); same for Dept mode. Otherwise the "All
+  // branches" view leaks dept-only people (HQ / IOP rows) and the "All
+  // departments" view leaks branch-only staff like PT Coaches.
   const branchDeptScope = useMemo(() => {
     return people.filter(p => {
       if (branchFilter !== null && p.branchId !== branchFilter) return false;
       if (deptFilter !== null && p.departmentId !== deptFilter) return false;
+      if (filterType === "branch" && branchFilter === null && p.branchId === null) return false;
+      if (filterType === "dept" && deptFilter === null && p.departmentId === null) return false;
       return true;
     });
-  }, [people, branchFilter, deptFilter]);
+  }, [people, branchFilter, deptFilter, filterType]);
 
   // Adds the working-day filter on top. Timeline view bypasses this
   // entirely — historical / departed staff don't have meaningful schedules,
@@ -574,8 +603,25 @@ export default function StaffDirectory({
   return (
     <div className="min-h-full bg-slate-50">
       <div className="max-w-[1600px] mx-auto px-6 pt-4 pb-10">
-        <div className="flex flex-wrap items-center justify-end gap-3 mb-5">
-          <div className="flex flex-wrap items-center gap-2">
+        {/* Title at top, view-mode tabs above the filter row. */}
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">
+              Meet the team
+            </p>
+            <h1 className="mt-1 text-3xl md:text-4xl font-semibold text-slate-900 tracking-tight">
+              Staff Directory
+            </h1>
+          </div>
+          <ViewModeToggle value={viewMode} onChange={setViewMode} />
+        </div>
+
+        <div className="flex gap-5">
+          <div
+            className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col"
+            style={{ minHeight: 600 }}
+          >
+            <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden="true" />
               <input
@@ -670,24 +716,18 @@ export default function StaffDirectory({
                 Clear
               </button>
             )}
-          </div>
-        </div>
 
-        <div className="flex gap-5">
-          <div
-            className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col"
-            style={{ minHeight: 600 }}
-          >
-            <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">
-                  Meet the team
-                </p>
-                <h1 className="mt-1 text-3xl md:text-4xl font-semibold text-slate-900 tracking-tight">
-                  Staff Directory
-                </h1>
-              </div>
-              <ViewModeToggle value={viewMode} onChange={setViewMode} />
+            {/* Batch edit — opens a modal to apply one working-week to a group
+                of staff selected by branch / department / role. */}
+            <button
+              type="button"
+              onClick={() => setBatchOpen(true)}
+              aria-label="Batch edit working hours"
+              title="Batch edit working hours"
+              className="inline-flex items-center justify-center bg-emerald-600 text-white rounded-xl p-2 hover:bg-emerald-700 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+            >
+              <Pencil className="w-4 h-4" aria-hidden="true" />
+            </button>
             </div>
 
             <div
@@ -890,6 +930,13 @@ export default function StaffDirectory({
                 selectedId={selectedId}
                 onSelect={(id) => setSelectedId(id === selectedId ? null : id)}
               />
+            ) : viewMode === "table" ? (
+              <TableView
+                people={cardPeople}
+                selectedId={selectedId}
+                onSelect={(id) => setSelectedId(id === selectedId ? null : id)}
+                groupBy={filterType}
+              />
             ) : (
               <TimelineView
                 people={timelinePeople}
@@ -949,6 +996,15 @@ export default function StaffDirectory({
           </p>
         )}
       </div>
+
+      {batchOpen && (
+        <BatchEditModal
+          people={people}
+          branches={branches}
+          departments={populatedDepartments}
+          onClose={() => setBatchOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1293,6 +1349,303 @@ function WorkingHoursCard({
   );
 }
 
+// Batch working-hours editor. Targets a group of *active* staff by any
+// combination of branch / department / role, previews who will be affected,
+// then applies one shared working-week to all of them in a single action.
+function BatchEditModal({
+  people,
+  branches,
+  departments,
+  onClose,
+}: {
+  people: DirectoryPerson[];
+  branches: DirectoryBranch[];
+  departments: DirectoryDepartment[];
+  onClose: () => void;
+}) {
+  const [branchId, setBranchId] = useState<number | null>(null);
+  const [deptId, setDeptId] = useState<number | null>(null);
+  const [position, setPosition] = useState<string>(""); // "" = any role
+  const [draft, setDraft] = useState<WeekSchedule>(STANDARD_OFFICE);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [saving, startSaving] = useTransition();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Distinct active roles for the role dropdown.
+  const positions = useMemo(() => {
+    const set = new Set<string>();
+    people.forEach(p => { if (p.isActive && p.position) set.add(p.position); });
+    return [...set].sort();
+  }, [people]);
+
+  // Active staff matching every chosen criterion (criteria are ANDed; an
+  // unset criterion matches everyone).
+  const matched = useMemo(() => {
+    return people.filter(p => {
+      if (!p.isActive) return false;
+      if (branchId !== null && p.branchId !== branchId) return false;
+      if (deptId !== null && p.departmentId !== deptId) return false;
+      if (position && p.position !== position) return false;
+      return true;
+    });
+  }, [people, branchId, deptId, position]);
+
+  const totalHours = totalWeeklyHours(draft);
+
+  const updateDay = (day: DayKey, slot: DaySchedule | null) => {
+    setDraft(prev => ({ ...prev, [day]: slot }));
+    setDone(null);
+  };
+
+  const handleApply = () => {
+    setError(null);
+    setDone(null);
+    if (matched.length === 0) {
+      setError("No staff match the selected filters.");
+      return;
+    }
+    startSaving(async () => {
+      const res = await saveWorkingHoursBatch(matched.map(p => p.id), draft);
+      if (res.ok) {
+        setDone(`Updated working hours for ${res.count ?? matched.length} staff.`);
+      } else {
+        setError(res.error ?? "Failed to save.");
+      }
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Batch edit working hours"
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100">
+          <div className="w-9 h-9 rounded-lg bg-emerald-600 flex items-center justify-center text-white shrink-0">
+            <Users className="w-4 h-4" aria-hidden="true" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-slate-900 leading-tight">
+              Batch edit working hours
+            </h2>
+            <p className="text-xs text-slate-500">
+              Pick who to update, then set one schedule for all of them.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors duration-200 cursor-pointer"
+          >
+            <X className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+          {/* Left: target criteria + preview */}
+          <div className="p-6 space-y-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              1. Select staff
+            </p>
+
+            <ModalSelect
+              label="Branch"
+              value={branchId === null ? ALL : String(branchId)}
+              onChange={(v) => { setBranchId(v === ALL ? null : Number(v)); setDone(null); }}
+              options={[
+                { value: ALL, label: "All branches" },
+                ...branches.map(b => ({ value: String(b.id), label: b.name })),
+              ]}
+            />
+            <ModalSelect
+              label="Department"
+              value={deptId === null ? ALL : String(deptId)}
+              onChange={(v) => { setDeptId(v === ALL ? null : Number(v)); setDone(null); }}
+              options={[
+                { value: ALL, label: "All departments" },
+                ...departments.map(d => ({ value: String(d.id), label: d.name })),
+              ]}
+            />
+            <ModalSelect
+              label="Role"
+              value={position || ALL}
+              onChange={(v) => { setPosition(v === ALL ? "" : v); setDone(null); }}
+              options={[
+                { value: ALL, label: "Any role" },
+                ...positions.map(p => ({ value: p, label: p })),
+              ]}
+            />
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <p className="text-xs font-semibold text-slate-700">
+                {matched.length} staff selected
+              </p>
+              {matched.length > 0 && (
+                <div className="mt-2 max-h-40 overflow-y-auto flex flex-wrap gap-1.5">
+                  {matched.map(p => (
+                    <span
+                      key={p.id}
+                      title={`${p.name} — ${p.position}`}
+                      className="inline-flex items-center max-w-full px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] text-slate-700 truncate"
+                    >
+                      {p.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: schedule editor */}
+          <div className="p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                2. Set schedule
+              </p>
+              <span className="text-xs text-slate-500 font-medium tabular-nums">
+                {totalHours.toFixed(0)} hrs / week
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => { setDraft(STANDARD_OFFICE); setDone(null); }}
+                className="text-[11px] font-medium px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors duration-200 cursor-pointer"
+              >
+                Mon–Fri 9–6
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft({ Mon: null, Tue: null, Wed: null, Thu: null, Fri: null, Sat: null, Sun: null });
+                  setDone(null);
+                }}
+                className="text-[11px] font-medium px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors duration-200 cursor-pointer"
+              >
+                Clear all
+              </button>
+            </div>
+
+            <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 overflow-hidden">
+              {DAYS_ORDER.map(d => {
+                const slot = draft[d];
+                const isOff = slot === null;
+                return (
+                  <li key={d} className="flex items-center gap-3 px-3 py-2">
+                    <span className="w-9 text-xs font-semibold text-slate-700 shrink-0">
+                      {d}
+                    </span>
+                    {isOff ? (
+                      <span className="flex-1 text-[11px] text-slate-400 italic">Day off</span>
+                    ) : (
+                      <div className="flex-1 flex items-center gap-1.5">
+                        <input
+                          type="time"
+                          value={slot.start}
+                          onChange={(e) => updateDay(d, { ...slot, start: e.target.value })}
+                          className="bg-white border border-slate-200 rounded-md px-1.5 py-0.5 text-[11px] text-slate-900 tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-transparent w-[88px]"
+                        />
+                        <span className="text-slate-400 text-[11px]">–</span>
+                        <input
+                          type="time"
+                          value={slot.end}
+                          onChange={(e) => updateDay(d, { ...slot, end: e.target.value })}
+                          className="bg-white border border-slate-200 rounded-md px-1.5 py-0.5 text-[11px] text-slate-900 tabular-nums focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-transparent w-[88px]"
+                        />
+                      </div>
+                    )}
+                    <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer select-none shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={isOff}
+                        onChange={(e) => updateDay(d, e.target.checked ? null : { start: "09:00", end: "18:00" })}
+                        className="w-3 h-3 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      Off
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center gap-3">
+          <div className="flex-1 min-w-0 text-xs">
+            {error && <span className="text-rose-600">{error}</span>}
+            {done && <span className="text-emerald-700 font-medium">{done}</span>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors duration-200 cursor-pointer disabled:opacity-50"
+          >
+            {done ? "Close" : "Cancel"}
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={saving || matched.length === 0}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Check className="w-4 h-4" aria-hidden="true" />
+            {saving ? "Applying…" : `Apply to ${matched.length}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[11px] font-medium text-slate-500 mb-1">{label}</span>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="appearance-none w-full bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent cursor-pointer"
+        >
+          {options.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
+      </div>
+    </label>
+  );
+}
+
 function ViewModeToggle({
   value,
   onChange,
@@ -1301,6 +1654,7 @@ function ViewModeToggle({
   onChange: (v: ViewMode) => void;
 }) {
   const options = [
+    { value: "table" as const, label: "Table", Icon: TableIcon },
     { value: "chart" as const, label: "Chart", Icon: Network },
     { value: "card" as const, label: "Card", Icon: LayoutGrid },
     { value: "timeline" as const, label: "Timeline", Icon: History },
@@ -1390,6 +1744,117 @@ function CardGridView({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function TableView({
+  people,
+  selectedId,
+  onSelect,
+  groupBy,
+}: {
+  people: DirectoryPerson[];
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+  groupBy: "branch" | "dept";
+}) {
+  const groupLabel = groupBy === "dept" ? "Department" : "Branch";
+  if (people.length === 0) {
+    return (
+      <div className="p-12 text-center text-sm text-slate-500">
+        No team members match this search.
+      </div>
+    );
+  }
+
+  // Sort by hierarchy then start date — same ordering as Card view, so toggling
+  // between table and cards doesn't shuffle people around.
+  const sorted = [...people].sort((a, b) => {
+    const ra = positionRank(a.position);
+    const rb = positionRank(b.position);
+    if (ra !== rb) return ra - rb;
+    if (a.startDate && b.startDate) return a.startDate.localeCompare(b.startDate);
+    if (a.startDate) return -1;
+    if (b.startDate) return 1;
+    return a.id - b.id;
+  });
+
+  return (
+    <div className="px-6 py-6">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-slate-50/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <th className="px-5 py-3 text-left">Name</th>
+              <th className="px-3 py-3 text-left">{groupLabel}</th>
+              {DAYS_ORDER.map(d => (
+                <th key={d} className="px-1.5 py-3 text-center w-10" title={DAY_LABEL[d]}>
+                  {DAY_INITIAL[d]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(p => {
+              const active = selectedId === p.id;
+              const schedule = parseWorkingHoursStrict(p.workingHoursRaw);
+              const avatarBg = tableAvatarColor(p.id);
+              return (
+                <tr
+                  key={p.id}
+                  onClick={() => onSelect(p.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelect(p.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={active}
+                  className={[
+                    "border-t border-slate-100 cursor-pointer transition-colors outline-none",
+                    "focus-visible:bg-emerald-50/40",
+                    active ? "bg-emerald-50/60" : "hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  <td className="px-5 py-2.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-9 h-9 rounded-full ${avatarBg} flex items-center justify-center text-white text-[11px] font-semibold shrink-0 shadow-sm`}>
+                        {initials(p.name)}
+                      </div>
+                      <span className="text-sm text-slate-900 truncate max-w-[240px]" title={p.name}>
+                        {p.name}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-sm text-slate-700">
+                    {(groupBy === "dept" ? p.departmentName : p.branchName) ?? "—"}
+                  </td>
+                  {DAYS_ORDER.map(d => {
+                    const works = Boolean(schedule?.[d]);
+                    return (
+                      <td key={d} className="px-1.5 py-2.5 text-center">
+                        {works ? (
+                          <span
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-emerald-100 text-emerald-700"
+                            title={`Works ${DAY_LABEL[d]}`}
+                          >
+                            <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                          </span>
+                        ) : (
+                          <span className="text-slate-300" aria-label={`Off ${DAY_LABEL[d]}`}>—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

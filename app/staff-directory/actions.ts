@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth/next";
+import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
 import { ADMIN_ROLES, normalizeRole } from "@/lib/roles";
@@ -9,6 +10,10 @@ import { ADMIN_ROLES, normalizeRole } from "@/lib/roles";
 export interface SaveResult {
   ok: boolean;
   error?: string;
+}
+
+export interface BatchSaveResult extends SaveResult {
+  count?: number;
 }
 
 interface DaySlot {
@@ -85,6 +90,50 @@ export async function saveWorkingHours(
 
     revalidatePath("/staff-directory");
     return { ok: true };
+  } catch {
+    return { ok: false, error: "Failed to save." };
+  }
+}
+
+// Batch variant: apply one schedule to many BranchStaff rows at once. Used by
+// the directory's "Batch edit" modal, where an admin targets a group of staff
+// (by branch / department / role) and sets a shared working-week. Same auth
+// and sanitisation rules as the single-row save — only the WHERE clause differs.
+export async function saveWorkingHoursBatch(
+  branchStaffIds: number[],
+  schedule: unknown,
+): Promise<BatchSaveResult> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
+
+  const role = normalizeRole((session.user as { role?: string }).role);
+  if (!role || !ADMIN_ROLES.includes(role)) {
+    return { ok: false, error: "Not authorized to edit working hours." };
+  }
+
+  const ids = Array.from(
+    new Set(
+      (Array.isArray(branchStaffIds) ? branchStaffIds : []).filter(
+        (n) => Number.isInteger(n) && n > 0,
+      ),
+    ),
+  );
+  if (ids.length === 0) return { ok: false, error: "No staff selected." };
+
+  const sanitized = sanitize(schedule);
+  if (!sanitized) {
+    return { ok: false, error: "Invalid schedule. Use HH:MM format and ensure end > start." };
+  }
+
+  try {
+    const affected = await prisma.$executeRaw`
+      UPDATE crm."BranchStaff"
+      SET "workingHours" = ${JSON.stringify(sanitized)}::jsonb,
+          "updatedAt"    = NOW()
+      WHERE id IN (${Prisma.join(ids)})
+    `;
+    revalidatePath("/staff-directory");
+    return { ok: true, count: Number(affected) };
   } catch {
     return { ok: false, error: "Failed to save." };
   }
