@@ -13,10 +13,38 @@ import { normalizeLocation } from "@/lib/constants";
 
 const EXECUTIVE_RATE = 11;
 
+// Elevated exec rate paid for branch-manager-on-duty hours. See
+// MANAGER_ON_DUTY_OVERRIDES below.
+const BM_EXEC_RATE = 13;
+
+// One-off "stand-in manager" overrides.
+//
+// Manager-on-duty slots live in the MANAGER column, which is OUTSIDE the regular
+// coach/exec grid (COLUMNS) — so they normally contribute zero hours and zero
+// pay to this report. The real branch managers are excluded from the report
+// anyway. But when a non-BM (e.g. a PT coach) covers as Manager on Duty because
+// the branch's BM is on leave, those slots are genuine paid hours that would
+// otherwise vanish.
+//
+// For the dates listed here only, we count that person's MANAGER slots as exec
+// hours and pay them at the elevated BM_EXEC_RATE (the residual exec time needed
+// to reach the daily target stays at the normal EXECUTIVE_RATE).
+//
+//   16–17 May 2026 — Rimbayu's BM (Nureen) was on leave; Iqbal (PT coach,
+//   id 213) covered as Manager on Duty for all 7 weekend slots each day.
+//
+// This is a deliberate hardcoded exception. If stand-in managers become common,
+// promote it to first-class schedule data instead of extending this list.
+const MANAGER_ON_DUTY_OVERRIDES: { branch: string; managerValue: string; dates: string[] }[] = [
+  { branch: "Rimbayu", managerValue: "IQBAL", dates: ["2026-05-16", "2026-05-17"] },
+];
+
 interface DailyHour {
   day: string;
+  date?: string;
   coachHrs: number;
   execHrs: number;
+  managerExecHrs?: number;
   totalHrs: number;
   classCount: number;
 }
@@ -29,9 +57,48 @@ interface StaffHourEntry {
   endDate: string;
   coachHrs: number;
   execHrs: number;
+  managerExecHrs: number;
   totalHrs: number;
   classCount: number;
   dailyBreakdown: DailyHour[];
+}
+
+/**
+ * Build the extra daily entries for any MANAGER_ON_DUTY_OVERRIDES that apply to
+ * this schedule. Each match becomes an exec-only day: `managerExecHrs` of the
+ * exec time is paid at BM_EXEC_RATE, the rest (up to the daily target) at the
+ * normal rate. Returns [] when nothing in this schedule matches.
+ */
+function managerOnDutyEntries(
+  selections: Record<string, string>,
+  branch: string,
+  startDate: string,
+  toDate: (day: string, start: string) => string,
+): { name: string; day: string; date: string; execHrs: number; managerExecHrs: number }[] {
+  const overrides = MANAGER_ON_DUTY_OVERRIDES.filter((o) => branchesMatch(branch, o.branch));
+  if (overrides.length === 0) return [];
+
+  const out: { name: string; day: string; date: string; execHrs: number; managerExecHrs: number }[] = [];
+  for (const o of overrides) {
+    // Count this person's MANAGER slots per weekday in the schedule.
+    const slotsPerDay: Record<string, number> = {};
+    for (const [key, val] of Object.entries(selections)) {
+      if (!key.endsWith("-MANAGER")) continue;
+      if (norm(val) !== norm(o.managerValue)) continue;
+      const day = key.slice(0, key.indexOf("-")); // weekday names contain no "-"
+      slotsPerDay[day] = (slotsPerDay[day] || 0) + 1;
+    }
+    for (const [day, slots] of Object.entries(slotsPerDay)) {
+      const date = toDate(day, startDate);
+      if (!o.dates.includes(date)) continue;
+      const isWeekend = day === "Saturday" || day === "Sunday";
+      const dailyTarget = isWeekend ? 10.5 : 5.0;
+      // Each non-admin slot is 1.25h; never let manager hours exceed the target.
+      const managerExecHrs = Math.min(slots * 1.25, dailyTarget);
+      out.push({ name: o.managerValue, day, date, execHrs: dailyTarget, managerExecHrs });
+    }
+  }
+  return out;
 }
 
 type StaffRecord = {
@@ -359,16 +426,45 @@ export async function GET(request: Request) {
           endDate: schedule.endDate,
           coachHrs: filteredCoachHrs,
           execHrs: filteredExecHrs,
+          managerExecHrs: 0,
           totalHrs: filteredCoachHrs + filteredExecHrs,
           classCount: filteredClassCount,
           dailyBreakdown: dailyWithDates,
         });
       });
+
+      // Stand-in manager-on-duty days (see MANAGER_ON_DUTY_OVERRIDES). These
+      // come from the MANAGER column, which the regular grid above ignores.
+      managerOnDutyEntries(selections, schedule.branch, schedule.startDate, dayNameToDate)
+        .filter((e) => e.date >= monthStart && e.date < nextMonth)
+        .forEach((e) => {
+          allEntries.push({
+            name: e.name,
+            branch: schedule.branch,
+            weekLabel: `${schedule.startDate} - ${schedule.endDate}`,
+            startDate: schedule.startDate,
+            endDate: schedule.endDate,
+            coachHrs: 0,
+            execHrs: e.execHrs,
+            managerExecHrs: e.managerExecHrs,
+            totalHrs: e.execHrs,
+            classCount: 0,
+            dailyBreakdown: [{
+              day: e.day,
+              date: e.date,
+              coachHrs: 0,
+              execHrs: e.execHrs,
+              managerExecHrs: e.managerExecHrs,
+              totalHrs: e.execHrs,
+              classCount: 0,
+            }],
+          });
+        });
     });
 
     // Aggregate by BranchStaff.id so name variants ("Diena" / "IRDIENA" /
     // "NUR IRDIENA BATRISYIA BINTI ASMAWI") collapse into one row.
-    interface DailyEntry { date: string; day: string; coachHrs: number; execHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }
+    interface DailyEntry { date: string; day: string; coachHrs: number; execHrs: number; managerExecHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }
 
     const aggregated: Record<string, {
       key: string;
@@ -380,6 +476,7 @@ export async function GET(request: Request) {
       position: string | null;
       coachHrs: number;
       execHrs: number;
+      managerExecHrs: number;
       totalHrs: number;
       classCount: number;
       coachPay: number;
@@ -417,6 +514,7 @@ export async function GET(request: Request) {
           position,
           coachHrs: 0,
           execHrs: 0,
+          managerExecHrs: 0,
           totalHrs: 0,
           classCount: 0,
           coachPay: 0,
@@ -429,6 +527,7 @@ export async function GET(request: Request) {
       const bucket = aggregated[key];
       bucket.coachHrs += entry.coachHrs;
       bucket.execHrs += entry.execHrs;
+      bucket.managerExecHrs += entry.managerExecHrs;
       bucket.totalHrs += entry.totalHrs;
       bucket.classCount += entry.classCount;
 
@@ -443,6 +542,7 @@ export async function GET(request: Request) {
           day: d.day,
           coachHrs: d.coachHrs,
           execHrs: d.execHrs,
+          managerExecHrs: d.managerExecHrs || 0,
           totalHrs: d.totalHrs,
           classCount: d.classCount || 0,
           scheduleBranch: isReplacement ? scheduleBranch : undefined,
@@ -480,7 +580,12 @@ export async function GET(request: Request) {
 
         const hasRate = emp.rate !== null && emp.rate > 0;
         const coachPay = isPT && hasRate ? emp.coachHrs * (emp.rate || 0) : 0;
-        const execPay = isPT && hasRate ? emp.execHrs * EXECUTIVE_RATE : 0;
+        // Manager-on-duty hours are paid at the elevated BM rate; the remaining
+        // exec time is paid at the normal rate.
+        const regularExecHrs = Math.max(0, emp.execHrs - emp.managerExecHrs);
+        const execPay = isPT && hasRate
+          ? regularExecHrs * EXECUTIVE_RATE + emp.managerExecHrs * BM_EXEC_RATE
+          : 0;
 
         return {
           ...emp,
@@ -538,6 +643,7 @@ export async function GET(request: Request) {
       totalExecPay: ptResults.reduce((s, r) => s + r.execPay, 0),
       totalPay: ptResults.reduce((s, r) => s + r.totalPay, 0),
       executiveRate: EXECUTIVE_RATE,
+      bmExecRate: BM_EXEC_RATE,
     };
 
     const weeksSet = new Set<string>();
