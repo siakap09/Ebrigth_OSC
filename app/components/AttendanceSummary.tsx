@@ -3,12 +3,20 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, useCallback } from "react";
 
-import { Users, UserCheck, LogOut, UserX, ArrowLeft, MapPin, RotateCcw, WifiOff, Loader2, ChevronDown, RefreshCw, CheckCircle2, AlertCircle, Clock, AlertTriangle, Info, Database, Search, X, ArrowUpDown, Wrench, ChevronRight, Calendar } from "lucide-react";
+import { Users, UserCheck, LogOut, UserX, ArrowLeft, MapPin, WifiOff, Loader2, ChevronDown, RefreshCw, CheckCircle2, AlertCircle, Clock, AlertTriangle, Info, Database, Search, X, ArrowUpDown, Wrench, ChevronRight, ChevronLeft, Calendar } from "lucide-react";
 import { motion } from "framer-motion";
 
 import Sidebar from "./Sidebar";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "./ui/Tooltip";
 import StatCard from "./ui/StatCard";
+import {
+  slotForDate,
+  hasSchedule,
+  checkInStatus as evalCheckIn,
+  checkOutStatus as evalCheckOut,
+  type CheckInStatus,
+  type CheckOutStatus,
+} from "@/lib/working-hours";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,10 +36,10 @@ interface AttendanceRecord {
   position: string;
   checkInTime: Date;
   checkInStr: string;
-  checkInStatus: "On Time" | "Late";
+  checkInStatus: CheckInStatus | null;
   checkOutTime: Date | null;
   checkOutStr: string | null;
-  checkOutStatus: "Normal" | "Left Early" | null;
+  checkOutStatus: CheckOutStatus | null;
   scanCount: number; // total scans from device today
   scannerLocation: string | null;
 }
@@ -80,20 +88,8 @@ function parseCSV(text: string): Employee[] {
 }
 
 // ─── Status helpers ────────────────────────────────────────────────────────────
-
-function timeToSeconds(t: string): number {
-  const [h, m, s] = t.split(":").map(Number);
-  return h * 3600 + m * 60 + (s ?? 0);
-}
-
-function getCheckInStatus(timeStr: string): "On Time" | "Late" {
-  return timeToSeconds(timeStr) <= timeToSeconds("09:00:00") ? "On Time" : "Late";
-}
-
-function getCheckOutStatus(timeStr: string, isSaturday: boolean): "Normal" | "Left Early" {
-  const threshold = isSaturday ? "19:00:00" : "18:00:00";
-  return timeToSeconds(timeStr) >= timeToSeconds(threshold) ? "Normal" : "Left Early";
-}
+// Late / Left Early are now driven per-employee by their working-hours schedule
+// (see @/lib/working-hours) rather than a fixed office-wide 09:00 / 18:00.
 
 function formatTime(d: Date): string {
   return d.toLocaleTimeString("en-MY", {
@@ -111,6 +107,20 @@ function formatDate(d: Date): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function checkInBadgeClass(s: CheckInStatus): string {
+  switch (s) {
+    case "On Time": return "bg-green-50 text-green-700 ring-1 ring-green-200";
+    case "Late":    return "bg-red-50 text-red-700 ring-1 ring-red-200";
+  }
+}
+
+function checkOutBadgeClass(s: CheckOutStatus): string {
+  switch (s) {
+    case "Clocked Out": return "bg-blue-50 text-blue-700 ring-1 ring-blue-200";
+    case "Left Early":  return "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200";
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -173,11 +183,15 @@ interface BranchStaffMember {
   location: string | null;
   start_date: string | null;
   endDate: string | null;
+  workingHours: unknown;
 }
 
 export default function AttendanceSummary() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Collapse the "Missing Today" panel to give the attendance table the full
+  // width (no horizontal scroll). Collapsed = slim header bar, not hidden.
+  const [missingCollapsed, setMissingCollapsed] = useState(false);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [logs, setLogs] = useState<AttendanceRecord[]>([]);
@@ -200,6 +214,11 @@ export default function AttendanceSummary() {
   // ── Date picker (defaults to today KL; auto-refresh only runs when on today) ──
   const [selectedDate, setSelectedDate] = useState<string>(todayKLStr());
   const isViewingToday = selectedDate === todayKLStr();
+
+  // ── Leave (AL / MC / etc) on the selected date, keyed by empNo ──────────────
+  // When an employee is on leave, the leave-type badge replaces their computed
+  // Late / Left Late / etc status.
+  const [leaveByEmpNo, setLeaveByEmpNo] = useState<Map<string, string>>(new Map());
 
   // ── Search + sort ──────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
@@ -268,8 +287,21 @@ export default function AttendanceSummary() {
       .catch(err => console.error("Failed to load all branch staff:", err));
   }, []);
 
+  // ── Load leave for the selected date ────────────────────────────────────────
+  const fetchLeave = useCallback(() => {
+    fetch(`/api/leave-status?date=${encodeURIComponent(selectedDate)}`)
+      .then(r => (r.ok ? r.json() : { leaves: [] }))
+      .then((d: { leaves?: { empNo: string; type: string }[] }) => {
+        const map = new Map<string, string>();
+        (d.leaves ?? []).forEach(l => { if (l.empNo) map.set(l.empNo, l.type); });
+        setLeaveByEmpNo(map);
+      })
+      .catch(() => setLeaveByEmpNo(new Map()));
+  }, [selectedDate]);
+
   useEffect(() => { fetchBranchStaff(); }, [fetchBranchStaff]);
   useEffect(() => { fetchAllBranchStaff(); }, [fetchAllBranchStaff]);
+  useEffect(() => { fetchLeave(); }, [fetchLeave]);
 
   // Re-pull both staff lists every 30s so employee dashboard edits flow
   // through to the attendance page without a page reload.
@@ -277,9 +309,10 @@ export default function AttendanceSummary() {
     const id = setInterval(() => {
       fetchBranchStaff();
       fetchAllBranchStaff();
+      fetchLeave();
     }, 30_000);
     return () => clearInterval(id);
-  }, [fetchBranchStaff, fetchAllBranchStaff]);
+  }, [fetchBranchStaff, fetchAllBranchStaff, fetchLeave]);
 
   // ── Poll /api/attendance-today every 5 seconds (reads from DB, written by office sync script) ──
   const fetchScans = useCallback(async () => {
@@ -316,18 +349,21 @@ export default function AttendanceSummary() {
         const emp   = employeesRef.current.find(e => e.scannerRef === row.empNo);
         const checkInDate = new Date(`${row.date}T${row.clockInTime}`);
         const checkOutDate = row.clockOutTime ? new Date(`${row.date}T${row.clockOutTime}`) : null;
-        const isSaturday = new Date().getDay() === 6;
+        // Resolve this person's scheduled window for the scan's weekday, then
+        // derive Late / Left Early from it. No slot for the day → no badge.
+        const slot = slotForDate(staff?.workingHours, row.date);
         return {
           empNo: row.empNo,
           name: staff?.name || emp?.name || row.empName || "Unknown",
-          dept: staff?.department || "—",
+          // Fall back to the branch code when no department is set on the record.
+          dept: staff?.department || staff?.branch || "—",
           position: staff?.role || "—",
           checkInTime: checkInDate,
           checkInStr: row.clockInTime,
-          checkInStatus: getCheckInStatus(row.clockInTime),
+          checkInStatus: evalCheckIn(slot, row.clockInTime),
           checkOutTime: checkOutDate,
           checkOutStr: row.clockOutTime ?? null,
-          checkOutStatus: row.clockOutTime ? getCheckOutStatus(row.clockOutTime, isSaturday) : null,
+          checkOutStatus: evalCheckOut(slot, row.clockOutTime ?? null),
           scanCount: row.clockOutTime ? 2 : 1,
           scannerLocation: row.scannerLocation,
         };
@@ -350,14 +386,6 @@ export default function AttendanceSummary() {
     const interval = setInterval(fetchScans, 5000);
     return () => clearInterval(interval);
   }, [fetchScans, isViewingToday]);
-
-  // ── Manual end-of-day reset ────────────────────────────────────────────────
-  const handleReset = useCallback(() => {
-    if (!window.confirm("Clear the displayed attendance records? The scanner's own data is unaffected.")) return;
-    setLogs([]);
-    setSeenScannerIds([]);
-    setRawCount(null);
-  }, []);
 
   // ── Pull all history from scanner ──────────────────────────────────────────
   const [backfilling, setBackfilling] = useState(false);
@@ -453,6 +481,15 @@ export default function AttendanceSummary() {
     const fullName = s.name.toUpperCase();
     return !scannedNames.some(sn => fullName.includes(sn) || sn.includes(fullName));
   });
+
+  // Active staff at this branch who have no working-hours schedule configured.
+  // Without a schedule, the Late / Left Early indicators above can't be computed
+  // for them — this list tells admins exactly whose hours still need filling.
+  // Re-derives on every staff re-pull (every 30s), so newly-filled records drop
+  // off automatically.
+  const noScheduleStaff = branchStaff.filter(
+    s => !!s.name && isEffectivelyActive(s) && !hasSchedule(s.workingHours),
+  );
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-50/30">
@@ -569,16 +606,6 @@ export default function AttendanceSummary() {
                     {backfillResult ?? 'Fetch past 90 days of thumbprint data from the scanner'}
                   </TooltipContent>
                 </Tooltip>
-
-                {isViewingToday && (
-                  <button
-                    onClick={handleReset}
-                    className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-red-200 text-red-700 text-sm font-medium rounded-lg hover:bg-red-50 hover:border-red-300 transition-all"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    End of Day Reset
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -677,12 +704,12 @@ export default function AttendanceSummary() {
 
           {/* ── Two-column: Today's Attendance + Missing Today ── */}
           <motion.div
-            className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+            className="flex flex-col lg:flex-row gap-6 items-stretch"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: "easeOut", delay: 0.2 }}
           >
-          <div className="lg:col-span-8">
+          <div className="flex-1 min-w-0">
           {/* ── Attendance Table ── */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200">
@@ -820,29 +847,30 @@ export default function AttendanceSummary() {
                             <td className="px-4 py-3.5 text-sm text-gray-700">{formatDate(record.checkInTime)}</td>
                             <td className="px-4 py-3.5 text-sm font-mono font-semibold text-green-700">{record.checkInStr}</td>
                             <td className="px-4 py-3.5">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
-                                record.checkInStatus === "On Time"
-                                  ? "bg-green-50 text-green-700 ring-1 ring-green-200"
-                                  : "bg-red-50 text-red-700 ring-1 ring-red-200"
-                              }`}>
-                                {record.checkInStatus === "On Time" ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                                {record.checkInStatus}
-                              </span>
+                              {leaveByEmpNo.get(record.empNo) ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200">
+                                  <Calendar className="w-3 h-3" />
+                                  {leaveByEmpNo.get(record.empNo)}
+                                </span>
+                              ) : record.checkInStatus ? (
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${checkInBadgeClass(record.checkInStatus)}`}>
+                                  {record.checkInStatus === "On Time" ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                                  {record.checkInStatus}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300">—</span>
+                              )}
                             </td>
                             <td className="px-4 py-3.5 text-sm font-mono font-semibold text-orange-600">
                               {record.checkOutStr ?? <span className="text-gray-300 font-normal">—</span>}
                             </td>
                             <td className="px-4 py-3.5">
-                              {record.checkOutStatus ? (
-                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
-                                  record.checkOutStatus === "Normal"
-                                    ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
-                                    : "bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200"
-                                }`}>
-                                  {record.checkOutStatus === "Normal" ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-                                  {record.checkOutStatus}
+                              {leaveByEmpNo.get(record.empNo) ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200">
+                                  <Calendar className="w-3 h-3" />
+                                  {leaveByEmpNo.get(record.empNo)}
                                 </span>
-                              ) : (
+                              ) : !record.checkOutStr ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
                                   <span className="relative flex h-1.5 w-1.5">
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
@@ -850,6 +878,13 @@ export default function AttendanceSummary() {
                                   </span>
                                   Currently In
                                 </span>
+                              ) : record.checkOutStatus ? (
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${checkOutBadgeClass(record.checkOutStatus)}`}>
+                                  {record.checkOutStatus === "Clocked Out" ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                                  {record.checkOutStatus}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300">—</span>
                               )}
                             </td>
                             <td className="px-4 py-3.5 text-center">
@@ -888,28 +923,68 @@ export default function AttendanceSummary() {
           </div>
           </div>
 
-          <div className="lg:col-span-4">
+          <div className={`shrink-0 ${missingCollapsed ? "lg:w-[180px]" : "lg:w-[360px]"}`}>
           {/* ── Missing Employees (from BranchStaff) ── */}
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-1 h-6 bg-red-500 rounded-full" />
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">
-                    {isViewingToday ? "Missing Today" : `Missing on ${prettyDateLabel(selectedDate)}`}
+          {missingCollapsed ? (
+            /* Collapsed: compact half-width card; click to reopen the list. */
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-1 h-6 bg-red-500 rounded-full shrink-0" />
+                  <h2 className="text-base font-bold text-gray-900 truncate">
+                    {isViewingToday ? "Missing Today" : "Missing"}
                   </h2>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {selectedLocation} branch · {isViewingToday ? "Active staff not yet scanned" : "Active staff with no scan that day"}
-                  </p>
                 </div>
+                <button
+                  onClick={() => setMissingCollapsed(false)}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors shrink-0"
+                  title="Expand the missing list"
+                  aria-label="Expand missing list"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
               </div>
-              {missingEmployees.length > 0 && (
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 text-red-700 ring-1 ring-red-200">
+              {missingEmployees.length > 0 ? (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 text-red-700 ring-1 ring-red-200 self-start">
                   <AlertTriangle className="w-3.5 h-3.5" />
                   <span className="text-sm font-bold">{missingEmployees.length}</span>
                   <span className="text-xs font-medium text-red-600">missing</span>
                 </div>
+              ) : (
+                <span className="text-xs text-gray-500">All scanned in.</span>
               )}
+            </div>
+          ) : (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 flex items-center justify-between gap-3 border-b border-gray-200">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-1 h-6 bg-red-500 rounded-full shrink-0" />
+                <div className="min-w-0">
+                  <h2 className="text-lg font-bold text-gray-900">
+                    {isViewingToday ? "Missing Today" : `Missing on ${prettyDateLabel(selectedDate)}`}
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">
+                    {selectedLocation} branch · {isViewingToday ? "Active staff not yet scanned" : "Active staff with no scan that day"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {missingEmployees.length > 0 && (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 text-red-700 ring-1 ring-red-200">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span className="text-sm font-bold">{missingEmployees.length}</span>
+                    <span className="text-xs font-medium text-red-600">missing</span>
+                  </div>
+                )}
+                <button
+                  onClick={() => setMissingCollapsed(true)}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+                  title="Collapse to widen the attendance table"
+                  aria-label="Collapse missing list"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             {missingEmployees.length === 0 ? (
               <div className="px-6 py-12 flex flex-col items-center gap-3 text-center">
@@ -957,7 +1032,14 @@ export default function AttendanceSummary() {
                               )}
                             </div>
                           </div>
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                          {s.employeeId && leaveByEmpNo.get(s.employeeId) ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200 shrink-0">
+                              <Calendar className="w-3 h-3" />
+                              {leaveByEmpNo.get(s.employeeId)}
+                            </span>
+                          ) : (
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                          )}
                         </div>
                       </TooltipTrigger>
                       <TooltipContent side="left" align="center" className="!max-w-[260px]">
@@ -986,7 +1068,74 @@ export default function AttendanceSummary() {
               </div>
             )}
           </div>
+          )}
           </div>
+          </motion.div>
+
+          {/* ── No Working Hours (schedule not configured) ── */}
+          <motion.div
+            className="mt-6"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut", delay: 0.25 }}
+          >
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-1 h-6 bg-amber-500 rounded-full" />
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">No Working Hours Set</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {selectedLocation} branch · Active staff with no schedule — Late / Left Early can&apos;t be calculated until filled
+                    </p>
+                  </div>
+                </div>
+                {noScheduleStaff.length > 0 ? (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span className="text-sm font-bold">{noScheduleStaff.length}</span>
+                    <span className="text-xs font-medium text-amber-600">to fill</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span className="text-xs font-semibold">All set</span>
+                  </div>
+                )}
+              </div>
+              {noScheduleStaff.length === 0 ? (
+                <div className="px-6 py-10 flex flex-col items-center gap-2 text-center">
+                  <p className="text-sm font-semibold text-gray-900">Every active staff member at {selectedLocation} has a schedule</p>
+                  <p className="text-xs text-gray-500">Working hours are configured in the Staff Directory.</p>
+                </div>
+              ) : (
+                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {noScheduleStaff.map((s, i) => {
+                    const display = s.name ?? "—";
+                    const initial = display.charAt(0).toUpperCase();
+                    return (
+                      <div
+                        key={`${s.id}-${i}`}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-amber-100 bg-amber-50/40"
+                      >
+                        <div className="w-9 h-9 rounded-full ring-2 bg-amber-50 text-amber-600 ring-amber-100 flex items-center justify-center shrink-0 font-semibold text-sm">
+                          {initial}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{display}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {s.role && <span className="text-[11px] text-gray-500 truncate">{s.role}</span>}
+                            {s.role && s.branch && <span className="text-gray-300 text-[11px]">·</span>}
+                            {s.branch && <span className="text-[11px] text-gray-400 truncate">{s.branch}</span>}
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-mono text-gray-400 shrink-0">{s.employeeId ?? "—"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </motion.div>
 
           {/* ── Diagnostics ── */}
