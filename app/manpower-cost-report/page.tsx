@@ -45,12 +45,13 @@ interface StaffEntry {
   isPT: boolean;
   coachHrs: number;
   execHrs: number;
+  managerExecHrs?: number;
   totalHrs: number;
   classCount: number;
   coachPay: number;
   execPay: number;
   totalPay: number;
-  days: { date: string; day: string; coachHrs: number; execHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }[];
+  days: { date: string; day: string; coachHrs: number; execHrs: number; managerExecHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }[];
 }
 
 interface Totals {
@@ -65,6 +66,7 @@ interface Totals {
   totalExecPay: number;
   totalPay: number;
   executiveRate: number;
+  bmExecRate?: number;
 }
 
 interface WeekRange {
@@ -211,6 +213,7 @@ export default function ManpowerCostReportPage() {
       // --- EMPLOYEE PDF: profile info + daily breakdown ---
       const s = filteredStaff[0];
       const eRate = data?.totals.executiveRate || 11;
+      const bmRate = data?.totals.bmExecRate || eRate;
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
@@ -246,14 +249,16 @@ export default function ManpowerCostReportPage() {
         const worked = !!e;
         const cls = worked ? (e.classCount ?? 0) : 0;
         if (isEmployeePT) {
+          const mgrHrs = worked ? (e.managerExecHrs || 0) : 0;
           const cp = worked ? e.coachHrs * (s.rate || 0) : 0;
-          const ep = worked ? e.execHrs * eRate : 0;
+          const ep = worked ? (e.execHrs - mgrHrs) * eRate + mgrHrs * bmRate : 0;
+          const execRateLabel = mgrHrs > 0 ? `RM${bmRate}/${eRate}` : `RM${eRate}`;
           return [
-            String(row.dayNum), row.day.slice(0,3), row.date,
+            String(row.dayNum), row.day.slice(0,3), row.date + (mgrHrs > 0 ? " (BM)" : ""),
             worked ? fmtHrs(e.coachHrs) : "-",
             worked && cls > 0 ? String(cls) : "-",
             worked && e.coachHrs > 0 ? `RM${s.rate}` : "-", worked && cp > 0 ? `RM ${cp.toFixed(2)}` : "-",
-            worked ? fmtHrs(e.execHrs) : "-", worked && e.execHrs > 0 ? `RM${eRate}` : "-", worked && ep > 0 ? `RM ${ep.toFixed(2)}` : "-",
+            worked ? fmtHrs(e.execHrs) : "-", worked && e.execHrs > 0 ? execRateLabel : "-", worked && ep > 0 ? `RM ${ep.toFixed(2)}` : "-",
             worked ? fmtHrs(e.totalHrs) : "-",
             worked ? `RM ${(cp + ep).toFixed(2)}` : "-",
           ];
@@ -399,11 +404,14 @@ export default function ManpowerCostReportPage() {
       if (weekDays.length === 0) return null;
       const coachHrs = weekDays.reduce((sum, d) => sum + d.coachHrs, 0);
       const execHrs = weekDays.reduce((sum, d) => sum + d.execHrs, 0);
+      const managerExecHrs = weekDays.reduce((sum, d) => sum + (d.managerExecHrs || 0), 0);
       const classCount = weekDays.reduce((sum, d) => sum + (d.classCount || 0), 0);
       const totalHrs = coachHrs + execHrs;
+      const execRate = data?.totals.executiveRate || 11;
+      const bmRate = data?.totals.bmExecRate || execRate;
       const coachPay = s.isPT && s.rate ? coachHrs * s.rate : 0;
-      const execPay = s.isPT ? execHrs * (data?.totals.executiveRate || 11) : 0;
-      return { ...s, days: weekDays, coachHrs, execHrs, totalHrs, classCount, coachPay, execPay, totalPay: coachPay + execPay };
+      const execPay = s.isPT ? (execHrs - managerExecHrs) * execRate + managerExecHrs * bmRate : 0;
+      return { ...s, days: weekDays, coachHrs, execHrs, managerExecHrs, totalHrs, classCount, coachPay, execPay, totalPay: coachPay + execPay };
     })
     .filter((s): s is StaffEntry => {
       if (!s) return false;
@@ -613,6 +621,7 @@ export default function ManpowerCostReportPage() {
               );
 
               const execRate = data.totals.executiveRate || 11;
+              const bmRate = data.totals.bmExecRate || execRate;
               const [yr, mn] = selectedMonth.split("-").map(Number);
               const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
               const numDays = new Date(yr, mn, 0).getDate();
@@ -626,7 +635,7 @@ export default function ManpowerCostReportPage() {
               const displayDays = weekFilter
                 ? allDaysRaw.filter((d) => d.date >= weekStart && d.date <= weekEnd)
                 : allDaysRaw;
-              const workedMap: Record<string, { coachHrs: number; execHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
+              const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
               s.days.forEach((d) => { workedMap[d.date] = d; });
 
               return (
@@ -764,8 +773,10 @@ export default function ManpowerCostReportPage() {
                             const entry = workedMap[row.date];
                             const isWeekend = row.day === "Saturday" || row.day === "Sunday";
                             const worked = !!entry;
+                            const mgrHrs = worked ? (entry.managerExecHrs || 0) : 0;
+                            const isManagerDay = mgrHrs > 0;
                             const coachPayDay = worked ? entry.coachHrs * (s.rate || 0) : 0;
-                            const execPayDay = worked ? entry.execHrs * execRate : 0;
+                            const execPayDay = worked ? (entry.execHrs - mgrHrs) * execRate + mgrHrs * bmRate : 0;
                             const dayPay = coachPayDay + execPayDay;
 
                             const isReplacement = worked && entry.scheduleBranch;
@@ -787,6 +798,9 @@ export default function ManpowerCostReportPage() {
                                   {isReplacement && (
                                     <span className="ml-1 text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">@ {entry.scheduleBranch}</span>
                                   )}
+                                  {isManagerDay && (
+                                    <span className="ml-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded" title={`Manager on Duty — exec hours paid at RM${bmRate}/hr`}>BM</span>
+                                  )}
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
                                   <span className={worked ? "text-orange-600" : "text-slate-300"}>{worked ? fmtHrs(entry.coachHrs) : "-"}</span>
@@ -804,7 +818,7 @@ export default function ManpowerCostReportPage() {
                                   <span className={worked ? "text-indigo-600" : "text-slate-300"}>{worked ? fmtHrs(entry.execHrs) : "-"}</span>
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs text-slate-400">
-                                  {worked && entry.execHrs > 0 ? `RM${execRate}` : "-"}
+                                  {worked && entry.execHrs > 0 ? (isManagerDay ? `RM${bmRate}/${execRate}` : `RM${execRate}`) : "-"}
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
                                   <span className={worked && execPayDay > 0 ? "text-indigo-700" : "text-slate-300"}>{worked && execPayDay > 0 ? `RM ${execPayDay.toFixed(2)}` : "-"}</span>
@@ -1038,9 +1052,10 @@ export default function ManpowerCostReportPage() {
                                   const allDaysInMonth = weekFilter
                                     ? allDaysRaw.filter((d) => d.date >= weekStart && d.date <= weekEnd)
                                     : allDaysRaw;
-                                  const workedMap: Record<string, { coachHrs: number; execHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
+                                  const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
                                   s.days.forEach((d) => { workedMap[d.date] = d; });
                                   const execRate = data?.totals.executiveRate || 10;
+                                  const bmRate = data?.totals.bmExecRate || execRate;
 
                                   return (
                                     <tr>
@@ -1074,7 +1089,9 @@ export default function ManpowerCostReportPage() {
                                                   const entry = workedMap[row.date];
                                                   const isWeekend = row.day === "Saturday" || row.day === "Sunday";
                                                   const worked = !!entry;
-                                                  const dayPay = worked && s.isPT ? ((entry.coachHrs * (s.rate || 0)) + (entry.execHrs * execRate)) : 0;
+                                                  const mgrHrs = worked ? (entry.managerExecHrs || 0) : 0;
+                                                  const isManagerDay = mgrHrs > 0;
+                                                  const dayPay = worked && s.isPT ? ((entry.coachHrs * (s.rate || 0)) + ((entry.execHrs - mgrHrs) * execRate) + (mgrHrs * bmRate)) : 0;
                                                   const isReplacement = worked && entry.scheduleBranch;
 
                                                   return (
@@ -1093,6 +1110,9 @@ export default function ManpowerCostReportPage() {
                                                         {row.date}
                                                         {isReplacement && (
                                                           <span className="ml-1 text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">@ {entry.scheduleBranch}</span>
+                                                        )}
+                                                        {isManagerDay && (
+                                                          <span className="ml-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded" title={`Manager on Duty — exec hours paid at RM${bmRate}/hr`}>BM</span>
                                                         )}
                                                       </td>
                                                       <td className="px-4 py-1.5 text-center text-xs font-bold">
