@@ -76,10 +76,12 @@ export async function saveWorkingHours(
     // schema.prisma was just updated, and the typed client may lag until the
     // dev server restarts and triggers `prisma generate`.
     //
-    // hrfsPrisma writes straight to public."BranchStaff" in ebright_hrfs (the
-    // real table), rather than through the crm view/FDW.
+    // Unqualified table name resolves via the connection's search_path:
+    // public."BranchStaff" under hrfsPrisma, or crm."BranchStaff" (an updatable
+    // view / FDW that forwards to the same row) when falling back to
+    // DATABASE_URL. UPDATE works through either.
     const affected = await hrfsPrisma.$executeRaw`
-      UPDATE public."BranchStaff"
+      UPDATE "BranchStaff"
       SET "workingHours" = ${JSON.stringify(sanitized)}::jsonb,
           "updatedAt"    = NOW()
       WHERE id = ${branchStaffId}
@@ -125,7 +127,7 @@ export async function saveWorkingHoursBatch(
 
   try {
     const affected = await hrfsPrisma.$executeRaw`
-      UPDATE public."BranchStaff"
+      UPDATE "BranchStaff"
       SET "workingHours" = ${JSON.stringify(sanitized)}::jsonb,
           "updatedAt"    = NOW()
       WHERE id IN (${Prisma.join(ids)})

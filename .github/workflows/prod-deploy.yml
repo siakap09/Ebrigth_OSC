@@ -33,6 +33,7 @@ jobs:
             export BETTER_AUTH_SECRET='${{ secrets.BETTER_AUTH_SECRET }}'
             export ENCRYPTION_KEY='${{ secrets.ENCRYPTION_KEY }}'
             export DATABASE_URL='${{ secrets.DATABASE_URL }}'
+            export HRFS_DATABASE_URL='${{ secrets.HRFS_DATABASE_URL }}'
             export CRM_PREVIEW_MODE='${{ secrets.CRM_PREVIEW_MODE }}'
             export SHARED_SSO_SECRET='${{ secrets.SHARED_SSO_SECRET }}'
             export INVENTORY_URL='${{ secrets.INVENTORY_URL }}'
