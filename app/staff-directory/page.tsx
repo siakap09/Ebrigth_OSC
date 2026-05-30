@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/nextauth";
 import { prisma } from "@/lib/prisma";
+import { hrfsPrisma } from "@/lib/hrfs";
 import StaffDirectory, {
   type DirectoryPerson,
   type DirectoryBranch,
@@ -179,15 +180,13 @@ export default async function StaffDirectoryPage() {
   // Filter on role (the actual job-title column in v1), not position. Rows
   // with a blank role still load but render at the default tier in the chart.
   //
-  // Source is `crm."BranchStaff"` — a view that resolves to:
-  //   * an alias of public."BranchStaff" in ebright_hrfs (dev), or
-  //   * an FDW foreign table proxying public."BranchStaff" in ebright_crm
-  //     (staging / prod). Same name, same shape, same data.
-  const rows = await prisma.$queryRaw<BranchStaffRow[]>`
+  // Source is `public."BranchStaff"` in ebright_hrfs — the real table, read
+  // directly via hrfsPrisma rather than through the crm view/FDW.
+  const rows = await hrfsPrisma.$queryRaw<BranchStaffRow[]>`
     SELECT id, name, nickname, branch, role, email, phone, "employeeId",
            department, position, location, status, start_date, "endDate",
            "workingHours"
-    FROM crm."BranchStaff"
+    FROM public."BranchStaff"
     WHERE role IS NOT NULL AND TRIM(role) <> ''
   `;
 

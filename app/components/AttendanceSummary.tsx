@@ -1013,6 +1013,9 @@ export default function AttendanceSummary() {
                     "bg-pink-50 text-pink-600 ring-pink-100",
                   ];
                   const tone = tones[i % tones.length];
+                  // HQ staff are split across internal departments — show the
+                  // department (e.g. "MKT") instead of the generic "HQ" branch.
+                  const locationLabel = s.branch === "HQ" ? (s.department || s.branch) : s.branch;
                   return (
                     <Tooltip key={`${s.id}-${i}`}>
                       <TooltipTrigger asChild>
@@ -1026,9 +1029,9 @@ export default function AttendanceSummary() {
                               {s.role && (
                                 <span className="text-[11px] text-gray-500 truncate">{s.role}</span>
                               )}
-                              {s.role && s.branch && <span className="text-gray-300 text-[11px]">·</span>}
-                              {s.branch && (
-                                <span className="text-[11px] text-gray-400 truncate">{s.branch}</span>
+                              {s.role && locationLabel && <span className="text-gray-300 text-[11px]">·</span>}
+                              {locationLabel && (
+                                <span className="text-[11px] text-gray-400 truncate">{locationLabel}</span>
                               )}
                             </div>
                           </div>

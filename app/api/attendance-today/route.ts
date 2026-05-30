@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { hrfsPrisma } from '@/lib/hrfs';
 import { requireSession, canSeeAllBranches } from '@/lib/auth';
 import { isEmployee } from '@/lib/roles';
 
@@ -53,13 +54,13 @@ export async function GET(req: NextRequest) {
     if (!canSeeAllBranches(session)) {
       if (isEmployee(sessionUser?.role)) {
         if (!sessionUser.email) return NextResponse.json([]);
-        const self = await prisma.branchStaff.findFirst({
+        const self = await hrfsPrisma.branchStaff.findFirst({
           where:  { email: { equals: sessionUser.email, mode: 'insensitive' } },
           select: { employeeId: true },
         });
         empNoFilter = self?.employeeId ? [self.employeeId] : [];
       } else if (sessionUser?.branchName) {
-        const staff = await prisma.branchStaff.findMany({
+        const staff = await hrfsPrisma.branchStaff.findMany({
           where:  { branch: sessionUser.branchName },
           select: { employeeId: true },
         });

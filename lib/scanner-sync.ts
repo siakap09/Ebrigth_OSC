@@ -10,6 +10,7 @@
 
 import { request } from 'urllib';
 import { prisma } from '@/lib/prisma';
+import { hrfsPrisma } from '@/lib/hrfs';
 import { sendClockInEmail, sendClockOutEmail } from '@/lib/mailer';
 import { SCANNERS, ScannerConfig } from '@/lib/scanners';
 
@@ -295,7 +296,7 @@ async function processScannerEvents(
  * Pass sendEmails=false for backfill (avoids sending stale notifications).
  */
 export async function syncDateToDb(date: string, sendEmails = true): Promise<void> {
-  const allStaff = await prisma.branchStaff.findMany({
+  const allStaff = await hrfsPrisma.branchStaff.findMany({
     select: { employeeId: true, name: true, email: true },
   });
   const staffByEmpNo = new Map(allStaff.map(s => [s.employeeId, s]));

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { hrfsPrisma } from '@/lib/hrfs';
 import { requireSession, requireRole, assertSameBranch, canSeeAllBranches } from '@/lib/auth';
 import {
   ADMIN_ROLES,
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
   if (isEmployee(callerRole) || isExecutive(callerRole) || isIntern(callerRole)) {
     const email = sessionUser?.email;
     if (!email) return NextResponse.json([]);
-    const self = await prisma.branchStaff.findFirst({
+    const self = await hrfsPrisma.branchStaff.findFirst({
       where: { email: { equals: email, mode: 'insensitive' } },
       orderBy: { id: 'asc' },
     });
@@ -121,7 +121,7 @@ export async function GET(request: Request) {
     where.role = { in: ["FT - Coach", "PT - Coach"] };
   }
 
-  const staff = await prisma.branchStaff.findMany({ where, orderBy: { id: 'asc' } });
+  const staff = await hrfsPrisma.branchStaff.findMany({ where, orderBy: { id: 'asc' } });
 
   const mapper = isAcademy(callerRole) ? toEmployeeForAcademy : toEmployee;
   let results = staff.map(mapper);
@@ -158,7 +158,7 @@ export async function POST(request: Request) {
       if (!isValidEmployeeId(employeeId)) {
         return NextResponse.json({ error: 'Employee ID must be exactly 8 digits' }, { status: 400 });
       }
-      const existingByEmployeeId = await prisma.branchStaff.findFirst({ where: { employeeId } });
+      const existingByEmployeeId = await hrfsPrisma.branchStaff.findFirst({ where: { employeeId } });
       if (existingByEmployeeId) {
         return NextResponse.json({ error: 'Employee ID already exists' }, { status: 409 });
       }
@@ -171,12 +171,12 @@ export async function POST(request: Request) {
     const normalizedNickName = nickName ? nickName.toUpperCase() : null;
     const normalizedHomeAddress = homeAddress ? homeAddress.toUpperCase() : null;
 
-    const existingByEmail = await prisma.branchStaff.findFirst({ where: { email } });
+    const existingByEmail = await hrfsPrisma.branchStaff.findFirst({ where: { email } });
     if (existingByEmail) {
       return NextResponse.json({ error: 'Email already exists' }, { status: 409 });
     }
 
-    const newStaff = await prisma.branchStaff.create({
+    const newStaff = await hrfsPrisma.branchStaff.create({
       data: {
         name: normalizedFullName,
         gender: gender || 'MALE',
@@ -257,7 +257,7 @@ export async function PUT(request: Request) {
           { status: 403 },
         );
       }
-      const target = await prisma.branchStaff.findUnique({
+      const target = await hrfsPrisma.branchStaff.findUnique({
         where: { id: parseInt(id) },
         select: { role: true },
       });
@@ -292,7 +292,7 @@ export async function PUT(request: Request) {
         const branchGuard = assertSameBranch(session, branch);
         if (branchGuard) return branchGuard;
       }
-      const existing = await prisma.branchStaff.findUnique({
+      const existing = await hrfsPrisma.branchStaff.findUnique({
         where: { id: parseInt(id) },
         select: { branch: true },
       });
@@ -307,7 +307,7 @@ export async function PUT(request: Request) {
       if (!isValidEmployeeId(employeeId)) {
         return NextResponse.json({ error: 'Employee ID must be exactly 8 digits' }, { status: 400 });
       }
-      const existingByEmployeeId = await prisma.branchStaff.findFirst({
+      const existingByEmployeeId = await hrfsPrisma.branchStaff.findFirst({
         where: { employeeId, NOT: { id: parseInt(id) } },
       });
       if (existingByEmployeeId) {
@@ -315,7 +315,7 @@ export async function PUT(request: Request) {
       }
     }
 
-    const updated = await prisma.branchStaff.update({
+    const updated = await hrfsPrisma.branchStaff.update({
       where: { id: parseInt(id) },
       data: {
         ...(fullName !== undefined && { name: fullName.toUpperCase() }),
@@ -374,7 +374,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
     }
 
-    const existing = await prisma.branchStaff.findUnique({
+    const existing = await hrfsPrisma.branchStaff.findUnique({
       where: { id: parseInt(id) },
       select: { branch: true },
     });
@@ -384,7 +384,7 @@ export async function DELETE(request: Request) {
     const idGuard = assertSameBranch(session, existing.branch);
     if (idGuard) return idGuard;
 
-    const deleted = await prisma.branchStaff.delete({ where: { id: parseInt(id) } });
+    const deleted = await hrfsPrisma.branchStaff.delete({ where: { id: parseInt(id) } });
 
     return NextResponse.json({
       message: 'Employee deleted successfully',

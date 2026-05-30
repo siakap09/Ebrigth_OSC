@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { hrfsPrisma } from "@/lib/hrfs";
 import { requireSession, canSeeAllBranches } from "@/lib/auth";
 import {
   getWorkingDaysForBranch,
@@ -350,7 +351,7 @@ export async function GET(request: Request) {
     });
 
     // Source of truth: BranchStaff table only.
-    const allStaff: StaffRecord[] = await prisma.branchStaff.findMany({
+    const allStaff: StaffRecord[] = await hrfsPrisma.branchStaff.findMany({
       select: {
         id: true,
         name: true,
