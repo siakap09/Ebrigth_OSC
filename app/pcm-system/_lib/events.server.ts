@@ -228,15 +228,13 @@ export async function fetchAllEventData(): Promise<{
         WHERE tenant_id = $1`,
       [TENANT]
     ),
+    // Try the LEFT JOIN form first so we ship student name/grade/parent
+    // inline alongside each invitation (lets the UI render a name even
+    // when /api/pcm/students drops a record during strict validation).
+    // If that fails — for example studentrecords doesn't exist on this DB,
+    // or studentrecords.id has a type that won't cast cleanly to text —
+    // fall back to the plain invitations query so the page is never blank.
     pool.query<InvitationRow>(
-      // LEFT JOIN studentrecords so we ship the student name/grade/parent
-      // details inline. The dedicated /api/pcm/students endpoint applies
-      // strict validation (must have a known branch + parseable grade) and
-      // silently drops records that fail; rather than rebuild that here,
-      // the invitations payload now denormalises whatever Heidi has so the
-      // list view can always render a name. CAST student_id → bigint
-      // because studentrecords.id is numeric while pcm_invitations.student_id
-      // is text.
       `SELECT i.id, i.event_id, i.session_id, i.student_id, i.branch, i.target_grade,
               i.status, i.invited_by, i.invited_at, i.confirmed_at,
               i.attendance_marked_at, i.attendance_marked_by, i.notes, i.invite_type,
@@ -250,7 +248,24 @@ export async function fetchAllEventData(): Promise<{
                 ON s.id::text = i.student_id
         WHERE i.tenant_id = $1`,
       [TENANT]
-    ),
+    ).catch((err) => {
+      console.warn(
+        "[pcm] invitations LEFT JOIN studentrecords failed; falling back to plain query:",
+        err instanceof Error ? err.message : err
+      );
+      return pool.query<InvitationRow>(
+        `SELECT id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
+                invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes,
+                invite_type, coach_id, coach_name, paid,
+                NULL::text AS student_name,
+                NULL::text AS student_grade_chapter,
+                NULL::text AS student_parent_name,
+                NULL::text AS student_parent_phone
+           FROM pcm_invitations
+          WHERE tenant_id = $1`,
+        [TENANT]
+      );
+    }),
     // Per-event per-branch multi-grade overrides. The pcm_event_branch_overrides
     // table may not exist on older deploys yet — wrap in a try so the FA
     // dashboard still loads if the migration hasn't been applied.
