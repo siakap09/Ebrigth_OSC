@@ -323,3 +323,39 @@ export interface EventWithStats extends FAEvent {
   totalConfirmed: number;
   totalAttended: number;
 }
+
+// ----------------------------------------------------------------------------
+// FA Assessment Report — Marketing-filled appraisal attached to one invitation.
+// ----------------------------------------------------------------------------
+/** Maximum score per criterion. Total = 4 × this = /100. */
+export const FA_REPORT_MAX_PER_CRITERION = 25;
+
+export interface FAReport {
+  id: string;
+  invitationId: string;
+  studentId: string;
+  /** Snapshot of student state at the time the report was written. */
+  studentName: string;
+  branch: BranchCode;
+  grade: number;
+  /** ISO date — when the assessment took place. */
+  assessmentDate: string;
+  /** Four criteria from the FA template, each 0–25. */
+  communicationScore: number;
+  analysisScore: number;
+  interactionScore: number;
+  performanceScore: number;
+  /** Combined free-text remarks. */
+  remarks: string;
+  /** Person who filled the form. */
+  preparedBy: string;
+  preparedById?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Helper: derive the total score from the four criteria. */
+export function faReportTotal(r: Pick<FAReport, "communicationScore" | "analysisScore" | "interactionScore" | "performanceScore">): number {
+  return r.communicationScore + r.analysisScore + r.interactionScore + r.performanceScore;
+}
+

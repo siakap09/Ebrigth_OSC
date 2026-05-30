@@ -21,6 +21,7 @@ export async function PATCH(
       inviteType: body.inviteType === "progress" || body.inviteType === "renewal"
         ? (body.inviteType as InviteType)
         : undefined,
+      paid: typeof body.paid === "boolean" ? body.paid : undefined,
     });
     if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(updated);

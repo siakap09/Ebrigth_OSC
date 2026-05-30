@@ -135,6 +135,8 @@ interface FAStore {
   ) => Promise<void>;
   /** Flip an existing invitation between Progress and Renewal. */
   updateInviteType: (invitationId: string, inviteType: InviteType) => Promise<void>;
+  /** Mark an invitation as paid or unpaid. Independent of attendance. */
+  setInvitationPaid: (invitationId: string, paid: boolean) => Promise<void>;
   /** Move an invitation to a (possibly different) event + session. The
    *  server writes both event_id and session_id in one PATCH. Use this
    *  for the "Reschedule with target picker" flow; `moveInvitationToSession`
@@ -524,6 +526,18 @@ export const useFAStore = create<FAStore>()(
           const detail = (r.body as { error?: string })?.error ?? `HTTP ${r.status}`;
           throw new Error(`Reschedule failed: ${detail}`);
         }
+        const updated = r.data;
+        set((s) => ({
+          invitations: s.invitations.map((i) => (i.id === id ? updated : i)),
+        }));
+      },
+
+      setInvitationPaid: async (id, paid) => {
+        const r = await apiJson<Invitation>(
+          `/api/pcm/invitations/${encodeURIComponent(id)}`,
+          { method: "PATCH", body: JSON.stringify({ paid }) },
+        );
+        if (!r.ok) throw new Error(`Set paid failed (HTTP ${r.status})`);
         const updated = r.data;
         set((s) => ({
           invitations: s.invitations.map((i) => (i.id === id ? updated : i)),

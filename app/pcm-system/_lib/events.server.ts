@@ -79,6 +79,14 @@ interface InvitationRow {
   invite_type: string;
   coach_id: string | null;
   coach_name: string | null;
+  paid: boolean;
+  // LEFT-JOINed from studentrecords so the UI can render a row's name even
+  // when /api/pcm/students drops the student for strict-validation reasons
+  // (missing branch/grade/etc).
+  student_name: string | null;
+  student_grade_chapter: string | null;
+  student_parent_name: string | null;
+  student_parent_phone: string | null;
 }
 
 interface EventBranchOverrideRow {
@@ -150,6 +158,18 @@ function rowToOverride(r: EventBranchOverrideRow): EventBranchOverride {
   };
 }
 
+// Lightweight grade parser — matches the same "G3" / "G3-C5" patterns the
+// students loader handles, but tolerates a missing/garbled value by
+// returning undefined instead of throwing. We only need the integer grade
+// here, not the chapter.
+function parseGradeFromChapter(raw: string | null): number | undefined {
+  if (!raw) return undefined;
+  const m = raw.match(/g\s*(\d+)/i);
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n >= 1 && n <= 12 ? n : undefined;
+}
+
 function rowToInvitation(r: InvitationRow): Invitation {
   return {
     id: r.id,
@@ -162,12 +182,17 @@ function rowToInvitation(r: InvitationRow): Invitation {
     inviteType: (r.invite_type === "renewal" ? "renewal" : "progress") as InviteType,
     coachId: r.coach_id ?? undefined,
     coachName: r.coach_name ?? undefined,
+    paid: r.paid === true,
     invitedBy: r.invited_by ?? "",
     invitedAt: isoTimestamp(r.invited_at) ?? new Date().toISOString(),
     confirmedAt: isoTimestamp(r.confirmed_at),
     attendanceMarkedAt: isoTimestamp(r.attendance_marked_at),
     attendanceMarkedBy: r.attendance_marked_by ?? undefined,
     notes: r.notes ?? undefined,
+    studentName: r.student_name ?? undefined,
+    studentGrade: parseGradeFromChapter(r.student_grade_chapter),
+    studentParentName: r.student_parent_name ?? undefined,
+    studentParentPhone: r.student_parent_phone ?? undefined,
   };
 }
 
@@ -203,13 +228,44 @@ export async function fetchAllEventData(): Promise<{
         WHERE tenant_id = $1`,
       [TENANT]
     ),
+    // Try the LEFT JOIN form first so we ship student name/grade/parent
+    // inline alongside each invitation (lets the UI render a name even
+    // when /api/pcm/students drops a record during strict validation).
+    // If that fails — for example studentrecords doesn't exist on this DB,
+    // or studentrecords.id has a type that won't cast cleanly to text —
+    // fall back to the plain invitations query so the page is never blank.
     pool.query<InvitationRow>(
-      `SELECT id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-              invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name
-         FROM pcm_invitations
-        WHERE tenant_id = $1`,
+      `SELECT i.id, i.event_id, i.session_id, i.student_id, i.branch, i.target_grade,
+              i.status, i.invited_by, i.invited_at, i.confirmed_at,
+              i.attendance_marked_at, i.attendance_marked_by, i.notes, i.invite_type,
+              i.coach_id, i.coach_name, i.paid,
+              s.name           AS student_name,
+              s.grade_chapter  AS student_grade_chapter,
+              s.guardian_name  AS student_parent_name,
+              s.guardian_mobile AS student_parent_phone
+         FROM pcm_invitations i
+         LEFT JOIN studentrecords s
+                ON s.id::text = i.student_id
+        WHERE i.tenant_id = $1`,
       [TENANT]
-    ),
+    ).catch((err) => {
+      console.warn(
+        "[pcm] invitations LEFT JOIN studentrecords failed; falling back to plain query:",
+        err instanceof Error ? err.message : err
+      );
+      return pool.query<InvitationRow>(
+        `SELECT id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
+                invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes,
+                invite_type, coach_id, coach_name, paid,
+                NULL::text AS student_name,
+                NULL::text AS student_grade_chapter,
+                NULL::text AS student_parent_name,
+                NULL::text AS student_parent_phone
+           FROM pcm_invitations
+          WHERE tenant_id = $1`,
+        [TENANT]
+      );
+    }),
     // Per-event per-branch multi-grade overrides. The pcm_event_branch_overrides
     // table may not exist on older deploys yet — wrap in a try so the FA
     // dashboard still loads if the migration hasn't been applied.
@@ -579,7 +635,7 @@ export async function createInvitationRow(args: {
          (tenant_id, event_id, session_id, student_id, branch, target_grade, status, invited_by, invited_at, confirmed_at, invite_type)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $7 = 'confirmed' THEN now() ELSE NULL END, $9)
        RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-                 invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name`,
+                 invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name, paid`,
       [TENANT, args.eventId, args.sessionId, args.studentId, args.branch, args.targetGrade, args.status, args.invitedBy, inviteType]
     );
     return rowToInvitation(rows[0]);
@@ -609,6 +665,8 @@ export async function updateInvitationRow(
     coachName?: string | null;
     /** Allow the BM to flip Progress ↔ Renewal after the fact. */
     inviteType?: InviteType;
+    /** Mark this slot as paid / unpaid. Independent of attendance. */
+    paid?: boolean;
   }
 ): Promise<Invitation | null> {
   const fields: string[] = [];
@@ -648,13 +706,17 @@ export async function updateInvitationRow(
     fields.push(`invite_type = $${i++}`);
     values.push(patch.inviteType);
   }
+  if (patch.paid !== undefined) {
+    fields.push(`paid = $${i++}`);
+    values.push(patch.paid);
+  }
   if (fields.length === 0) return null;
   fields.push(`updated_at = now()`);
   values.push(id, TENANT);
   const { rows } = await pool.query<InvitationRow>(
     `UPDATE pcm_invitations SET ${fields.join(", ")} WHERE id = $${i++} AND tenant_id = $${i}
      RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-               invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name`,
+               invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name, paid`,
     values
   );
   if (!rows[0]) return null;

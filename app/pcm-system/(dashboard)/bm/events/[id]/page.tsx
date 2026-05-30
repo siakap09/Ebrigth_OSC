@@ -226,8 +226,11 @@ export default function BMEventDetailPage() {
                 return (
                   <div key={dayNum}>
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="w-6 h-6 rounded bg-brand-900 text-white flex items-center justify-center text-xs font-semibold">
-                        D{dayNum}
+                      {/* Weekday abbreviation badge — academy feedback: bare
+                          day-numbers (D2/D3) were confusing. Show "Wed",
+                          "Thu" instead, sized a bit wider to fit. */}
+                      <div className="px-2 h-6 min-w-[36px] rounded bg-brand-900 text-white flex items-center justify-center text-[11px] font-bold uppercase tracking-wider">
+                        {dayDate.toLocaleDateString(undefined, { weekday: "short" })}
                       </div>
                       <div className="text-xs text-ink-500">
                         {dayDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
@@ -293,8 +296,11 @@ export default function BMEventDetailPage() {
             </div>
           </div>
 
-          {/* Right: invitation list for selected session */}
-          <div>
+          {/* Right: invitation list for selected session.
+              `min-w-0` is essential — without it, the wide invitations
+              table forces the grid column to grow, pushing the Invite
+              button beyond the viewport edge. */}
+          <div className="min-w-0">
             {!selectedSession ? (
               <div className="fa-card p-12 text-center">
                 <div className="w-14 h-14 rounded-full bg-ivory-200 text-ink-400 flex items-center justify-center mx-auto mb-4">
