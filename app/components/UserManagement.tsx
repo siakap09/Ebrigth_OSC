@@ -8,6 +8,11 @@ import { isInTraining } from "@/lib/training";
 import EmployeeIdInput from "@/app/components/EmployeeIdInput";
 import { splitEmployeeId, composeEmployeeId, isValidSuffix, isValidEmployeeId } from "@/lib/employeeId";
 
+// Department applies only to HQ staff; Rate only to part-time coaches (paid
+// hourly). Both fields are conditionally shown based on these checks.
+const isPartTimeCoach = (role?: string | null) =>
+  (role ?? "").trim().toUpperCase().startsWith("PT - COACH");
+
 interface User {
   id: string;
   employeeId: string;
@@ -227,6 +232,10 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
     } else if (name === "accessStatus") {
       updates.Emp_Status = value === "AUTHORIZED" ? "Active" : value === "UNAUTHORIZED" ? "Inactive" : editData.Emp_Status;
     }
+    // Department only applies to HQ; Rate only to part-time coaches. Clear the
+    // stale value when the controlling field changes so it isn't saved.
+    if (name === "branch" && value !== "HQ") updates.department = "";
+    if (name === "role" && !isPartTimeCoach(value)) updates.rate = "";
     setEditData({ ...editData, ...updates });
   };
 
@@ -484,13 +493,15 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
                           {BRANCH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Department</label>
-                        <select name="department" value={editData?.department || ""} onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                          {DEPARTMENT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </div>
+                      {editData?.branch === "HQ" && (
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Department</label>
+                          <select name="department" value={editData?.department || ""} onChange={handleInputChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            {DEPARTMENT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </div>
+                      )}
                       <div>
                         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Role</label>
                         <select name="role" value={editData?.role || ""} onChange={handleInputChange}
@@ -508,7 +519,8 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
                       {inp("Start Date", "startDate", "date")}
                       {inp("Probation", "probation", "date")}
                       {inp("End Date", "endDate", "date")}
-                      {inp("Rate", "rate", "number")}
+                      {/* Rate — only for part-time coaches (paid hourly) */}
+                      {isPartTimeCoach(editData?.role) && inp("Rate", "rate", "number")}
                       {inp("Hire Date", "Emp_Hire_Date", "date")}
                       {inp("Signed Date", "Signed_Date", "date")}
                       {inp("Employee Type", "Emp_Type")}

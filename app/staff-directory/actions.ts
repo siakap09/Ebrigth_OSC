@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth/next";
 import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/nextauth";
-import { prisma } from "@/lib/prisma";
+import { hrfsPrisma } from "@/lib/hrfs";
 import { ADMIN_ROLES, normalizeRole } from "@/lib/roles";
 
 export interface SaveResult {
@@ -76,12 +76,12 @@ export async function saveWorkingHours(
     // schema.prisma was just updated, and the typed client may lag until the
     // dev server restarts and triggers `prisma generate`.
     //
-    // Writing through `crm."BranchStaff"` works in both DBs: in ebright_hrfs
-    // it's a simple updatable view that forwards to public."BranchStaff"; in
-    // ebright_crm it's a postgres_fdw foreign table that forwards to the same
-    // remote table. Either way the underlying row is updated.
-    const affected = await prisma.$executeRaw`
-      UPDATE crm."BranchStaff"
+    // Unqualified table name resolves via the connection's search_path:
+    // public."BranchStaff" under hrfsPrisma, or crm."BranchStaff" (an updatable
+    // view / FDW that forwards to the same row) when falling back to
+    // DATABASE_URL. UPDATE works through either.
+    const affected = await hrfsPrisma.$executeRaw`
+      UPDATE "BranchStaff"
       SET "workingHours" = ${JSON.stringify(sanitized)}::jsonb,
           "updatedAt"    = NOW()
       WHERE id = ${branchStaffId}
@@ -126,8 +126,8 @@ export async function saveWorkingHoursBatch(
   }
 
   try {
-    const affected = await prisma.$executeRaw`
-      UPDATE crm."BranchStaff"
+    const affected = await hrfsPrisma.$executeRaw`
+      UPDATE "BranchStaff"
       SET "workingHours" = ${JSON.stringify(sanitized)}::jsonb,
           "updatedAt"    = NOW()
       WHERE id IN (${Prisma.join(ids)})

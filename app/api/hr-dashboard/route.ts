@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
-import { prisma } from "@/lib/prisma";
+import { hrfsPrisma } from "@/lib/hrfs";
 import { requireRole, canSeeAllBranches } from "@/lib/auth";
 import { MANAGEMENT_ROLES } from "@/lib/roles";
 import { normalizeLocation } from "@/lib/constants";
@@ -133,7 +133,7 @@ export async function GET() {
     // skip this and see all rows.
     let allowedEmpCodes: Set<string> | null = null;
     if (scopeToBranch) {
-      const allStaff = await prisma.branchStaff.findMany({
+      const allStaff = await hrfsPrisma.branchStaff.findMany({
         select: { employeeId: true, branch: true },
       });
       allowedEmpCodes = new Set(

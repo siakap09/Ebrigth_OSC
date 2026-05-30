@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { hrfsPrisma } from "@/lib/hrfs";
 import { requireSession, requireRole, assertSameBranch, canSeeAllBranches } from "@/lib/auth";
 import { MANAGEMENT_ROLES, hasAnyRole, isEmployee } from "@/lib/roles";
 
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
       trainingEndDate: string | null;
       endDate: string | null;
     };
-    const staff = await prisma.branchStaff.findMany({
+    const staff = await hrfsPrisma.branchStaff.findMany({
       select: {
         id: true,
         nickname: true,
@@ -87,7 +87,7 @@ export async function GET(request: Request) {
 
     if (isEmployee(sessionUser?.role)) {
       if (!sessionUser.email) return NextResponse.json([]);
-      const self = await prisma.branchStaff.findFirst({
+      const self = await hrfsPrisma.branchStaff.findFirst({
         where: { email: { equals: sessionUser.email, mode: 'insensitive' } },
         select: { id: true, nickname: true },
       });
@@ -151,7 +151,7 @@ export async function POST(request: Request) {
     const role = position === "Branch Manager" ? "BM" : position?.trim() || null;
     // Store branch as short code if a mapping exists, otherwise store as-is
     const branchCode = BRANCH_NAME_TO_CODE[branch] ?? branch;
-    const employee = await prisma.branchStaff.create({
+    const employee = await hrfsPrisma.branchStaff.create({
       data: { nickname: name.trim(), branch: branchCode, role },
     });
     return NextResponse.json({ success: true, employee });
