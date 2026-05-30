@@ -11,6 +11,14 @@ import {
 import Sidebar from "./Sidebar";
 import StatCard from "./ui/StatCard";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "./ui/Tooltip";
+import {
+  slotForDate,
+  hasSchedule,
+  checkInStatus as evalCheckIn,
+  checkOutStatus as evalCheckOut,
+  type CheckInStatus,
+  type CheckOutStatus,
+} from "@/lib/working-hours";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,9 +27,11 @@ interface BranchStaffMember {
   name: string | null;
   employeeId: string | null;
   department: string | null;
+  branch: string | null;
   role: string | null;
   email: string | null;
   location: string | null;
+  workingHours: unknown;
 }
 
 interface LogEntry {
@@ -38,7 +48,10 @@ interface DayRow {
   clockIn: string | null;
   clockOut: string | null;
   hoursWorked: number | null;
-  attendance: "Present" | "Weekend" | "No Data";
+  attendance: "Present" | "Rest Day" | "No Data";
+  inStatus: CheckInStatus | null;
+  outStatus: CheckOutStatus | null;
+  leaveType: string | null; // AL / MC / etc when on leave that day
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -100,6 +113,9 @@ export default function AttendanceReport() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Leave (AL / MC / etc) for the selected employee + month, keyed by YYYY-MM-DD.
+  const [leaveByDate, setLeaveByDate] = useState<Map<string, string>>(new Map());
+
   useEffect(() => {
     fetch("/api/branch-locations")
       .then(r => r.json())
@@ -154,13 +170,26 @@ export default function AttendanceReport() {
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
+  // ── Pull this employee's leave for the month (keyed by date) ────────────────
+  useEffect(() => {
+    const empNo = selectedStaff?.employeeId;
+    if (!empNo) { setLeaveByDate(new Map()); return; }
+    fetch(`/api/leave-status?month=${selectedMonth}&year=${selectedYear}`)
+      .then(r => (r.ok ? r.json() : { leaves: [] }))
+      .then((d: { leaves?: { empNo: string; date: string; type: string }[] }) => {
+        const map = new Map<string, string>();
+        (d.leaves ?? []).forEach(l => { if (l.empNo === empNo) map.set(l.date, l.type); });
+        setLeaveByDate(map);
+      })
+      .catch(() => setLeaveByDate(new Map()));
+  }, [selectedStaff, selectedMonth, selectedYear]);
+
   // ── Build day rows for entire month ────────────────────────────────────────
   const rows: DayRow[] = [];
   const totalDays = getDaysInMonth(selectedYear, selectedMonth);
 
   for (let d = 1; d <= totalDays; d++) {
     const dateStr = `${selectedYear}-${padDate(selectedMonth)}-${padDate(d)}`;
-    const weekend = isWeekend(dateStr);
     const log = logs.find(l => l.date === dateStr);
 
     let hoursWorked: number | null = null;
@@ -172,6 +201,18 @@ export default function AttendanceReport() {
       }
     }
 
+    // Late / Left Early, driven by the selected employee's working-hours schedule
+    // for this weekday. Only meaningful on days they actually scanned.
+    const slot = slotForDate(selectedStaff?.workingHours, dateStr);
+    const inStatus  = log?.clockInTime ? evalCheckIn(slot, log.clockInTime) : null;
+    const outStatus = evalCheckOut(slot, log?.clockOutTime ?? null);
+
+    // Off-day detection: when the employee has a schedule, a null slot means a
+    // rest day; otherwise fall back to the default Sun/Mon weekend.
+    const restDay = hasSchedule(selectedStaff?.workingHours)
+      ? slot === null
+      : isWeekend(dateStr);
+
     rows.push({
       no: d,
       date: dateStr,
@@ -179,14 +220,23 @@ export default function AttendanceReport() {
       clockIn: log?.clockInTime ?? null,
       clockOut: log?.clockOutTime ?? null,
       hoursWorked,
-      attendance: weekend ? "Weekend" : log ? "Present" : "No Data",
+      attendance: log ? "Present" : restDay ? "Rest Day" : "No Data",
+      inStatus,
+      outStatus,
+      leaveType: leaveByDate.get(dateStr) ?? null,
     });
   }
 
   const presentCount = rows.filter(r => r.attendance === "Present").length;
-  const noDataCount  = rows.filter(r => r.attendance === "No Data").length;
-  const weekendCount = rows.filter(r => r.attendance === "Weekend").length;
+  // A day covered by leave is a legitimate absence, not a missing scan.
+  const noDataCount  = rows.filter(r => r.attendance === "No Data" && !r.leaveType).length;
+  const leaveCount   = rows.filter(r => !!r.leaveType).length;
   const totalMinutes = rows.reduce((sum, r) => sum + (r.hoursWorked ?? 0), 0);
+
+  // Schedule-driven tallies for the selected employee/month.
+  const scheduleSet    = hasSchedule(selectedStaff?.workingHours);
+  const lateCount      = rows.filter(r => r.inStatus === "Late").length;
+  const leftEarlyCount = rows.filter(r => r.outStatus === "Left Early").length;
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i);
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -244,11 +294,11 @@ export default function AttendanceReport() {
               tooltip="Working days with no scanner record. May indicate leave, sick day, or a missed scan."
             />
             <StatCard
-              label="Weekend Days"
-              value={weekendCount}
+              label="On Leave"
+              value={leaveCount}
               icon={Calendar}
               tone="blue"
-              tooltip="Sundays and Mondays in this month — counted as off-days."
+              tooltip="Days this employee was on leave (AL / MC / etc) this month."
             />
             <StatCard
               label="Total Hours"
@@ -312,7 +362,7 @@ export default function AttendanceReport() {
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5 text-[11px] text-gray-500"><Building2 className="w-3 h-3" /> Department</span>
-                        <span className="text-xs font-medium text-gray-800 truncate">{selectedStaff.department || "—"}</span>
+                        <span className="text-xs font-medium text-gray-800 truncate">{selectedStaff.department || selectedStaff.branch || "—"}</span>
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5 text-[11px] text-gray-500"><Briefcase className="w-3 h-3" /> Role</span>
@@ -322,6 +372,34 @@ export default function AttendanceReport() {
                         <span className="flex items-center gap-1.5 text-[11px] text-gray-500"><MapPin className="w-3 h-3" /> Location</span>
                         <span className="text-xs font-medium text-gray-800">{selectedStaff.location || "—"}</span>
                       </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-[11px] text-gray-500"><Timer className="w-3 h-3" /> Schedule</span>
+                        {scheduleSet ? (
+                          <span className="text-xs font-medium text-emerald-700">Set</span>
+                        ) : (
+                          <span className="text-xs font-medium text-amber-600">Not set</span>
+                        )}
+                      </div>
+                      {scheduleSet && (
+                        <div className="flex items-center gap-2 pt-2 border-t border-gray-200 flex-wrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-600 ring-1 ring-red-200">
+                            <AlertCircle className="w-3 h-3" /> {lateCount} late
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 ring-1 ring-amber-200">
+                            <Timer className="w-3 h-3" /> {leftEarlyCount} left early
+                          </span>
+                          {leaveCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 text-violet-600 ring-1 ring-violet-200">
+                              <Calendar className="w-3 h-3" /> {leaveCount} leave
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {!scheduleSet && (
+                        <p className="text-[10px] text-amber-600 leading-snug pt-1 border-t border-gray-200">
+                          No working hours configured — set them in the Staff Directory to track Late / Left Early.
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -393,7 +471,7 @@ export default function AttendanceReport() {
                         </tr>
                       ) : (
                         rows.map(row => {
-                          const isWeekendRow = row.attendance === "Weekend";
+                          const isRestDayRow = row.attendance === "Rest Day";
                           const isNoData     = row.attendance === "No Data";
                           const isToday      = row.date === todayStr;
                           return (
@@ -401,30 +479,46 @@ export default function AttendanceReport() {
                               <TooltipTrigger asChild>
                                 <tr className={`border-b border-gray-100 transition-colors cursor-default ${
                                   isToday      ? "bg-blue-50/50 border-l-2 border-l-blue-400" :
-                                  isWeekendRow ? "bg-gray-50/50" :
+                                  isRestDayRow ? "bg-gray-50/50" :
                                   isNoData     ? "hover:bg-rose-50/30" :
                                                  "hover:bg-blue-50/40"
                                 }`}>
                                   <td className="px-3 py-3 text-xs font-mono text-gray-400">{row.no}</td>
-                                  <td className={`px-3 py-3 text-sm font-semibold ${isWeekendRow ? "text-gray-400" : "text-blue-600"}`}>{row.dayLabel}</td>
+                                  <td className={`px-3 py-3 text-sm font-semibold ${isRestDayRow ? "text-gray-400" : "text-blue-600"}`}>{row.dayLabel}</td>
                                   <td className="px-3 py-3 text-sm text-gray-700">{row.date.split("-").reverse().join("/")}</td>
-                                  <td className="px-3 py-3 text-sm font-mono font-semibold text-green-700">
-                                    {row.clockIn ?? <span className="text-gray-300 font-normal">—</span>}
+                                  <td className="px-3 py-3 text-sm font-mono font-semibold">
+                                    {row.clockIn ? (
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <span className={row.inStatus === "Late" ? "text-red-600" : "text-green-700"}>{row.clockIn}</span>
+                                        {row.inStatus === "Late" && (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-bold bg-red-50 text-red-600 ring-1 ring-red-200">LATE</span>
+                                        )}
+                                      </span>
+                                    ) : <span className="text-gray-300 font-normal">—</span>}
                                   </td>
-                                  <td className="px-3 py-3 text-sm font-mono font-semibold text-orange-600">
-                                    {row.clockOut ?? <span className="text-gray-300 font-normal">—</span>}
+                                  <td className="px-3 py-3 text-sm font-mono font-semibold">
+                                    {row.clockOut ? (
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <span className={row.outStatus === "Left Early" ? "text-amber-600" : "text-orange-600"}>{row.clockOut}</span>
+                                        {row.outStatus === "Left Early" && (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-bold bg-amber-50 text-amber-600 ring-1 ring-amber-200">EARLY</span>
+                                        )}
+                                      </span>
+                                    ) : <span className="text-gray-300 font-normal">—</span>}
                                   </td>
                                   <td className="px-3 py-3 text-sm text-center text-gray-700">
                                     {row.hoursWorked !== null ? minutesToHours(row.hoursWorked) : <span className="text-gray-300">—</span>}
                                   </td>
                                   <td className="px-3 py-3 text-center">
-                                    {isWeekendRow ? (
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500 ring-1 ring-gray-200">
-                                        <Calendar className="w-3 h-3" /> Weekend
-                                      </span>
+                                    {isRestDayRow ? (
+                                      <span className="text-gray-300">—</span>
                                     ) : row.attendance === "Present" ? (
                                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-green-50 text-green-700 ring-1 ring-green-200">
                                         <CheckCircle2 className="w-3 h-3" /> Present
+                                      </span>
+                                    ) : row.leaveType ? (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200">
+                                        <Calendar className="w-3 h-3" /> {row.leaveType}
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 ring-1 ring-rose-200">
@@ -449,10 +543,16 @@ export default function AttendanceReport() {
                                     <span className="font-medium text-gray-800">{row.hoursWorked !== null ? minutesToHours(row.hoursWorked) : "—"}</span>
                                     <span className="text-gray-500">Status</span>
                                     <span className={`font-semibold ${
-                                      row.attendance === "Present" ? "text-green-700" :
-                                      row.attendance === "Weekend" ? "text-gray-500" :
-                                                                      "text-rose-700"
-                                    }`}>{row.attendance === "No Data" ? "No Record" : row.attendance}</span>
+                                      row.attendance === "Present"  ? "text-green-700" :
+                                      row.attendance === "Rest Day" ? "text-gray-400" :
+                                      row.leaveType                  ? "text-violet-700" :
+                                                                       "text-rose-700"
+                                    }`}>{
+                                      row.attendance === "Present"  ? "Present" :
+                                      row.attendance === "Rest Day" ? "—" :
+                                      row.leaveType                  ? `On leave (${row.leaveType})` :
+                                                                       "No Record"
+                                    }</span>
                                   </div>
                                 </div>
                               </TooltipContent>
@@ -466,7 +566,10 @@ export default function AttendanceReport() {
               </div>
 
               <p className="mt-3 text-[11px] text-gray-400 text-center">
-                Data is pulled live from the thumbprint scanner logs · Sun &amp; Mon are off days · Hours calculated from clock-in to clock-out
+                Pulled live from scanner logs · Hours = clock-in to clock-out ·{" "}
+                <span className="text-red-500 font-semibold">LATE</span> = in &gt;1 min after start ·{" "}
+                <span className="text-amber-500 font-semibold">EARLY</span> = out before scheduled end ·{" "}
+                <span className="text-violet-500 font-semibold">AL/MC</span> = on leave
               </p>
             </div>
           </motion.div>
