@@ -22,7 +22,10 @@ export default function DashboardPage() {
   const sessions = useFAStore(s => s.sessions);
   const invitations = useFAStore(s => s.invitations);
 
-  const [rangePreset, setRangePreset] = useState<RangePreset>("thisMonth");
+  // Default to "all" so the dashboard isn't accidentally empty when the
+  // current month happens to have no events yet. BMs can narrow down with
+  // the range buttons.
+  const [rangePreset, setRangePreset] = useState<RangePreset>("all");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd]     = useState("");
   const [branchFilter, setBranchFilter] = useState<BranchCode | "all">(
@@ -72,6 +75,12 @@ export default function DashboardPage() {
     const absent       = filteredInvs.filter(i => i.status === "no_show" || i.status === "declined").length;
     const rescheduled  = filteredInvs.filter(i => i.status === "rescheduled").length;
 
+    // Payment breakdown — academy wants visibility into who attended AND
+    // paid, who attended but hasn't paid yet, and who didn't show.
+    const attendedPaid    = filteredInvs.filter(i => i.status === "attended" && i.paid).length;
+    const attendedUnpaid  = filteredInvs.filter(i => i.status === "attended" && !i.paid).length;
+    const notAttended     = invited - attended;
+
     const progressInvs = filteredInvs.filter(i => i.inviteType === "progress");
     const renewalInvs  = filteredInvs.filter(i => i.inviteType === "renewal");
     const progressAttended = progressInvs.filter(i => i.status === "attended").length;
@@ -82,6 +91,7 @@ export default function DashboardPage() {
 
     return {
       invited, confirmed, attended, absent, rescheduled,
+      attendedPaid, attendedUnpaid, notAttended,
       progressInvited: progressInvs.length,
       progressAttended,
       renewalInvited: renewalInvs.length,
@@ -266,6 +276,21 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Payment breakdown — three buckets in one row with a stacked bar
+          above. Academy wanted at-a-glance answer to "of everyone we
+          invited, how many showed up and paid vs. came but haven't paid
+          vs. didn't come at all". */}
+      <PaymentBreakdown
+        paid={stats.attendedPaid}
+        attendedUnpaid={stats.attendedUnpaid}
+        notAttended={stats.notAttended}
+        totalInvited={stats.invited}
+      />
+
+      {/* Per-student list of who fell into which bucket. Useful for chasing
+          up unpaid attendees and re-inviting the no-shows. */}
+      <OutcomeStudentLists invitations={filteredInvs} />
+
       {/* Attendance rate = attended / invited. Single calmer gradient card. */}
       <div className="rounded-2xl shadow-sm mb-6 border border-violet-200 bg-white overflow-hidden">
         <div className="bg-gradient-to-r from-violet-100 to-indigo-100 px-5 py-2 border-b border-violet-200">
@@ -447,6 +472,241 @@ function TypeSplitCard({
         <div className="text-[11px] text-ink-500 mt-2">
           {shareOfAttended}% of total attended is {label.replace("PCM ", "")}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Three-bucket payment breakdown. Shows a stacked horizontal bar (Paid
+ * green / Attended-Unpaid amber / Not Attended rose) plus three cards
+ * underneath with the same colour palette so the eye picks out the
+ * mapping immediately.
+ */
+function PaymentBreakdown({
+  paid, attendedUnpaid, notAttended, totalInvited,
+}: {
+  paid: number;
+  attendedUnpaid: number;
+  notAttended: number;
+  totalInvited: number;
+}) {
+  // Pct each bucket contributes to total invited — used both for bar
+  // widths and for the small "X% of invited" sub-text on each card.
+  const pct = (n: number) => (totalInvited > 0 ? Math.round((n / totalInvited) * 100) : 0);
+  const paidPct       = pct(paid);
+  const unpaidPct     = pct(attendedUnpaid);
+  const notAttendedPct= pct(notAttended);
+
+  return (
+    <div className="rounded-2xl bg-white border border-ivory-300 shadow-sm p-4 mb-4">
+      <div className="flex items-baseline justify-between mb-3">
+        <h3 className="fa-display text-base text-ink-900">Outcome breakdown</h3>
+        <span className="text-[11px] text-ink-500">
+          across {totalInvited} invited student{totalInvited !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {/* Stacked bar */}
+      <div
+        className="w-full h-4 rounded-full overflow-hidden flex bg-ivory-100 border border-ivory-300 mb-3"
+        role="img"
+        aria-label={`Paid ${paid}, attended unpaid ${attendedUnpaid}, not attended ${notAttended}`}
+      >
+        {paid > 0 && (
+          <div
+            className="h-full bg-emerald-500"
+            style={{ width: `${paidPct}%` }}
+            title={`Paid: ${paid} (${paidPct}%)`}
+          />
+        )}
+        {attendedUnpaid > 0 && (
+          <div
+            className="h-full bg-amber-400"
+            style={{ width: `${unpaidPct}%` }}
+            title={`Attended unpaid: ${attendedUnpaid} (${unpaidPct}%)`}
+          />
+        )}
+        {notAttended > 0 && (
+          <div
+            className="h-full bg-rose-400"
+            style={{ width: `${notAttendedPct}%` }}
+            title={`Not attended: ${notAttended} (${notAttendedPct}%)`}
+          />
+        )}
+      </div>
+
+      {/* Three cards */}
+      <div className="grid grid-cols-3 gap-3">
+        <BucketCard
+          label="Attended & Paid"
+          value={paid}
+          pct={paidPct}
+          accentBg="bg-emerald-50"
+          accentBorder="border-emerald-200"
+          accentText="text-emerald-700"
+          accentDot="bg-emerald-500"
+        />
+        <BucketCard
+          label="Attended · Unpaid"
+          value={attendedUnpaid}
+          pct={unpaidPct}
+          accentBg="bg-amber-50"
+          accentBorder="border-amber-200"
+          accentText="text-amber-700"
+          accentDot="bg-amber-400"
+        />
+        <BucketCard
+          label="Not Attended"
+          value={notAttended}
+          pct={notAttendedPct}
+          accentBg="bg-rose-50"
+          accentBorder="border-rose-200"
+          accentText="text-rose-700"
+          accentDot="bg-rose-400"
+        />
+      </div>
+    </div>
+  );
+}
+
+function BucketCard({
+  label, value, pct, accentBg, accentBorder, accentText, accentDot,
+}: {
+  label: string; value: number; pct: number;
+  accentBg: string; accentBorder: string; accentText: string; accentDot: string;
+}) {
+  return (
+    <div className={`rounded-xl ${accentBg} ${accentBorder} border p-3`}>
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className={`w-2 h-2 rounded-full ${accentDot}`} aria-hidden="true" />
+        <span
+          className={`fa-mono text-[10px] uppercase ${accentText} font-bold`}
+          style={{ letterSpacing: "0.1em" }}
+        >
+          {label}
+        </span>
+      </div>
+      <div className="text-3xl font-black text-ink-900 leading-none">{value}</div>
+      <div className="text-[11px] text-ink-500 mt-1">{pct}% of invited</div>
+    </div>
+  );
+}
+
+/**
+ * Three side-by-side lists naming the students in each outcome bucket.
+ * Sits below the stacked breakdown bar and complements its numbers with
+ * actionable names — academy wants to chase up the unpaid attendees and
+ * re-invite the no-shows.
+ *
+ * The page already computed `filteredInvs` (event range + branch filter
+ * applied), so this component just buckets them and renders.
+ */
+function OutcomeStudentLists({ invitations }: { invitations: import("@pcm/_types").Invitation[] }) {
+  const students = useFAStore(s => s.students);
+  const events = useFAStore(s => s.events);
+  const sessions = useFAStore(s => s.sessions);
+
+  // Small lookups so the row rendering stays cheap regardless of how
+  // many invitations are in the bucket.
+  const studentsById = useMemo(() => {
+    const m = new Map<string, import("@pcm/_types").Student>();
+    for (const s of students) m.set(s.id, s);
+    return m;
+  }, [students]);
+  const eventNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of events) m.set(e.id, e.name);
+    return m;
+  }, [events]);
+  const sessionLabel = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of sessions) m.set(s.id, `D${s.dayNumber}·S${s.sessionNumber} ${s.startTime}`);
+    return m;
+  }, [sessions]);
+
+  const paid           = invitations.filter(i => i.status === "attended" && i.paid);
+  const attendedUnpaid = invitations.filter(i => i.status === "attended" && !i.paid);
+  const notAttended    = invitations.filter(i => i.status !== "attended");
+
+  function rowOf(inv: import("@pcm/_types").Invitation) {
+    const student = studentsById.get(inv.studentId);
+    return {
+      key: inv.id,
+      name: student?.name ?? `#${inv.studentId}`,
+      branch: inv.branch,
+      grade: inv.targetGrade || student?.grade || "?",
+      eventName: eventNameById.get(inv.eventId) ?? "—",
+      sessionLabel: sessionLabel.get(inv.sessionId) ?? "—",
+    };
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+      <OutcomeBucket
+        title="Attended & Paid"
+        rows={paid.map(rowOf)}
+        accentBg="bg-emerald-50"
+        accentBorder="border-emerald-200"
+        accentText="text-emerald-700"
+      />
+      <OutcomeBucket
+        title="Attended · Unpaid"
+        rows={attendedUnpaid.map(rowOf)}
+        accentBg="bg-amber-50"
+        accentBorder="border-amber-200"
+        accentText="text-amber-700"
+      />
+      <OutcomeBucket
+        title="Not Attended"
+        rows={notAttended.map(rowOf)}
+        accentBg="bg-rose-50"
+        accentBorder="border-rose-200"
+        accentText="text-rose-700"
+      />
+    </div>
+  );
+}
+
+function OutcomeBucket({
+  title, rows, accentBg, accentBorder, accentText,
+}: {
+  title: string;
+  rows: Array<{ key: string; name: string; branch: string; grade: number | string; eventName: string; sessionLabel: string }>;
+  accentBg: string; accentBorder: string; accentText: string;
+}) {
+  return (
+    <div className={`rounded-xl ${accentBg} ${accentBorder} border overflow-hidden flex flex-col`} style={{ minHeight: 200 }}>
+      <div className="px-4 py-2 border-b border-ivory-300 flex items-center justify-between">
+        <span
+          className={`fa-mono text-[10px] uppercase ${accentText} font-bold`}
+          style={{ letterSpacing: "0.1em" }}
+        >
+          {title}
+        </span>
+        <span className={`fa-mono text-[11px] ${accentText} font-bold`}>{rows.length}</span>
+      </div>
+      <div className="max-h-[280px] overflow-y-auto p-2 space-y-1.5 flex-1">
+        {rows.length === 0 ? (
+          <div className="p-3 text-center text-xs text-ink-400 italic">No students in this bucket.</div>
+        ) : (
+          rows.map(r => (
+            <div
+              key={r.key}
+              className="px-2.5 py-1.5 rounded bg-white border border-ivory-300 text-xs"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-ink-900 truncate">{r.name}</span>
+                <span className="fa-mono text-[10px] font-bold text-ink-500 flex-shrink-0">
+                  {r.branch} · G{r.grade}
+                </span>
+              </div>
+              <div className="text-[10px] text-ink-500 mt-0.5 truncate">
+                {r.eventName} · {r.sessionLabel}
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

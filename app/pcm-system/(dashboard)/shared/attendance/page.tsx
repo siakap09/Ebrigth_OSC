@@ -62,10 +62,13 @@ export default function AttendancePage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-  // Relevant events — ongoing, closed, or recently completed
+  // Relevant events — every status except draft. Academy wanted BMs to be
+  // able to tick attendance during the run-up to the event ("open" period)
+  // too, not only once invitations close, so they can mark walk-ins or
+  // pre-arrivals without waiting on a status flip.
   const relevantEvents = useMemo(() => {
     return events
-      .filter(e => e.status === "ongoing" || e.status === "closed" || e.status === "completed")
+      .filter(e => e.status !== "draft")
       .sort((a, b) => b.startDate.localeCompare(a.startDate));
   }, [events]);
 
@@ -97,8 +100,13 @@ export default function AttendancePage() {
       invitations
         .filter(i =>
           i.sessionId === selectedSession.id &&
+          // Show everyone who could plausibly turn up — confirmed, already
+          // attended, pending ("invited"), no-shows, and reschedule-tagged.
+          // Only hide declined, since they've explicitly opted out.
+          // Academy ask: BMs need to see pending students too so they can
+          // tick attendance the moment they walk in, instead of having to
+          // confirm them first.
           i.status !== "declined" &&
-          i.status !== "invited" &&
           (visibleBranchFilter === "all" || i.branch === visibleBranchFilter)
         )
         .map(i => [i.id, i] as const)
@@ -385,7 +393,12 @@ export default function AttendancePage() {
                   session={selectedSession}
                   orderedInvitations={orderedInvitations}
                   pendingConfirmationsCount={pendingConfirmationsCount}
-                  canEdit={user.role === "MKT" || selectedEvent?.status === "ongoing"}
+                  /* Allow marking attendance during the open + closed +
+                     ongoing periods, not only "ongoing". Academy wants BMs
+                     to be able to tick before the event starts (e.g. early
+                     arrivals already at the venue) and clean up afterwards
+                     too. Only block draft (event not yet released). */
+                  canEdit={user.role === "MKT" || (!!selectedEvent && selectedEvent.status !== "draft")}
                   canDrag={canDrag}
                 />
               )}

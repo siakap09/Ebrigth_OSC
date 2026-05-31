@@ -14,6 +14,7 @@ import { persist } from "zustand/middleware";
 import {
   EventBranchOverride,
   FAEvent,
+  FAReport,
   Invitation,
   InvitationStatus,
   Session,
@@ -66,6 +67,13 @@ interface FAStore {
   eventsLoading: boolean;
   eventsError: string | null;
   loadEvents: () => Promise<void>;
+
+  // ------- FA Assessment Reports (Marketing/Admin fills, all view) -------
+  reports: FAReport[];
+  reportsLoaded: boolean;
+  reportsLoading: boolean;
+  loadReports: () => Promise<void>;
+  saveReport: (report: Omit<FAReport, "id" | "createdAt" | "updatedAt">) => Promise<FAReport>;
 
   // ------- Event CRUD -------
   createEvent: (ev: Omit<FAEvent, "id" | "createdAt">) => Promise<FAEvent>;
@@ -190,6 +198,9 @@ export const useFAStore = create<FAStore>()(
       quotas: [],
       invitations: [],
       eventBranchOverrides: [],
+      reports: [],
+      reportsLoaded: false,
+      reportsLoading: false,
       sessionOrder: {},
       packedItems: {},
       walkInBuffer: {},
@@ -248,6 +259,45 @@ export const useFAStore = create<FAStore>()(
             eventsLoading: false,
           });
         }
+      },
+
+      // ------- FA Assessment Reports -------
+      // Lazy-loaded on first reference (AppShell triggers it) so the rest of
+      // the dashboard isn't slowed by a list that's only used on a handful
+      // of pages.
+      loadReports: async () => {
+        if (get().reportsLoaded || get().reportsLoading) return;
+        set({ reportsLoading: true });
+        try {
+          const r = await apiJson<{ reports: FAReport[] }>("/api/fa/reports");
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          set({ reports: r.data.reports, reportsLoaded: true, reportsLoading: false });
+        } catch (err) {
+          console.error("[fa] loadReports failed:", err);
+          set({ reportsLoading: false });
+        }
+      },
+      saveReport: async (report) => {
+        const r = await apiJson<{ report: FAReport }>("/api/fa/reports", {
+          method: "POST",
+          body: JSON.stringify(report),
+        });
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error;
+          throw new Error(
+            `Save report failed (HTTP ${r.status})${detail ? ": " + detail : ""}`
+          );
+        }
+        const saved = r.data.report;
+        // Upsert into the local list so the UI updates without a refetch.
+        set((s) => {
+          const idx = s.reports.findIndex(x => x.invitationId === saved.invitationId);
+          const next = idx >= 0
+            ? s.reports.map((x, i) => (i === idx ? saved : x))
+            : [saved, ...s.reports];
+          return { reports: next };
+        });
+        return saved;
       },
 
       // ------- Events -------
