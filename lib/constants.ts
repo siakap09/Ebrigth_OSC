@@ -13,7 +13,7 @@ export function normalizeLocation(raw: string | null): string {
   const clean = raw.trim().replace(/[\r\n]+/g, ' ').trim();
   const key   = clean.toLowerCase();
   // All HQ codes — internal departments that are physically at HQ
-  const HQ_CODES = new Set(['hq', 'od', 'op', 'ceo', 'mkt', 'acd', 'iop', 'fnc', 'fin', 'hr', 'hr/iop', 'marketing']);
+  const HQ_CODES = new Set(['hq', 'od', 'op', 'ops', 'ceo', 'mkt', 'acd', 'iop', 'fnc', 'fin', 'hr', 'hr/iop', 'marketing']);
   if (HQ_CODES.has(key) || key.includes('hq')) return 'HQ';
   const MAP: Record<string, string> = {
     'onl': 'Online', 'online': 'Online',
@@ -24,7 +24,7 @@ export function normalizeLocation(raw: string | null): string {
     'pjy': 'Putrajaya', 'putrajaya': 'Putrajaya',
     'amp': 'Ampang', 'ampang': 'Ampang',
     'cjy': 'Cyberjaya', 'cyberjaya': 'Cyberjaya',
-    'klg': 'Klang', 'klang': 'Klang', 'kw': 'Klang',
+    'klg': 'Klang', 'klang': 'Klang', 'kw': 'Kota Warisan',
     'da': 'Denai Alam', 'denai alam': 'Denai Alam',
     'bbb': 'Bandar Baru Bangi',
     'dk': 'Danau Kota',
@@ -34,7 +34,7 @@ export function normalizeLocation(raw: string | null): string {
     'bsp': 'Bandar Seri Putra',
     'rby': 'Bandar Rimbayu',
     'tsg': 'Taman Sri Gombak',
-    'ktg': 'Kota Warisan', 'kota warisan': 'Kota Warisan',
+    'ktg': 'Kajang TTDI Groove', 'kajang ttdi groove': 'Kajang TTDI Groove', 'kota warisan': 'Kota Warisan',
     'kajang': 'Kajang',
   };
   return MAP[key] ?? clean;
