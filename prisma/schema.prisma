@@ -101,7 +101,6 @@ model BranchStaff {
   position           String?
   location           String?
   accessStatus       String?   @default("AUTHORIZED")
-  biometricTemplate  String?
   contract           String?
   employeeId         String?
   endDate            String?

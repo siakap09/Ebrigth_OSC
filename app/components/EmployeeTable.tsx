@@ -22,10 +22,10 @@ interface Employee {
   role: string;
   contract: string;
   startDate: string;
+  endDate?: string;
   probation: string;
   Emp_Status?: string;
   accessStatus: string;
-  biometricTemplate: string | null;
   registeredAt: string;
   trainingStartDate?: string;
   trainingEndDate?: string;
@@ -159,7 +159,6 @@ export default function EmployeeTable({
     .filter((e) => !academyView || ["FT - Coach", "PT - Coach"].includes(e.role))
     .filter((e) => {
       if (statusFilter === "all") return true;
-      if (statusFilter === "Archived") return e.accessStatus === "ARCHIVED";
       return (e.Emp_Status || "") === statusFilter;
     });
 
@@ -180,10 +179,9 @@ export default function EmployeeTable({
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">Employee</h2>
-
-      {!academyView && (
-        <div className="flex justify-end mb-4">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Employee</h2>
+        {!academyView && (
           <button
             type="button"
             onClick={() => setPrintModalOpen(true)}
@@ -191,8 +189,8 @@ export default function EmployeeTable({
           >
             Print List
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -230,7 +228,6 @@ export default function EmployeeTable({
           <option value="all">All Status</option>
           <option value="Active">Active</option>
           <option value="Inactive">Inactive</option>
-          <option value="Archived">Archived (Resigned)</option>
         </select>
 
       </div>
@@ -241,10 +238,10 @@ export default function EmployeeTable({
       ) : filteredEmployees.length === 0 ? (
         <div className="text-center py-8 text-gray-500">No employees found</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-auto min-h-[320px] max-h-[70vh]">
           {academyView ? (
             <table className="w-full text-sm">
-              <thead className="bg-gray-100 border-b">
+              <thead className="bg-gray-100 border-b sticky top-0 z-10">
                 <tr>
                   <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">Full Name</th>
                   <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">Phone</th>
@@ -299,7 +296,7 @@ export default function EmployeeTable({
             </table>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-100 border-b">
+              <thead className="bg-gray-100 border-b sticky top-0 z-10">
                 <tr>
                   <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">Employee ID</th>
                   <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">Full Name</th>
@@ -313,10 +310,10 @@ export default function EmployeeTable({
                   <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">Contract</th>
                   <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">Branch/Dept</th>
                   <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">Start Date</th>
+                  <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">End Date</th>
                   <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">Probation</th>
                   <th className="px-2 py-3 text-left font-semibold text-gray-700 text-xs">Training</th>
                   <th className="px-2 py-3 text-center font-semibold text-gray-700 text-xs">Status</th>
-                  <th className="px-2 py-3 text-center font-semibold text-gray-700 text-xs">Biometrics</th>
                   <th className="px-2 py-3 text-center font-semibold text-gray-700 text-xs">Access</th>
                   <th className="px-2 py-3 text-center font-semibold text-gray-700 text-xs">Manage</th>
                 </tr>
@@ -346,6 +343,7 @@ export default function EmployeeTable({
                     </td>
                     <td className="px-2 py-3 text-gray-600 text-xs">{getBranchLabel(employee.branch)}</td>
                     <td className="px-2 py-3 text-gray-600 text-xs">{employee.startDate || "-"}</td>
+                    <td className="px-2 py-3 text-gray-600 text-xs">{employee.endDate || "-"}</td>
                     <td className="px-2 py-3 text-gray-600 text-xs">{employee.probation || "-"}</td>
                     <td className="px-2 py-3">
                       <TrainingCell start={employee.trainingStartDate} end={employee.trainingEndDate} />
@@ -363,13 +361,6 @@ export default function EmployeeTable({
                       >
                         {employee.Emp_Status || "—"}
                       </button>
-                    </td>
-                    <td className="px-2 py-3 text-center">
-                      {employee.biometricTemplate ? (
-                        <span className="text-green-600 font-semibold text-xs">✓</span>
-                      ) : (
-                        <span className="text-red-600 font-semibold text-xs">✗</span>
-                      )}
                     </td>
                     <td className="px-2 py-3 text-center relative">
                       <div ref={openDropdown === employee.id ? dropdownRef : null}>
@@ -440,10 +431,6 @@ export default function EmployeeTable({
             | Inactive:{" "}
             <span className="font-bold text-red-600">
               {employees.filter((e) => e.Emp_Status === "Inactive").length}
-            </span>{" "}
-            | Archived:{" "}
-            <span className="font-bold text-yellow-600">
-              {employees.filter((e) => e.accessStatus === "ARCHIVED").length}
             </span>
           </p>
         </div>

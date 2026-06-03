@@ -74,9 +74,12 @@ export default function FaCertificatePage() {
       {/* Outer wrapper. On screen we cap at 900px so the cert mirrors A4
           portrait. Extra top padding so the floating toolbar doesn't sit
           on top of the red banner. On print, print:pt-0 removes it and the
-          @page rule in fa-globals.css enforces A4 page size + margins. */}
+          @page rule in fa-globals.css enforces A4 page size + margins.
+          The fa-print-cert class is required — fa-globals.css hides
+          `body *` on print and only reveals .fa-print-cert + its children.
+          Without it the printed page comes out blank. */}
       <div
-        className="mx-auto print:shadow-none pt-20 print:pt-0"
+        className="fa-print-cert mx-auto print:shadow-none pt-20 print:pt-0"
         style={{ maxWidth: "900px", padding: "0 24px 16px" }}
       >
         <CertificateBody report={report} />

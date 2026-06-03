@@ -41,7 +41,6 @@ function toEmployee(s: Record<string, unknown>) {
     Bank_Account: (s.bank_account as string) || '',
     University: (s.university as string) || '',
     accessStatus: (s.accessStatus as string) || 'AUTHORIZED',
-    biometricTemplate: (s.biometricTemplate as string) || null,
     registeredAt: s.createdAt ? new Date(s.createdAt as string).toISOString() : '',
     updatedAt: s.updatedAt ? new Date(s.updatedAt as string).toISOString() : '',
     trainingStartDate: (s.trainingStartDate as string) || '',
@@ -52,7 +51,7 @@ function toEmployee(s: Record<string, unknown>) {
 // Strict allowlist mapper for ACADEMY callers. Returns ONLY the 10 keys the
 // Academy role is permitted to see. Sensitive fields (NRIC, DOB, home_address,
 // bank, emergency contact, university, gender, nickname, employeeId,
-// biometricTemplate, accessStatus, probation, endDate, rate, hire_date,
+// accessStatus, probation, endDate, rate, hire_date,
 // signed_date, employment_type, email) MUST NOT leak over the wire.
 function toEmployeeForAcademy(s: Record<string, unknown>) {
   return {
@@ -241,7 +240,7 @@ export async function PUT(request: Request) {
             homeAddress, contract, startDate, endDate, probation, rate, accessStatus,
             Emc_Number, Emc_Email, Emc_Relationship, Signed_Date,
             Emp_Type, Emp_Status, Bank, Bank_Name, Bank_Account, University,
-            employeeId, biometricTemplate,
+            employeeId,
             trainingStartDate, trainingEndDate } = body;
 
     if (!id) {
@@ -335,7 +334,6 @@ export async function PUT(request: Request) {
         ...(probation !== undefined && { probation }),
         ...(rate !== undefined && { rate }),
         ...(accessStatus !== undefined && { accessStatus }),
-        ...(biometricTemplate !== undefined && { biometricTemplate }),
         ...(Emc_Number !== undefined && { emergency_phone: Emc_Number }),
         ...(Emc_Email !== undefined && { emergency_name: Emc_Email }),
         ...(Emc_Relationship !== undefined && { emergency_relation: Emc_Relationship }),
