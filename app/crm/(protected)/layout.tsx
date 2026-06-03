@@ -46,6 +46,10 @@ export default async function CrmProtectedLayout({
     // admin, treat them as ticket super_admin so the Ticket sidebar exposes
     // Dashboard / Platforms / Branches / Users. Source of truth for "admin"
     // is the crm_user_branch role on any of their branch links.
+    //
+    // REGIONAL_MANAGER takes a separate path: it does NOT promote to
+    // super_admin (no full tenant access), but it sets tktRole='regional_manager'
+    // so the sidebar Region item becomes visible.
     let hasAdminLink = false
     try {
       const adminLink = await prisma.crm_user_branch.findFirst({
@@ -58,6 +62,17 @@ export default async function CrmProtectedLayout({
       if (adminLink) {
         hasAdminLink = true
         if (!tktRole || tktRole === 'user') tktRole = 'super_admin'
+      } else {
+        // Not a super/agency admin — check for REGIONAL_MANAGER and tag the
+        // sidebar role accordingly. Skipped when adminLink exists because
+        // super_admin already covers the Region nav item's visibility.
+        const rmLink = await prisma.crm_user_branch.findFirst({
+          where: { userId: session.user.id, role: 'REGIONAL_MANAGER' },
+          select: { id: true },
+        })
+        if (rmLink && (!tktRole || tktRole === 'user')) {
+          tktRole = 'regional_manager'
+        }
       }
     } catch (e) {
       console.warn('[CRM layout] Failed to load admin link:', (e as Error).message)

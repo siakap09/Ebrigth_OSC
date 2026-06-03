@@ -171,14 +171,20 @@ const ROLE_PERMISSIONS: Record<CrmRole, ReadonlyArray<CrmPermission>> = {
 }
 
 // ─── Ticket module role system ────────────────────────────────────────────────
-// Separate from CRM roles — stored in tkt_user_profile.role
+// Separate from CRM roles — stored in tkt_user_profile.role.
+//
+// 'regional_manager' is NOT a ticket role per se — it's a sidebar-visibility
+// hint set by the CRM layout when a user has a crm_user_branch row with role
+// REGIONAL_MANAGER (and no SUPER/AGENCY admin link). It gates the "Region"
+// nav item without granting ticket-side privileges.
 
-export type TktRole = 'super_admin' | 'platform_admin' | 'user'
+export type TktRole = 'super_admin' | 'platform_admin' | 'user' | 'regional_manager'
 
 export function hasTktPermission(role: TktRole, action: 'read' | 'write' | 'admin' | 'super'): boolean {
   if (role === 'super_admin') return true
   if (role === 'platform_admin') return action !== 'super'
-  // 'user' role: own tickets only (read + write own)
+  // 'user' and 'regional_manager': own tickets only (read + write own).
+  // Regional managers get no extra ticket privileges from this flag.
   return action === 'read' || action === 'write'
 }
 
