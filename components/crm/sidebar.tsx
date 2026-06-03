@@ -18,6 +18,7 @@ import {
   Tag,
   SlidersHorizontal,
   MapPin,
+  Map,
   Key,
   FileText,
   CreditCard,
@@ -63,7 +64,7 @@ interface NavItemDef {
   href: string
   label: string
   icon: React.ComponentType<{ className?: string }>
-  roles?: Array<'super_admin' | 'platform_admin' | 'user'>
+  roles?: Array<'super_admin' | 'platform_admin' | 'user' | 'regional_manager'>
   /**
    * If true, hide this item when the topbar is set to a specific branch view
    * (regardless of the user's role). Used for tenant-wide admin pages that
@@ -84,10 +85,14 @@ const LEAD_NAV_ITEMS: NavItemDef[] = [
   // Branches — tenant-wide admin page. Adding a branch here auto-creates
   // its kanban pipeline + tkt_branch row so the new entry shows up
   // everywhere (topbar switcher, kanban, ticket form, dashboard chart).
-  { href: '/crm/branches',      label: 'Branches',         icon: Building2, roles: ['super_admin'],                    hideInBranchView: true },
-  { href: '/crm/automations',   label: 'Automations',      icon: Zap,       roles: ['super_admin'],                    hideInBranchView: true },
-  { href: '/crm/analytics',     label: 'Analytics',        icon: BarChart3, roles: ['super_admin', 'platform_admin'],  hideInBranchView: true },
-  { href: '/crm/integrations',  label: 'Integrations',     icon: Plug,      roles: ['super_admin'],                    hideInBranchView: true },
+  { href: '/crm/branches',      label: 'Branches',         icon: Building2, roles: ['super_admin'],                       hideInBranchView: true },
+  // Region — regional performance breakdown. Super admins see all regions
+  // (A/B/C); REGIONAL_MANAGER users see only their own region (derived from
+  // the region of their crm_user_branch links).
+  { href: '/crm/region',        label: 'Region',           icon: Map,       roles: ['super_admin', 'regional_manager'],   hideInBranchView: true },
+  { href: '/crm/automations',   label: 'Automations',      icon: Zap,       roles: ['super_admin'],                       hideInBranchView: true },
+  { href: '/crm/analytics',     label: 'Analytics',        icon: BarChart3, roles: ['super_admin', 'platform_admin'],     hideInBranchView: true },
+  { href: '/crm/integrations',  label: 'Integrations',     icon: Plug,      roles: ['super_admin'],                       hideInBranchView: true },
   { href: '/crm/notifications', label: 'Notifications',    icon: Bell },
 ]
 
@@ -136,7 +141,7 @@ function filterNav(
   inBranchView: boolean,
 ): NavItemDef[] {
   // Treat unknown / null role as 'user'
-  const r = (role ?? 'user') as 'super_admin' | 'platform_admin' | 'user'
+  const r = (role ?? 'user') as 'super_admin' | 'platform_admin' | 'user' | 'regional_manager'
   return items.filter((item) => {
     if (item.roles && !item.roles.includes(r)) return false
     if (inBranchView && item.hideInBranchView) return false

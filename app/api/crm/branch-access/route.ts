@@ -66,7 +66,7 @@ export async function GET() {
 const GrantSchema = z.object({
   userId: z.string().uuid(),
   branchId: z.string().uuid(),
-  role: z.enum(['SUPER_ADMIN', 'AGENCY_ADMIN', 'BRANCH_MANAGER', 'BRANCH_STAFF']).default('BRANCH_MANAGER'),
+  role: z.enum(['SUPER_ADMIN', 'AGENCY_ADMIN', 'REGIONAL_MANAGER', 'BRANCH_MANAGER', 'BRANCH_STAFF']).default('BRANCH_MANAGER'),
 })
 
 export async function POST(req: NextRequest) {
