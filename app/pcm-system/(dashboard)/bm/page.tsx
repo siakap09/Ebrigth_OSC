@@ -91,7 +91,7 @@ export default function BMEventsPage() {
       <div className="flex items-start justify-between mb-8">
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-ink-400 mb-1">
-            FA · {isMktView ? "All branches (Admin view)" : branch?.name}
+            PCM · {isMktView ? "All branches (Admin view)" : branch?.name}
           </div>
           <h1 className="fa-display text-4xl text-ink-900">Events</h1>
           <p className="text-ink-500 mt-1">

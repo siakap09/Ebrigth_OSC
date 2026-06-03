@@ -72,8 +72,8 @@ export default function StudentListPage() {
     const header = [
       "Student ID", "Name", "Branch code", "Branch name",
       "Grade", "Chapter", "Active",
-      "FA total expected", "FA done", "FA outstanding",
-      "Per-grade FA (G1..G<grade>)",
+      "PCM total expected", "PCM done", "PCM outstanding",
+      "Per-grade PCM (G1..G<grade>)",
       "Guardian name", "Guardian phone", "Enrolment date",
     ];
     const rows = filtered.map(s => {
@@ -115,7 +115,7 @@ export default function StudentListPage() {
           <div>
             <h1 className="fa-display-italic text-6xl text-ink-900 leading-none">Student List</h1>
             <p className="text-sm text-ink-500 mt-2">
-              Every student across all {BRANCHES.length} branches with their per-grade FA progress —
+              Every student across all {BRANCHES.length} branches with their per-grade PCM progress —
               same data as the eBright dashboard.
             </p>
             <div className="fa-mono text-[11px] text-ink-400 mt-1.5 flex items-center gap-2">
@@ -197,7 +197,7 @@ export default function StudentListPage() {
             </select>
           </div>
           <div className="w-40">
-            <label className="fa-label">FA progress</label>
+            <label className="fa-label">PCM progress</label>
             <select
               value={progressFilter}
               onChange={e => setProgressFilter(e.target.value as "all" | "backlog" | "uptodate")}
@@ -246,7 +246,7 @@ export default function StudentListPage() {
                 <th>Branch</th>
                 <th className="text-center">Grade</th>
                 <th className="text-center">Chapter</th>
-                <th>FA Progress (G1 → current)</th>
+                <th>PCM Progress (G1 → current)</th>
                 <th>Guardian</th>
               </tr>
             </thead>
@@ -305,7 +305,7 @@ export default function StudentListPage() {
                                       ? "bg-success-soft text-success border-success/30"
                                       : "bg-danger-soft text-danger border-danger/30"
                                   }`}
-                                  title={`Grade ${g} FA: ${done ? "completed" : "not yet"}`}
+                                  title={`Grade ${g} PCM: ${done ? "completed" : "not yet"}`}
                                 >
                                   G{g} {done ? "✓" : "✗"}
                                 </span>
@@ -314,7 +314,7 @@ export default function StudentListPage() {
                             {currentGradeLocked && (
                               <span
                                 className="fa-mono text-[10px] text-ink-400 italic"
-                                title={`Current-grade FA unlocks at C${FA_CURRENT_GRADE_MIN_CHAPTER} (now at C${s.credit})`}
+                                title={`Current-grade PCM unlocks at C${FA_CURRENT_GRADE_MIN_CHAPTER} (now at C${s.credit})`}
                               >
                                 G{s.grade} 🔒
                               </span>
