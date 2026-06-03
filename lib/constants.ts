@@ -40,6 +40,26 @@ export function normalizeLocation(raw: string | null): string {
   return MAP[key] ?? clean;
 }
 
+/**
+ * Compare two branch labels for equivalence, tolerating the code-vs-full-name
+ * drift across the app (User.branchName holds "Klang" / "Rimbayu" while
+ * BranchStaff.branch holds short codes "KLG" / "RBY"). Accepts an exact match,
+ * a match after normalizeLocation on both sides, or a substring match either
+ * way ("Rimbayu" ⊂ "Bandar Rimbayu").
+ */
+export function branchesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const norm = (v: string) => v.toLowerCase().trim();
+  const na = norm(a);
+  const nb = norm(b);
+  if (na === nb) return true;
+  const fa = norm(normalizeLocation(a));
+  const fb = norm(normalizeLocation(b));
+  if (fa === fb) return true;
+  if (fa && fb && (fa.includes(fb) || fb.includes(fa))) return true;
+  return false;
+}
+
 // ─── Role / branch / contract options ─────────────────────────────────────────
 
 export const DEPARTMENT_OPTIONS: Array<{ value: string; label: string }> = [
@@ -69,6 +89,7 @@ export const CONTRACT_OPTIONS = [
   { value: "12 MONTH", label: "12 Month" },
   { value: "15 MONTH", label: "15 Month" },
   { value: "18 MONTH", label: "18 Month" },
+  { value: "PERMANENT", label: "Permanent" },
 ];
 
 export const BRANCH_OPTIONS = [

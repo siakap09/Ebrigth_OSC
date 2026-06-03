@@ -112,7 +112,25 @@ type StaffRecord = {
   employment_type: string | null;
   rate: string | null;
   email: string | null;
+  start_date: string | null;
+  endDate: string | null;
+  contract: string | null;
+  status: string | null;
 };
+
+// Basic employment info a Branch Manager sees for each coach in their branch.
+interface RosterEntry {
+  id: number;
+  name: string;
+  nickname: string | null;
+  position: string | null;
+  employmentType: string | null;
+  isPT: boolean;
+  contract: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  rate: number | null;
+}
 
 const norm = (v: string | null | undefined) => (v ?? "").toLowerCase().trim();
 
@@ -362,6 +380,10 @@ export async function GET(request: Request) {
         employment_type: true,
         rate: true,
         email: true,
+        start_date: true,
+        endDate: true,
+        contract: true,
+        status: true,
       },
     });
 
@@ -597,6 +619,10 @@ export async function GET(request: Request) {
         };
       });
 
+    // Basic-info roster for Branch Managers — every active coach in their branch,
+    // independent of whether they logged scheduled hours this month.
+    let branchRoster: RosterEntry[] = [];
+
     // Role-based scoping. Fail closed: anything we can't resolve becomes [].
     //   FT / PT (isEmployeeView)   → own row only via loggedInStaffId.
     //   Branch Manager              → own branch only.
@@ -612,11 +638,37 @@ export async function GET(request: Request) {
       results.push(...filtered);
     } else if (isBranchManager(userRole)) {
       const userBranch = sessionUser?.branchName as string | null | undefined;
+      // Use branchesMatch (not exact ===): r.branch is the normalized full name
+      // ("Bandar Rimbayu") while the BM's session branchName may be a short/variant
+      // form ("Rimbayu") or carry a typo ("Bandar Tun Huseein Onn").
       const filtered = userBranch
-        ? results.filter((r) => r.branch === userBranch)
+        ? results.filter((r) => branchesMatch(r.branch, userBranch))
         : [];
       results.length = 0;
       results.push(...filtered);
+
+      // Build the basic-info roster: all active coaches in the BM's branch,
+      // sourced directly from BranchStaff so coaches with no scheduled hours
+      // this month still appear. Excludes BMs / interns / training rows.
+      if (userBranch) {
+        branchRoster = allStaff
+          .filter((s) => branchesMatch(s.branch, userBranch))
+          .filter((s) => !shouldExcludeStaff(s))
+          .filter((s) => norm(s.status) === "active")
+          .map((s) => ({
+            id: s.id,
+            name: s.name || s.nickname || "",
+            nickname: s.nickname,
+            position: s.position || s.role,
+            employmentType: s.employment_type,
+            isPT: isPartTimeStaff(s),
+            contract: s.contract,
+            startDate: s.start_date,
+            endDate: s.endDate,
+            rate: s.rate ? parseFloat(s.rate) || null : null,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      }
     } else if (canSeeAllBranches(auth.session) || isAcademy(userRole)) {
       // No filter — caller sees all branches.
     } else {
@@ -661,6 +713,8 @@ export async function GET(request: Request) {
       totals,
       staff: results,
       isEmployeeView,
+      isBranchManagerView: isBranchManager(userRole),
+      branchRoster,
       availableWeeks,
     });
   } catch (error) {

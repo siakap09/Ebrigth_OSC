@@ -46,7 +46,6 @@ interface User {
   Bank_Account?: string;
   University?: string;
   accessStatus: string;
-  biometricTemplate: string | null;
   registeredAt: string;
   updatedAt: string;
   trainingStartDate?: string;
@@ -662,7 +661,6 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
                       {field("Employee Type", selectedUser.Emp_Type)}
                       {field("Employee Status", selectedUser.Emp_Status)}
                       {field("Access Status", selectedUser.accessStatus)}
-                      {field("Biometrics", selectedUser.biometricTemplate ? "✓ Enrolled" : "✗ Not Enrolled")}
                       {field("Registered On", selectedUser.registeredAt ? new Date(selectedUser.registeredAt).toLocaleDateString() : "")}
                     </div>
                   </section>

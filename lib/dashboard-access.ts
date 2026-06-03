@@ -182,6 +182,7 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
   [ROLES.BRANCH_MANAGER]: [
     "home",
     "hrms.manpower-planning",
+    "hrms.manpower-cost",         // branch-scoped cost report + Branch Team roster
     "fa-system",
     "pcm-system",
     "crm",
