@@ -60,12 +60,15 @@ export default function CertificatePage() {
       {/* Outer wrapper. On screen we keep the 900px max-width so the cert
           mirrors A4 portrait. On print, the @page rule already enforces
           12mm A4 margins so the cert never butts against the paper edge.
-          The fa-print-cert class is required — pcm-globals.css hides
-          `body *` on print and only reveals nodes inside .fa-print-cert
-          (and their children). Without it the printed page comes out
-          blank. */}
+          fa-print-cert-page (NOT fa-print-cert) is the class that:
+            • is the print-visibility opt-out for this subtree
+              (`body *` is visibility:hidden on print otherwise);
+            • has no `display:none` on screen — `.fa-print-cert` does, and
+              using that one made the on-screen view disappear.
+          The page-break-after on .fa-print-cert-page is a no-op here
+          because :last-child resets it (only one cert on the page). */}
       <div
-        className="fa-print-cert mx-auto print:shadow-none"
+        className="fa-print-cert-page mx-auto print:shadow-none"
         style={{ maxWidth: "900px", padding: "16px 24px" }}
       >
         <CertificateBody report={report} />

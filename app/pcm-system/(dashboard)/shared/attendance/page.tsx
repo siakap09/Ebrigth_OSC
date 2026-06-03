@@ -214,7 +214,7 @@ export default function AttendancePage() {
     <AppShell>
       <div className="mb-8">
         <div className="text-xs uppercase tracking-wider font-semibold text-ink-400 mb-1">
-          FA Shared
+          PCM Shared
         </div>
         <h1 className="fa-display text-4xl text-ink-900">Attendance</h1>
         <p className="text-ink-500 mt-1">
