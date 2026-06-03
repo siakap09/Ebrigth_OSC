@@ -499,7 +499,16 @@ h1, h2, h3, h4 {
     visibility: visible;
   }
   /* Each bulk-print certificate gets its own page. The single-preview
-     flow doesn't wrap with .fa-print-cert-page so it still prints on one page. */
+     flow doesn't wrap with .fa-print-cert-page so it still prints on one page.
+     Visibility override is required because `body *` is visibility:hidden
+     above — without revealing this subtree, bulk-print pages come out
+     blank. Unlike .fa-print-cert, this rule does NOT set position:absolute,
+     so multiple .fa-print-cert-page siblings flow normally and each
+     lands on its own A4 sheet via page-break-after. */
+  .fa-print-cert-page,
+  .fa-print-cert-page * {
+    visibility: visible;
+  }
   .fa-print-cert-page {
     page-break-after: always;
     break-after: page;

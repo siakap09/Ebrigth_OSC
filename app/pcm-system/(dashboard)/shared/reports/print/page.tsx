@@ -89,8 +89,13 @@ function BulkPrintInner() {
       {reports.map((report, idx) => (
         <article
           key={report.id}
-          // .fa-print-cert-page is declared in pcm-globals.css — forces a
-          // page-break between certs in bulk print.
+          // .fa-print-cert-page does two jobs (declared in pcm-globals.css):
+          //   1. Forces a page-break-after so each cert prints on its own
+          //      A4 sheet.
+          //   2. Reveals the subtree on print (the global rule hides
+          //      `body *` by default). We can't use .fa-print-cert here
+          //      because that class is absolutely-positioned at top:0,
+          //      which would stack every cert on the same page.
           className="fa-print-cert-page mx-auto print:shadow-none"
           style={{ maxWidth: "900px", padding: "16px 24px", marginBottom: idx === reports.length - 1 ? 0 : 24 }}
         >
