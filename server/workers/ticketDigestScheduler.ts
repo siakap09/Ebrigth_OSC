@@ -29,10 +29,42 @@
  */
 
 import { prisma } from '@/lib/crm/db'
-import { sendEmail } from '@/lib/crm/email'
+import type { SendEmailOptions } from '@/lib/crm/email'
 
 const TICK_INTERVAL_MS = 60 * 1000 // 1 minute
 const KL_OFFSET_MS = 8 * 3600 * 1000
+
+// ─── Lazy email loader ───────────────────────────────────────────────────────
+// `@/lib/crm/email` throws at IMPORT time in production when
+// CRM_RESEND_API_KEY is unset (it's a hard guard to catch missing config at
+// boot — see lib/crm/email.ts:27). On staging that env var isn't always
+// exported, and pulling the module statically at the top of this file would
+// crash the entire worker on startup. Defer the import to first-send so the
+// scheduler boots regardless; failures fall back to a per-fire warning.
+let cachedSendEmail:
+  | ((opts: SendEmailOptions) => Promise<{ id: string }>)
+  | null
+  | 'unavailable' = null
+
+async function trySendEmail(opts: SendEmailOptions): Promise<{ id: string } | null> {
+  if (cachedSendEmail === 'unavailable') return null
+  if (cachedSendEmail === null) {
+    try {
+      const mod = await import('@/lib/crm/email')
+      cachedSendEmail = mod.sendEmail
+    } catch (e) {
+      cachedSendEmail = 'unavailable'
+      console.warn(
+        '[ticketDigest] Email module unavailable — likely missing CRM_RESEND_API_KEY. ' +
+          'Auto-fire will continue ticking but no emails will be sent until the env ' +
+          'var is set and the worker is restarted. Underlying error:',
+        e instanceof Error ? e.message : e,
+      )
+      return null
+    }
+  }
+  return cachedSendEmail(opts)
+}
 
 /** The four daily fire hours, KL wall-clock. */
 const FIRE_HOURS = [12, 15, 18, 21] as const
@@ -263,13 +295,20 @@ async function tick(): Promise<void> {
         continue
       }
       try {
-        await sendEmail({
+        const r = await trySendEmail({
           to: user.email,
           subject: `Ticket Digest — ${userTickets.length} new ticket${userTickets.length === 1 ? '' : 's'} (${formatKLTime(end)})`,
           html: buildDigestHtml(user.name, userTickets, { start, end }),
           from: DIGEST_FROM,
         })
-        sentCount++
+        if (r === null) {
+          // Email module unavailable (e.g. CRM_RESEND_API_KEY unset). The
+          // warning was already printed once by trySendEmail on first call;
+          // count this attempt as a failure so the audit row reflects reality.
+          failedCount++
+        } else {
+          sentCount++
+        }
       } catch (e) {
         failedCount++
         console.warn(
