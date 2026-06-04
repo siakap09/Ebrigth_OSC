@@ -145,6 +145,16 @@ async function main() {
   setShutdownHook(stopBurnlistScheduler, true)
 
   console.log('  - burnlistScheduler   (Wednesday 00:00 snapshot rollover)')
+
+  // Always start the ticket-digest scheduler — also Redis-free. Fires at
+  // 12:00 / 15:00 / 18:00 / 21:00 KL each day and emails each ticket
+  // submitter a digest of their tickets created in that window.
+  const { startTicketDigestScheduler, stopTicketDigestScheduler } =
+    await import('./ticketDigestScheduler')
+  await startTicketDigestScheduler()
+  setShutdownHook(stopTicketDigestScheduler, true)
+
+  console.log('  - ticketDigest        (12/15/18/21 KL submitter digest)')
   console.log('[workers] Startup complete.')
 }
 

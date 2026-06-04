@@ -440,8 +440,12 @@ export function PlatformFieldsForm({
     )
   }
 
-  // Lead tickets get an extra Stage dropdown above the Remarks textarea —
-  // applies to every lead sub-type (missing / duplicate / delete / others).
+  // Lead tickets need:
+  //   - Stage (which kanban column the issue concerns)
+  //   - Opportunity Name / Contact / Email (so the admin handling the
+  //     ticket can find the lead in the CRM without guesswork)
+  //   - Remarks (free-text description)
+  // Applies to every lead sub-type (missing / duplicate / delete / others).
   if (platformSlug === 'lead') {
     return (
       <div className="space-y-4">
@@ -450,6 +454,27 @@ export function PlatformFieldsForm({
           label="Stage"
           options={LEAD_STAGE_OPTIONS}
           placeholder="Select stage…"
+          required
+          control={control}
+          errors={errors}
+        />
+        <TextField
+          name="opportunityName"
+          label="Opportunity Name"
+          required
+          control={control}
+          errors={errors}
+        />
+        <TextField
+          name="opportunityContact"
+          label="Opportunity Contact"
+          required
+          control={control}
+          errors={errors}
+        />
+        <TextField
+          name="opportunityEmail"
+          label="Opportunity Email"
           required
           control={control}
           errors={errors}
