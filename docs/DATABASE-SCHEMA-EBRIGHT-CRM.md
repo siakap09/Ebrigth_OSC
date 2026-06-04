@@ -2,8 +2,8 @@
 
 **For:** the engineer creating the new database
 **What this is:** the complete list of tables and columns to create for the CRM
-system (including the ticketing system) in a brand-new PostgreSQL database called
-**`ebright_crm`**.
+system (including the ticketing system) in the **`ebright_crm`** PostgreSQL
+database.
 
 ## Read this first
 
@@ -11,11 +11,23 @@ system (including the ticketing system) in a brand-new PostgreSQL database calle
   ordinary table. **There are NO foreign tables, NO `postgres_fdw`, NO proxy
   views.** (The old server used FDW to read data from other databases — that is
   exactly what caused the outage, and we are not doing it here.)
-- **Only the data the CRM actually uses is included.** HR operational tables
-  (medical leave, attendance, leave transactions, manpower schedule, employee
-  roster, staff directory) are **deliberately left out** — the CRM never reads
-  them. See [What was removed and why](#what-was-removed-and-why).
-- **44 tables total**, grouped into 4 sections.
+- The OSC system uses a **multi-database** layout. Each database has its own
+  purpose; the app opens a separate direct connection per database (no FDW,
+  no joins across databases). The build sheet below is **only for
+  `ebright_crm`** — HR data and lead-source data live in their own DBs.
+
+  | DB | Purpose | App env var | Schema |
+  |---|---|---|---|
+  | **`ebright_crm`** *(this sheet)* | CRM core + ticketing + audit + auth | `DATABASE_URL` | `crm` |
+  | `ebright_hrfs` | HR data — User, BranchStaff, AttendanceLog, AttendanceLogST, LeaveTransaction, MedicalLeave, ManpowerSchedule, Employee | `HRFS_DATABASE_URL` | `public` |
+  | `ebrightleads_db` | Upstream lead source + FA system | `LEADS_DB_URL` / `FA_DATABASE_URL` | `public` |
+
+- **Only the data the CRM owns is in `ebright_crm`.** HR operational tables
+  (medical leave, attendance, leave, manpower, employee roster, staff
+  directory, and the User login table) are **not** in this DB — they live in
+  `ebright_hrfs` and the app reads them via a separate Prisma client. See
+  [What lives in another database](#what-lives-in-another-database).
+- **43 tables total** in `ebright_crm`, grouped into 4 sections.
 - All tables go into **one schema** named `crm`.
 - **This same sheet builds both PRODUCTION and STAGING.** Both environments use
   the **identical database name `ebright_crm` and identical table names**, on
@@ -53,10 +65,8 @@ CREATE TYPE "WhatsAppProvider"      AS ENUM ('META_CLOUD','TWILIO');
 
 ### A couple of conventions used in the tables below
 
-- **`id` column.** Most tables use `id TEXT PRIMARY KEY`. The application
+- **`id` column.** Every table uses `id TEXT PRIMARY KEY`. The application
   generates the ID (a UUID string), so the database needs **no default** on it.
-  The one exception is the `User` table, whose `id` is an auto-incrementing
-  integer (`SERIAL`).
 - **Timestamps.** `createdAt` / `created_at` can default to `now()`.
   `updatedAt` / `updated_at` is set by the application on every change; at the
   database level just make it `NOT NULL` (a `DEFAULT now()` is fine).
@@ -64,14 +74,13 @@ CREATE TYPE "WhatsAppProvider"      AS ENUM ('META_CLOUD','TWILIO');
 
 ---
 
-## Quick reference — all 44 tables
+## Quick reference — all 43 tables
 
-### Section 1 — Login & access (6 tables)
+### Section 1 — Auth & access (5 tables)
 | Table | What it stores |
 |---|---|
-| `User` | Login accounts (email + password) for signing in. Real table here — its **rows are imported from another database on the same server** (no FDW). See note. |
-| `SessionRevocation` | Marks a user's old sessions invalid after a password change. |
-| `crm_auth_user` | The CRM's own user identity (linked to login by email). |
+| `SessionRevocation` | Marks a user's old sessions invalid after a password change (keyed by `email`). |
+| `crm_auth_user` | The CRM's own user identity (linked to the HR `User` table in `ebright_hrfs` by email at sign-in). |
 | `crm_auth_session` | Active CRM login sessions. |
 | `crm_auth_account` | Credential/OAuth records per CRM user. |
 | `crm_auth_verification` | Email-verification tokens. |
@@ -128,32 +137,38 @@ CREATE TYPE "WhatsAppProvider"      AS ENUM ('META_CLOUD','TWILIO');
 
 ---
 
-## What was removed and why
+## What lives in another database
 
-These HR tables existed in the old `ebright_crm` **only** because the old server
-used FDW to mirror them from the HR database (`ebright_hrfs`). The CRM and
-ticketing code **never reads them.** They are **not** part of this build:
+These tables are **not** in `ebright_crm` — the OSC system already has dedicated
+databases for them. The app reads each via its own Prisma client / direct
+connection (no FDW). Listed here so the builder doesn't accidentally try to
+create them in `ebright_crm`.
 
-| Removed table | Why it's not needed |
+### In `ebright_hrfs` (`HRFS_DATABASE_URL`, schema `public`)
+| Table | What it stores | Why it lives there, not here |
+|---|---|---|
+| `User` | Login accounts (email + passwordHash, role). NextAuth credential-check authenticates against this table. | The CRM SSO bridge reads this via `HRFS_DATABASE_URL` and upserts a matching `crm_auth_user` row. Keeping it in HR keeps a single source of truth for staff identity. |
+| `BranchStaff` | Staff directory (Staff Directory page reads this). | HR-owned. |
+| `AttendanceLog` / `AttendanceLogST` | Clock in/out logs (HR scanners). | HR-owned; the CRM never reads them. |
+| `LeaveTransaction` | Leave records. | HR-owned. |
+| `MedicalLeave` | Medical-leave subset. | HR-owned. |
+| `ManpowerSchedule` | Weekly staff rota. | HR-owned. |
+| `Employee` | Coach/employee roster + pay rate. | HR-owned. |
+
+### In `ebrightleads_db` (`LEADS_DB_URL` / `FA_DATABASE_URL`, schema `public`)
+| Table | What it stores |
 |---|---|
-| `MedicalLeave` | HR-only. The CRM has no feature that reads medical leave. |
-| `LeaveTransaction` | HR-only (leave records). |
-| `AttendanceLog` | HR-only (clock in/out). |
-| `AttendanceLogST` | HR-only (clock in/out, second scanner). |
-| `ManpowerSchedule` | HR-only (staff rota). |
-| `Employee` | HR-only (coach/employee roster + pay rate). |
-| `BranchStaff` | HR-only (staff directory). The CRM identifies its users through `crm_auth_user`, not this table. |
+| `master_lead` | Unified raw lead landing-table (replaces the old `master_leads_base`). Direct webhook inserts from Meta / Wix / GHL land here. |
+| `master_leads_unified` (VIEW) | Sibling-explode view of `master_lead` consumed by the CRM lead-ingest worker via LISTEN/NOTIFY on `lead_inserted`. |
+| `meta_leads` / `raw_wix_leads` / `social_posts` | Legacy per-source raw tables. |
+| `studentrecords` | Source for the Burnlist weekly snapshot feature. |
+| `fa_*` / `pcm_*` | FA / PCM academy module tables (shared FA/PCM DB). |
 
-> These continue to live in the HR system's own database. They do not belong in
-> the CRM database.
-
-> **Why `User` is kept** (the one exception): signing in is checked against the
-> `User` table (email + password). It is a **real, owned table in this
-> database** — but its **rows are imported from another database on the same
-> server** (a one-time or scheduled data copy, e.g. `pg_dump -t`/restore, a
-> `dblink`/`INSERT … SELECT`, or an ETL job). **No FDW** — the table is not a
-> live proxy; it physically holds the copied rows. Refresh the copy whenever the
-> source user list changes.
+> **Connections, not joins.** The CRM never does cross-database joins. Each
+> client (`prisma`, `hrfsPrisma`, leads worker via `pg` driver) opens its own
+> connection to its own database and runs queries against that DB only.
+> Anything that *looks* like a join across databases is two separate queries
+> stitched together in app code.
 
 ---
 
@@ -165,27 +180,12 @@ ticketing code **never reads them.** They are **not** part of this build:
 > decimals, `JSONB` = JSON data, `TEXT[]` = list of strings. A type in
 > "quotes" is one of the enum types from Step 0.
 
-## Section 1 — Login & access
+## Section 1 — Auth & access
 
-### `User`
-Login accounts. Holds everyone who can sign in to this system. **Rows are
-imported from another database on the same server (no FDW)** — see the note in
-[What was removed and why](#what-was-removed-and-why).
-
-| Column | Type | Null? | Default |
-|--------|------|-------|---------|
-| id | SERIAL | No | auto |
-| email | TEXT | No | — *(unique)* |
-| passwordHash | TEXT | No | — |
-| role | TEXT | No | `'BRANCH_MANAGER'` |
-| branchName | TEXT | Yes | — |
-| createdAt | TIMESTAMP(3) | No | now() |
-| name | TEXT | Yes | — |
-| status | TEXT | No | `'ACTIVE'` |
-| lastLoggedInAt | TIMESTAMP(3) | Yes | — |
-| dashboardOverrides | JSONB | Yes | — |
-
-- **Primary key:** `id`  •  **Unique:** `email`
+> The HR `User` table (login credentials) is **not in this database** — it
+> lives in `ebright_hrfs.public."User"`. See
+> [What lives in another database](#what-lives-in-another-database) for the
+> column list of that table. The CRM app reads it via `HRFS_DATABASE_URL`.
 
 ### `SessionRevocation`
 | Column | Type | Null? | Default |
@@ -872,7 +872,7 @@ imported from another database on the same server (no FDW)** — see the note in
 
 Create tables that nothing points to first, then the rest:
 
-1. **First:** `User`, `SessionRevocation`, `crm_auth_user`, `crm_auth_verification`,
+1. **First:** `SessionRevocation`, `crm_auth_user`, `crm_auth_verification`,
    `core_audit_log`, `crm_tenant`, `crm_lead_source`, `tkt_platform`,
    `tkt_branch`, `tkt_user_profile`.
 2. **Then:** `crm_auth_session`, `crm_auth_account`, `crm_branch`,
@@ -895,13 +895,17 @@ clobber.)
 
 ## Confirmed decisions
 
-1. **`User` table — KEPT, populated by import (no FDW).** It is a real, owned
-   table in `ebright_crm`. Its rows are **imported from another database on the
-   same server** via a plain data copy (e.g. `pg_dump -t`/restore, a
-   `dblink`/`INSERT … SELECT`, or an ETL job) — **not** a live FDW proxy. Refresh
-   the copy whenever the source user list changes.
+1. **Multi-database architecture — aligned with the OSC convention.** `ebright_crm`
+   contains only CRM + ticketing + audit + auth. HR tables (`User`, `BranchStaff`,
+   `AttendanceLog`, `AttendanceLogST`, `LeaveTransaction`, `MedicalLeave`,
+   `ManpowerSchedule`, `Employee`) live in **`ebright_hrfs`** and are reached via
+   `HRFS_DATABASE_URL`. Lead-source tables (`master_lead`, `master_leads_unified`,
+   `meta_leads`, `raw_wix_leads`, `social_posts`, `studentrecords`) live in
+   **`ebrightleads_db`** and are reached via `LEADS_DB_URL` / `FA_DATABASE_URL`.
+   **No FDW**, no cross-database joins — each domain has its own direct
+   connection.
 2. **Burnlist — OUT OF SCOPE.** The `burnlist_week` and `burnlist_entry` tables
-   are **not** created. (Total is therefore **44 tables**.)
+   are **not** created in this DB. (Total is therefore **43 tables**.)
 3. **Production + Staging — identical names, separate instances.** Both
    environments use the **same database name `ebright_crm`** and the **same table
    names**, built from this one sheet. They must live on **two separate
@@ -909,3 +913,21 @@ clobber.)
    so that work on one never affects the other — they must **not** be the same
    physical database (that shared setup is what caused the original outage). The
    app simply points at a different connection string per environment.
+
+## Reference — full connection-string layout
+
+For both production and staging, the four URLs the app expects (taken from the
+canonical OSC `.env`):
+
+```
+DATABASE_URL=postgresql://<user>:<pw>@<host>:<port>/ebright_crm?schema=crm
+LEADS_DB_URL=postgres://<user>:<pw>@<host>:<port>/ebrightleads_db
+HRFS_DATABASE_URL=postgresql://<user>:<pw>@<host>:<port>/ebright_hrfs?schema=public
+FA_DATABASE_URL=postgres://<user>:<pw>@<host>:<port>/ebrightleads_db
+```
+
+The CRM Prisma client uses `DATABASE_URL` (`?schema=crm`). HRFS access uses
+a separate Prisma client pointed at `HRFS_DATABASE_URL`. The lead-ingest
+worker opens a raw `pg` connection to `LEADS_DB_URL` for LISTEN/NOTIFY +
+polling. The FA module reads `FA_DATABASE_URL` (same DB as leads, separate
+URL so the FA team can repoint it independently if needed).
