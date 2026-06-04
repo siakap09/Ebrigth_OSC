@@ -22,6 +22,10 @@ export async function ensureWeekSnapshot(weekKey: string) {
   });
   if (existing) return { week: existing, created: false };
 
+  // Same-day expiry rule: a student whose credit_expiry_date equals the
+  // Wednesday refresh date is NOT yet "expired" from the user's POV (AONE
+  // treats them as still active until the day fully passes). Use strict <,
+  // never <=. See memory: project-burnlist-same-day-expiry-rule.
   const { rows } = await faPool.query<StudentRecordRow>(
     `SELECT id,
             name,
@@ -33,7 +37,9 @@ export async function ensureWeekSnapshot(weekKey: string) {
         AND name IS NOT NULL
         AND TRIM(name) <> ''
         AND credit_expiry_date IS NOT NULL
+        AND credit_expiry_date < $1::date
       ORDER BY credit_expiry_date DESC, name`,
+    [weekKey],
   );
 
   const week = await prisma.burnlistWeek.create({

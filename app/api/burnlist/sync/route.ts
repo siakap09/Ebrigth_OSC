@@ -52,7 +52,9 @@ export async function POST() {
   try {
     const weekKey = currentWeekWednesday();
 
-    // Pull live source from ebrightleads_db.studentrecords
+    // Pull live source from ebrightleads_db.studentrecords. Strict-less-than
+    // on the Wednesday date — same-day expiries are not yet "expired" from
+    // the user's POV (see memory: project-burnlist-same-day-expiry-rule).
     const { rows: srcRows } = await faPool.query<StudentRecord>(
       `SELECT id, name, branch,
               TO_CHAR(credit_expiry_date, 'YYYY-MM-DD') AS expiry
@@ -61,7 +63,9 @@ export async function POST() {
           AND status = 'Active'
           AND name IS NOT NULL
           AND TRIM(name) <> ''
-          AND credit_expiry_date IS NOT NULL`,
+          AND credit_expiry_date IS NOT NULL
+          AND credit_expiry_date < $1::date`,
+      [weekKey],
     );
 
     // Ensure the week exists (create if first sync of the day)
