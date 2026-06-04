@@ -350,6 +350,10 @@ export interface FAReport {
   /** Person who filled the form. */
   preparedBy: string;
   preparedById?: string;
+  /** Optional URL of a recorded performance — Marketing pastes a Drive
+   *  /Vimeo/YouTube link so parents can watch the student's session.
+   *  Shown on the certificate as a clickable link. */
+  videoLink?: string;
   createdAt: string;
   updatedAt: string;
 }

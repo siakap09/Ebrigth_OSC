@@ -22,6 +22,7 @@ interface ReportRow {
   prepared_by_id: string | null;
   prepared_by_signature: string | null;
   received_by: string;
+  video_link: string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -54,6 +55,7 @@ function rowToReport(r: ReportRow): PcmReport {
     preparedById: r.prepared_by_id ?? undefined,
     preparedBySignature: r.prepared_by_signature ?? undefined,
     receivedBy: r.received_by,
+    videoLink: r.video_link ?? undefined,
     createdAt: isoTs(r.created_at),
     updatedAt: isoTs(r.updated_at),
   };
@@ -63,7 +65,7 @@ const COLS = `id, invitation_id, student_id, student_name, branch, grade,
               assessment_date, confidence_score, voice_clarity_score,
               eye_contact_score, idea_expression_score, strengths,
               improvement_plan, prepared_by, prepared_by_id,
-              prepared_by_signature, received_by,
+              prepared_by_signature, received_by, video_link,
               created_at, updated_at`;
 
 export async function fetchAllReports(): Promise<PcmReport[]> {
@@ -91,8 +93,8 @@ export async function upsertReportRow(args: Omit<PcmReport, "id" | "createdAt" |
        assessment_date, confidence_score, voice_clarity_score,
        eye_contact_score, idea_expression_score, strengths,
        improvement_plan, prepared_by, prepared_by_id,
-       prepared_by_signature, received_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       prepared_by_signature, received_by, video_link)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      ON CONFLICT (invitation_id) DO UPDATE SET
        student_name          = EXCLUDED.student_name,
        branch                = EXCLUDED.branch,
@@ -108,6 +110,7 @@ export async function upsertReportRow(args: Omit<PcmReport, "id" | "createdAt" |
        prepared_by_id        = EXCLUDED.prepared_by_id,
        prepared_by_signature = EXCLUDED.prepared_by_signature,
        received_by           = EXCLUDED.received_by,
+       video_link            = EXCLUDED.video_link,
        updated_at            = now()
      RETURNING ${COLS}`,
     [
@@ -115,7 +118,7 @@ export async function upsertReportRow(args: Omit<PcmReport, "id" | "createdAt" |
       args.assessmentDate, args.confidenceScore, args.voiceClarityScore,
       args.eyeContactScore, args.ideaExpressionScore, args.strengths,
       args.improvementPlan, args.preparedBy, args.preparedById ?? null,
-      args.preparedBySignature ?? null, args.receivedBy,
+      args.preparedBySignature ?? null, args.receivedBy, args.videoLink ?? null,
     ],
   );
   return rowToReport(rows[0]);

@@ -20,31 +20,32 @@ export function CertificateBody({ report }: { report: FAReport }) {
   const totalMax = FA_REPORT_MAX_PER_CRITERION * 4;
 
   return (
-    // Outer wrapper has its own horizontal padding so the red banner and
-    // every section inside it stays well clear of the A4 page edge. Bumped
-    // from 28px to 48px after the user flagged the TOTAL SCORE pill
-    // appearing to run off the paper.
     <div style={{ background: "white", padding: "0 48px" }}>
       {/* Red header bar with white wordmark + address. The "ebright"
           wordmark is wrapped in a white-bordered frame so it reads as a
           logo lock-up rather than plain text (closest we can get without
           an SVG asset). */}
-      <div style={{ background: "#dc2626", color: "white", padding: "16px 24px" }}>
+      {/* Banner red matched to the eBright PNG's brand red so the logo
+          box reads as part of the banner instead of "floating" on a
+          slightly different shade. Both PCM and FA banners use this
+          same value. */}
+      <div style={{ background: "#e30613", color: "white", padding: "16px 24px" }}>
         <div className="flex items-start justify-between gap-6">
-          <div
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/ebright-logo.png"
+            alt="eBright"
+            // White border drawn directly on the image with no extra
+            // padding — matches the eBright brand lock-up where the
+            // border hugs the red rectangle exactly, no gap.
             style={{
-              display: "inline-block",
-              padding: "6px 14px",
-              border: "2px solid white",
-              fontFamily: "var(--font-display, serif)",
-              fontWeight: 700,
-              fontSize: 26,
-              lineHeight: 1,
-              letterSpacing: "-0.02em",
+              height: 60,
+              width: "auto",
+              display: "block",
+              border: "3px solid white",
+              boxSizing: "content-box",
             }}
-          >
-            ebright
-          </div>
+          />
           <div className="text-right text-[11px] leading-snug" style={{ opacity: 0.92 }}>
             <div className="font-semibold">EBRIGHT SDN. BHD.</div>
             <div>21-2, Jalan USJ 10/1D, Taipan Business Centre,</div>
@@ -52,7 +53,7 @@ export function CertificateBody({ report }: { report: FAReport }) {
           </div>
         </div>
         <h1
-          className="text-left"
+          className="text-center"
           style={{
             fontFamily: "var(--font-display, serif)",
             fontWeight: 800,
@@ -120,11 +121,10 @@ export function CertificateBody({ report }: { report: FAReport }) {
       </div>
 
       {/* White section below the slate block — Remarks + Prepared by.
-          NO horizontal padding here so the Remarks box's left edge and
-          TOTAL SCORE pill's right edge line up with the slate block's
-          OUTER edges above (its tinted background). With px-10 the row
-          was inset 40px further than the slate, which looked misaligned
-          even though it matched the slate's content. */}
+          No flex/min-height tricks; content flows naturally so the
+          Prepared-by name is always visible. Any remaining empty space
+          at the bottom of the page is the cost of guaranteed "all
+          words visible". */}
       <div className="pt-2 pb-10">
         <h2
           className="text-center mt-6 mb-4"
@@ -148,7 +148,7 @@ export function CertificateBody({ report }: { report: FAReport }) {
           <div
             className="flex-1 min-w-0 bg-white rounded p-5 text-ink-800 whitespace-pre-wrap leading-relaxed"
             style={{
-              border: "3px solid #dc2626",
+              border: "3px solid #e30613",
               fontSize: 18,
               lineHeight: 1.6,
               minHeight: 160,
@@ -192,15 +192,21 @@ export function CertificateBody({ report }: { report: FAReport }) {
           </div>
         </div>
 
-        {/* Prepared-by footer — smaller, less prominent than the PCM cert
-            since the FA template has no signature box. Just the name on a
-            dotted line so the document still reads as formally signed. */}
-        <div className="mt-10">
-          <div className="font-bold mb-2" style={{ fontSize: 14 }}>Prepared by:</div>
-          <div
-            className="pt-2 text-ink-900 max-w-md"
-            style={{ borderTop: "2px dotted #1f2937", fontSize: 15 }}
-          >
+        {/* Prepared-by footer — empty space above the dotted line (where
+            a handwritten signature would go), then the line, then the
+            name below. Mirrors the structure of the PCM "Prepared by"
+            row so both certs read consistently. */}
+        <div className="mt-12 max-w-md">
+          <div className="font-bold mb-3" style={{ fontSize: 16 }}>Prepared by:</div>
+          {/* Empty signature space — sized so the section feels
+              proportional to the rest of the cert without burning too
+              much vertical room. */}
+          <div style={{ height: 48 }} />
+          {/* Dotted signature line */}
+          <div style={{ borderTop: "2px dotted #1f2937" }} />
+          {/* Filled-by name below the line, with a small gap so the
+              text doesn't visually touch the dots. */}
+          <div className="pt-2 text-ink-900" style={{ fontSize: 15 }}>
             {report.preparedBy || ""}
           </div>
         </div>

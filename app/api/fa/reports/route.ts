@@ -78,6 +78,11 @@ export async function POST(req: NextRequest) {
       remarks: String(body.remarks ?? ""),
       preparedBy: String(body.preparedBy ?? "").trim(),
       preparedById: body.preparedById ? String(body.preparedById) : undefined,
+      // Video link of the student's recorded performance. Trimmed +
+      // bounded to 2KB.
+      videoLink: typeof body.videoLink === "string" && body.videoLink.trim().length > 0 && body.videoLink.length < 2000
+        ? body.videoLink.trim()
+        : undefined,
     });
     return NextResponse.json({ report });
   } catch (err) {

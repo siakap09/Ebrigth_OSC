@@ -480,11 +480,14 @@ h1, h2, h3, h4 {
 
 @media print {
   @page {
-    /* 8mm gives the cert ~24mm more usable height than the old 1cm =
-       10mm × 2-side setup, which is what enables the cert to fit one
-       A4 page even with readable fonts. */
+    /* margin: 0 — the .fa-print-cert-page wrapper is sized to a full
+       A4 page (210×297mm) and controls layout edge-to-edge. */
     size: A4;
-    margin: 8mm;
+    margin: 0;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
   }
   body * {
     visibility: hidden;
@@ -521,13 +524,28 @@ h1, h2, h3, h4 {
     print-color-adjust: exact;
     color-adjust: exact;
   }
-  /* Print mode — fit one cert per A4 page with readable fonts.
-     zoom 0.88 + @page margin 8mm (defined later) + tight padding
-     overrides combine to put the whole cert on a single sheet. */
+  /* Print mode — STRICTLY one cert per A4 page, always.
+     Wrapper IS the page (210×297mm) with overflow:hidden so content
+     can never spill. Inner element gets zoom 0.85 + form char-limit
+     400 to keep content within the page budget. */
   .fa-print-cert-page {
-    zoom: 0.88;
+    width: 210mm !important;
+    height: 297mm !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    box-sizing: border-box;
+    overflow: hidden;
     page-break-after: always;
     break-after: page;
+  }
+  .fa-print-cert-page > * {
+    /* 0.92 — fills the page for typical-length reports. Trade-off
+       documented with the user: reports with Remarks near the 400-char
+       max may have the bottom of "Marketing" slightly clipped, since
+       no zoom value fits the longest possible content AND eliminates
+       the empty band for short content at the same time. */
+    zoom: 0.92;
   }
   .fa-print-cert-page:last-child {
     page-break-after: auto;
