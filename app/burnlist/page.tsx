@@ -929,6 +929,14 @@ export default function BurnlistPage() {
             </button>
             <ExportMenu onPdf={exportPdf} onCsv={exportCsv} disabled={loading || entries.length === 0} />
             {superAdmin && (
+              <SyncButton
+                disabled={loading || !isViewingCurrentWeek}
+                onSynced={() => loadWeek(weekKey)}
+                onError={(msg) => setFetchError(msg)}
+                askConfirm={(state) => setConfirmState(state)}
+              />
+            )}
+            {superAdmin && (
               <button
                 onClick={() => addEntry("NEW BRANCH")}
                 className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-gradient-to-r from-orange-500 via-red-500 to-red-600 hover:from-orange-600 hover:via-red-600 hover:to-red-700 px-4 py-2 rounded-xl transition-all shadow-md shadow-red-500/30 hover:shadow-lg hover:shadow-red-500/40 active:scale-95 ring-1 ring-white/40"
@@ -1214,6 +1222,80 @@ export default function BurnlistPage() {
 
       <ConfirmDialog state={confirmState} onCancel={() => setConfirmState(null)} />
     </div>
+  );
+}
+
+// ─── Sync with AONE button ─────────────────────────────────────────────────
+
+interface SyncButtonProps {
+  disabled?: boolean;
+  onSynced: () => void;
+  onError: (msg: string) => void;
+  askConfirm: (state: ConfirmState) => void;
+}
+
+/** Today is Wednesday in Asia/Kuala_Lumpur. Mirrors the server-side check. */
+function isMalaysiaWednesday(): boolean {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kuala_Lumpur",
+    weekday: "long",
+  }).format(new Date());
+  return weekday === "Wednesday";
+}
+
+function SyncButton({ disabled, onSynced, onError, askConfirm }: SyncButtonProps) {
+  const [busy, setBusy] = useState(false);
+  const isWed = isMalaysiaWednesday();
+  const locked = disabled || busy || !isWed;
+
+  const doSync = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/burnlist/sync", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      onSynced();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClick = () => {
+    askConfirm({
+      title: "Sync with AONE?",
+      message:
+        "This refreshes the current week from the live student records. New expired students get added, processed ones get removed. Edits you've already made (CTA / remarks / done) are KEPT.",
+      confirmLabel: "Sync now",
+      tone: "warning",
+      onConfirm: () => {
+        doSync();
+      },
+    });
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={locked}
+      className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800 disabled:from-slate-400 disabled:to-slate-500 disabled:cursor-not-allowed px-4 py-2 rounded-xl transition-all shadow-md shadow-purple-500/30 hover:shadow-lg hover:shadow-purple-500/40 active:scale-95 ring-1 ring-white/40"
+      title={
+        !isWed
+          ? "Sync is only available on Wednesdays (Malaysia time)"
+          : disabled
+            ? "Sync only runs on the current week"
+            : busy
+              ? "Syncing…"
+              : "Refresh this week from the latest student records (AONE)"
+      }
+    >
+      <svg className={`w-4 h-4 ${busy ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M8 16H3v5M16 8h5V3m-1 5A8 8 0 005.6 6.2M4 16a8 8 0 0014.4 1.8" />
+      </svg>
+      {busy ? "Syncing…" : "Sync AONE"}
+      {!isWed && <span className="ml-1 text-[9px] font-bold opacity-90">🔒 WED ONLY</span>}
+    </button>
   );
 }
 
