@@ -19,6 +19,7 @@ interface ReportRow {
   remarks: string;
   prepared_by: string;
   prepared_by_id: string | null;
+  video_link: string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -48,6 +49,7 @@ function rowToReport(r: ReportRow): FAReport {
     remarks: r.remarks,
     preparedBy: r.prepared_by,
     preparedById: r.prepared_by_id ?? undefined,
+    videoLink: r.video_link ?? undefined,
     createdAt: isoTs(r.created_at),
     updatedAt: isoTs(r.updated_at),
   };
@@ -56,7 +58,7 @@ function rowToReport(r: ReportRow): FAReport {
 const COLS = `id, invitation_id, student_id, student_name, branch, grade,
               assessment_date, communication_score, analysis_score,
               interaction_score, performance_score, remarks,
-              prepared_by, prepared_by_id,
+              prepared_by, prepared_by_id, video_link,
               created_at, updated_at`;
 
 export async function fetchAllFaReports(): Promise<FAReport[]> {
@@ -84,8 +86,8 @@ export async function upsertFaReportRow(
       (tenant_id, invitation_id, student_id, student_name, branch, grade,
        assessment_date, communication_score, analysis_score,
        interaction_score, performance_score, remarks,
-       prepared_by, prepared_by_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       prepared_by, prepared_by_id, video_link)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      ON CONFLICT (invitation_id) DO UPDATE SET
        student_name        = EXCLUDED.student_name,
        branch              = EXCLUDED.branch,
@@ -98,13 +100,14 @@ export async function upsertFaReportRow(
        remarks             = EXCLUDED.remarks,
        prepared_by         = EXCLUDED.prepared_by,
        prepared_by_id      = EXCLUDED.prepared_by_id,
+       video_link          = EXCLUDED.video_link,
        updated_at          = now()
      RETURNING ${COLS}`,
     [
       TENANT, args.invitationId, args.studentId, args.studentName, args.branch, args.grade,
       args.assessmentDate, args.communicationScore, args.analysisScore,
       args.interactionScore, args.performanceScore, args.remarks,
-      args.preparedBy, args.preparedById ?? null,
+      args.preparedBy, args.preparedById ?? null, args.videoLink ?? null,
     ],
   );
   return rowToReport(rows[0]);

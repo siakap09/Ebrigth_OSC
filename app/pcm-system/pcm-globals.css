@@ -524,20 +524,30 @@ h1, h2, h3, h4 {
     print-color-adjust: exact;
     color-adjust: exact;
   }
-  /* Print mode — fit one cert per A4 page with readable fonts.
-     Approach is the combination of:
-       1. @page margin trimmed from 12mm to 8mm later in this file (gains
-          ~8mm of usable vertical space).
-       2. zoom 0.88 keeps fonts readable at print scale (the earlier 0.78
-          attempt rendered rubric cells at 11px which the user called too
-          small).
-       3. Aggressive !important overrides on non-font spacing — banner
-          padding, identity padding, narrative-box minHeight, signature
-          margins. These cut height without shrinking the text. */
+  /* Print mode — STRICTLY one cert per A4 page, always.
+     Wrapper IS the A4 page (210×297mm fixed) with overflow:hidden so
+     content can NEVER spill to page 2. zoom 0.85 on the inner element
+     sizes content to fit within the page; the 400-char form limit on
+     Strengths + Improvement Plan caps content so it stays within that
+     budget. Together: every cert prints on exactly one page that's
+     mostly filled, no clipping for in-bounds content. */
   .fa-print-cert-page {
-    zoom: 0.88;
+    width: 210mm !important;
+    height: 297mm !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    box-sizing: border-box;
+    overflow: hidden;
     page-break-after: always;
     break-after: page;
+  }
+  .fa-print-cert-page > * {
+    /* 0.95 fills the A4 page tightly. The 400-char maxLength on
+       Strengths + Improvement Plan bounds the worst-case content
+       height — even maxed-out narrative boxes leave the signature
+       row visible. Wrapper overflow:hidden is the strict safety net. */
+    zoom: 0.95;
   }
   .fa-print-cert-page:last-child {
     page-break-after: auto;
@@ -592,14 +602,16 @@ h1, h2, h3, h4 {
 
 /* ============================================================================
    PCM Assessment Report — A4 print rules
-   Drops the page background and enforces A4. Margin trimmed from 12mm
-   to 8mm so the certificate body has the maximum usable area on the
-   sheet — combined with zoom + padding overrides above this is what
-   keeps the whole cert on a single page.
+   margin: 0 because the .fa-print-cert-page wrapper is sized to a full
+   A4 page (210×297mm) and controls the cert edge-to-edge itself.
    ============================================================================ */
 @media print {
   @page {
     size: A4;
-    margin: 8mm;
+    margin: 0;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
   }
 }

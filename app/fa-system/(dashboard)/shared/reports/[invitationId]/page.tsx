@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useFAStore } from "@fa/_lib/store";
@@ -123,6 +123,8 @@ export default function FaReportFormPage() {
   }));
   const [remarks,     setRemarks]     = useState(existing?.remarks ?? "");
   const [preparedBy,  setPreparedBy]  = useState(existing?.preparedBy ?? "");
+  /** Optional URL of a recording of the student's performance. */
+  const [videoLink,   setVideoLink]   = useState(existing?.videoLink ?? "");
   // Default the assessment date to today on first fill, or whatever was
   // saved previously when editing. Marketing can override either way.
   const [assessDate,  setAssessDate]  = useState(
@@ -131,10 +133,10 @@ export default function FaReportFormPage() {
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
 
-  // Default `preparedBy` to the logged-in marketing user the first time.
-  useEffect(() => {
-    if (!existing && !preparedBy && user?.name) setPreparedBy(user.name);
-  }, [existing, preparedBy, user?.name]);
+  // Preparedy-by is intentionally NOT auto-filled. The FA store
+  // user.name resolves to a role/branch label (e.g. "CJY — Cyberjaya"),
+  // not the person's actual name. Each report should record who
+  // actually filled it, so we leave the field empty and let them type.
 
   const total = scores.communication + scores.analysis + scores.interaction + scores.performance;
   const totalMax = FA_REPORT_MAX_PER_CRITERION * 4;
@@ -162,6 +164,7 @@ export default function FaReportFormPage() {
         remarks: remarks.trim(),
         preparedBy: preparedBy.trim(),
         preparedById: user?.id,
+        videoLink: videoLink.trim() || undefined,
       });
       router.push("/fa-system/shared/reports");
     } catch (err) {
@@ -367,14 +370,20 @@ export default function FaReportFormPage() {
         })}
       </div>
 
-      {/* Remarks block — big textarea with a colour accent so it visually
-          balances the four score cards above. */}
+      {/* Remarks block — capped at 400 chars so the printed cert always
+          fits within one A4 page at zoom 0.85. Counter goes red near
+          the limit so Marketing can pace themselves. */}
       <div className="rounded-2xl bg-white border border-ivory-300 shadow-sm overflow-hidden mt-4">
-        <div className="bg-gradient-to-r from-slate-700 to-slate-900 px-5 py-3 flex items-center gap-2.5 text-white">
-          <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-            <MessageSquare className="w-4 h-4" />
+        <div className="bg-gradient-to-r from-slate-700 to-slate-900 px-5 py-3 flex items-center justify-between gap-2.5 text-white">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+              <MessageSquare className="w-4 h-4" />
+            </div>
+            <div className="text-lg font-bold">Remarks</div>
           </div>
-          <div className="text-lg font-bold">Remarks</div>
+          <span className={`fa-mono text-[11px] ${remarks.length > 380 ? "text-rose-300 font-bold" : "text-white/70"}`}>
+            {remarks.length}/400
+          </span>
         </div>
         <div className="p-5">
           <textarea
@@ -382,9 +391,33 @@ export default function FaReportFormPage() {
             onChange={e => setRemarks(e.target.value)}
             disabled={!canFill}
             rows={6}
+            maxLength={400}
             placeholder="Strengths shown, areas to work on, anything notable from the showcase…"
             className="fa-input w-full resize-y"
             style={{ minHeight: 140 }}
+          />
+        </div>
+      </div>
+
+      {/* Video link — optional URL of a recording of the student's
+          performance. Marketing pastes a Google Drive / YouTube / Vimeo
+          link after the session; the certificate renders it as a
+          clickable link so parents can watch back. */}
+      <div className="rounded-2xl bg-white border border-ivory-300 shadow-sm overflow-hidden mt-4">
+        <div className="bg-gradient-to-r from-cyan-600 to-teal-600 px-5 py-3 flex items-center gap-2.5 text-white">
+          <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-xs font-bold">
+            ▶
+          </div>
+          <div className="text-lg font-bold">Video link <span className="font-normal text-white/80 text-sm">(optional)</span></div>
+        </div>
+        <div className="p-5">
+          <input
+            type="url"
+            value={videoLink}
+            onChange={e => setVideoLink(e.target.value)}
+            disabled={!canFill}
+            placeholder="https://drive.google.com/… or https://youtu.be/…"
+            className="fa-input w-full"
           />
         </div>
       </div>

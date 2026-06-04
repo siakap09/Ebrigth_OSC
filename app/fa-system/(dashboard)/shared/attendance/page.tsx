@@ -62,10 +62,13 @@ export default function AttendancePage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-  // Relevant events — ongoing, closed, or recently completed
+  // Relevant events — every status except draft. Marketing/BMs need
+  // to tick attendance for open events too (walk-ins, pre-arrivals,
+  // students who arrive before invitations close), not just after the
+  // event is marked completed. Matches the PCM attendance flow.
   const relevantEvents = useMemo(() => {
     return events
-      .filter(e => e.status === "ongoing" || e.status === "closed" || e.status === "completed")
+      .filter(e => e.status !== "draft")
       .sort((a, b) => b.startDate.localeCompare(a.startDate));
   }, [events]);
 

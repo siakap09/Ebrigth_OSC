@@ -387,6 +387,11 @@ export interface PcmReport {
    *  certificate when present. Capped to ~200 KB client-side at upload time. */
   preparedBySignature?: string;
   receivedBy: string;
+  /** Optional URL of a recorded performance — coach can paste a Google
+   *  Drive / Vimeo / YouTube link when filling the report so parents can
+   *  watch the student's actual session. Shown on the certificate as a
+   *  clickable link below the score block. */
+  videoLink?: string;
   createdAt: string;          // ISO timestamp
   updatedAt: string;          // ISO timestamp
 }

@@ -63,6 +63,11 @@ export async function POST(req: NextRequest) {
         ? body.preparedBySignature
         : undefined,
       receivedBy: String(body.receivedBy ?? "").trim(),
+      // Video link — trim and bound to 2KB so a runaway paste can't
+      // bloat the row. Empty string treated as "no link".
+      videoLink: typeof body.videoLink === "string" && body.videoLink.trim().length > 0 && body.videoLink.length < 2000
+        ? body.videoLink.trim()
+        : undefined,
     });
     return NextResponse.json({ report });
   } catch (err) {
