@@ -400,7 +400,7 @@ function BranchBarChart({ branches }: { branches: BranchMetrics[] }) {
                 <div className="flex-1 truncate text-xs text-slate-700 dark:text-slate-300">
                   {b.branchName.replace(/^.*?-\s*/, '')}
                 </div>
-                <div className="h-5 flex-[2] rounded-full bg-slate-100 dark:bg-slate-700">
+                <div className="h-5 flex-2 rounded-full bg-slate-100 dark:bg-slate-700">
                   <div
                     className={cn(barColor, 'h-full rounded-full transition-all')}
                     style={{ width: `${pctWidth}%` }}

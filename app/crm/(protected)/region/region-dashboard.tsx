@@ -268,7 +268,7 @@ export function RegionDashboard() {
   }, [data, region, branchId, rowsToRender])
 
   return (
-    <div className="mx-auto max-w-[1480px] space-y-6 p-6 lg:p-8">
+    <div className="mx-auto max-w-370 space-y-6 p-6 lg:p-8">
       {/* ─── Header ─── */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
