@@ -1,9 +1,10 @@
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Clock, Mail, LogOut } from 'lucide-react'
+import { Clock, Mail } from 'lucide-react'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
+import { SignOutButton } from './sign-out-button'
 
 // Splash shown when an HRFS user has been auto-provisioned into the CRM but
 // has no crm_user_branch row yet — the SSO bridge couldn't auto-link them
@@ -76,13 +77,7 @@ export default async function AwaitingAccessPage() {
             >
               Try again
             </Link>
-            <Link
-              href="/api/auth/signout"
-              className="flex-1 py-3 px-4 bg-white/10 border border-white/20 text-white font-semibold rounded-xl text-center hover:bg-white/20 transition-all flex items-center justify-center gap-2"
-            >
-              <LogOut className="w-4 h-4" />
-              Sign out
-            </Link>
+            <SignOutButton />
           </div>
 
           <div className="mt-8 text-center">

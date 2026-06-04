@@ -144,13 +144,15 @@ async function readNextAuthEmail(headers: Headers): Promise<{ email: string; nam
 // implementation auto-granted SUPER_ADMIN to every newly-provisioned SSO
 // user, which meant any HRMS account (an intern, a part-time coach) became
 // a CRM god on first login. This map closes that hole.
-function mapHrfsRoleToCrmRole(hrfsRole: string | null | undefined): 'SUPER_ADMIN' | 'AGENCY_ADMIN' | 'BRANCH_MANAGER' | 'BRANCH_STAFF' {
+function mapHrfsRoleToCrmRole(hrfsRole: string | null | undefined): 'SUPER_ADMIN' | 'AGENCY_ADMIN' | 'REGIONAL_MANAGER' | 'BRANCH_MANAGER' | 'BRANCH_STAFF' {
   const r = (hrfsRole ?? '').trim().toUpperCase().replace(/[\s-]/g, '_')
   switch (r) {
     case 'SUPER_ADMIN':
       return 'SUPER_ADMIN'
     case 'AGENCY_ADMIN':
       return 'AGENCY_ADMIN'
+    case 'REGIONAL_MANAGER':
+      return 'REGIONAL_MANAGER'
     case 'BRANCH_MANAGER':
       return 'BRANCH_MANAGER'
     default:

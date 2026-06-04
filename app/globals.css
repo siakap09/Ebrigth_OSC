@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Tailwind v4: enable class-based dark variant so `dark:bg-...` utilities
+   activate whenever .dark is on <html> (or an ancestor). next-themes is
+   configured with attribute="class" + enableSystem={false} in
+   components/crm/providers.tsx, so this is the single switch the user
+   controls via the Light/Dark toggle in the topbar dropdown.
+
+   Without this directive, Tailwind v4 silently ignores every `dark:` class
+   in the codebase and the toggle appears to do nothing. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -12,11 +22,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Dark theme variables track the user-controlled .dark class, NOT the OS
+   preference. The previous @media (prefers-color-scheme: dark) override
+   ignored the toggle entirely on systems set to dark mode. */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {

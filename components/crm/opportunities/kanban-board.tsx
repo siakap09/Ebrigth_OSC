@@ -42,28 +42,31 @@ function normalizeStageCode(code: string): string {
 
 const ALLOWED_LEAD_TRANSITIONS: Record<string, string[]> = {
   // NL: must start with FU1 (no skipping to FU2 / FU3), but can short-cut
-  // directly to CT when a lead is already confirmed for a trial. Forward-
-  // only — no NL ← FU.
-  NL: ['FU1', 'CT'],
+  // directly to CT when a lead is already confirmed for a trial. RSD is the
+  // sole backward escape hatch (see "Recovery to RSD" below).
+  NL: ['FU1', 'CT', 'RSD'],
   // FU1/FU2/FU3: can advance to a later follow-up, jump to CT, or drop the
   // lead directly to Cold Lead without going through UR_W1/UR_W2/FU3M first.
   FU1: ['FU2', 'FU3', 'CT', 'CL', 'DND'],
   FU2: ['FU3', 'CT', 'CL', 'DND'],
   FU3: ['RSD', 'URW1', 'CT', 'CL', 'DND'],
   RSD: ['CT', 'DND'],
-  // CT → RSD is the ONLY allowed backward move in the entire ruleset, so a
-  // trial that needs rescheduling doesn't require an admin override.
+  // Recovery to RSD: CT → RSD lets a confirmed trial be rescheduled without
+  // an admin override. The "terminal-ish" / unresponsive stages below
+  // (NL, CNS, SNE, URW1-3, CL, DND) also allow → RSD so a lead that was
+  // parked or written off can be revived back into the active funnel. RSD
+  // is the ONLY backward destination permitted from those stages.
   CT: ['SU', 'CNS', 'RSD'],
-  CNS: ['URW1'],
-  URW1: ['URW2', 'CL', 'DND'],
-  URW2: ['URW3', 'FU3M', 'CL', 'DND'],
-  URW3: ['CL', 'DND'],
+  CNS: ['URW1', 'RSD'],
+  URW1: ['URW2', 'CL', 'DND', 'RSD'],
+  URW2: ['URW3', 'FU3M', 'CL', 'DND', 'RSD'],
+  URW3: ['CL', 'DND', 'RSD'],
   FU3M: ['CL', 'DND'],
   SU: ['ENR', 'SNE'],
-  SNE: ['CL'],
+  SNE: ['CL', 'RSD'],
   ENR: [],
-  CL: [],
-  DND: [],
+  CL: ['RSD'],
+  DND: ['RSD'],
   // Buffer (OD use only) — entry state, allow hand-off into early/confirmed stages.
   SG: ['NL', 'FU1', 'FU2', 'FU3', 'CT'],
 }
