@@ -141,7 +141,7 @@ function FileUploadButton({
           />
           {uploaded ? (
             <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm dark:border-emerald-800 dark:bg-emerald-950">
-              <Paperclip className="h-4 w-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+              <Paperclip className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span className="flex-1 truncate text-emerald-700 dark:text-emerald-300">
                 {uploaded.name}
               </span>

@@ -32,7 +32,7 @@ export default async function AwaitingAccessPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+      <div className="absolute inset-0 bg-linear-to-br from-slate-900 via-blue-900 to-slate-900">
         <div className="absolute inset-0 opacity-30">
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl animate-pulse"></div>
           <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
@@ -42,7 +42,7 @@ export default async function AwaitingAccessPage() {
       <div className="relative z-10 w-full max-w-lg px-6">
         <div className="bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 p-8">
           <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-400 rounded-2xl mb-4 shadow-lg">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-linear-to-br from-amber-500 to-orange-400 rounded-2xl mb-4 shadow-lg">
               <Clock className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Awaiting access</h1>
@@ -73,7 +73,7 @@ export default async function AwaitingAccessPage() {
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
             <Link
               href="/crm/dashboard"
-              className="flex-1 py-3 px-4 bg-gradient-to-r from-blue-500 to-cyan-400 text-white font-semibold rounded-xl text-center hover:from-blue-600 hover:to-cyan-500 transition-all"
+              className="flex-1 py-3 px-4 bg-linear-to-r from-blue-500 to-cyan-400 text-white font-semibold rounded-xl text-center hover:from-blue-600 hover:to-cyan-500 transition-all"
             >
               Try again
             </Link>
