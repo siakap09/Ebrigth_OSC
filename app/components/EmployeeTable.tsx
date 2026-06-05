@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getRoleLabel, getBranchLabel, BRANCH_OPTIONS, ROLE_OPTIONS } from "@/lib/constants";
+import { getRoleLabel, getBranchLabel, BRANCH_OPTIONS, ROLE_OPTIONS, COACH_ROLES_WITH_LEGACY } from "@/lib/constants";
 import { isAcademy } from "@/lib/roles";
 import { isInTraining } from "@/lib/training";
 
@@ -156,7 +156,7 @@ export default function EmployeeTable({
   };
 
   const filteredEmployees = employees
-    .filter((e) => !academyView || ["FT - Coach", "PT - Coach"].includes(e.role))
+    .filter((e) => !academyView || (COACH_ROLES_WITH_LEGACY as readonly string[]).includes(e.role))
     .filter((e) => {
       if (statusFilter === "all") return true;
       return (e.Emp_Status || "") === statusFilter;

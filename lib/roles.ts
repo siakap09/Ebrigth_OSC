@@ -78,8 +78,51 @@ export function normalizeRole(raw: unknown): Role | null {
     ACADEMY:        ROLES.ACADEMY,
     MARKETING:      ROLES.MARKETING,
     MKT:            ROLES.MARKETING,
+    // BranchStaff job-title labels (ROLE_OPTIONS). User.role may now hold these
+    // verbatim — they're synced from BranchStaff — so the auth layer must
+    // resolve them to the correct access Role. Keys are post-normalisation
+    // ("FT Coach" → "FT_COACH"). Mirrors authRoleForStaffRole().
+    FT_COACH:       ROLES.FULL_TIME,
+    PT_COACH:       ROLES.PART_TIME,
+    FT_HOD:         ROLES.HOD,
+    FT_EXEC:        ROLES.EXECUTIVE,
+    CEO:            ROLES.ADMIN,
+    FT_CEO:         ROLES.ADMIN,
   };
   return aliases[key] ?? null;
+}
+
+// ─── Staff (job) role → auth role ────────────────────────────────────────────
+//
+// BranchStaff.role holds an HR *job* title (the ROLE_OPTIONS values in
+// lib/constants.ts: "CEO", "FT HOD", "FT Coach", "BM", "INT", …). User.role
+// holds an *auth* Role that drives middleware + dashboard access. Sign-up needs
+// to translate the former into the latter so a new account inherits the access
+// HR already implied by the staff record.
+//
+// This is deliberately separate from normalizeRole(): that one tolerates drift
+// in strings that are *already* auth roles; this one maps job titles across to
+// the auth vocabulary. Keys are matched after stripping separators / casing, so
+// "FT - Coach", "FT Coach", and "ft  coach" all resolve to the same entry —
+// which means sign-up keeps working whether or not the naming migration has run.
+const STAFF_ROLE_TO_AUTH: Record<string, Role> = {
+  CEO:        ROLES.ADMIN,
+  "FT HOD":   ROLES.HOD,
+  "FT EXEC":  ROLES.EXECUTIVE,
+  "FT COACH": ROLES.FULL_TIME,
+  "PT COACH": ROLES.PART_TIME,
+  BM:         ROLES.BRANCH_MANAGER,
+  INT:        ROLES.INTERN,
+};
+
+export function authRoleForStaffRole(raw: unknown): Role | null {
+  if (typeof raw !== "string") return null;
+  const key = raw.replace(/[-–—]/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
+  if (!key) return null;
+  if (STAFF_ROLE_TO_AUTH[key]) return STAFF_ROLE_TO_AUTH[key];
+  // Not a recognised job title — maybe the row already stores an auth role
+  // (e.g. "HR"). Fall back to the generic normaliser.
+  return normalizeRole(raw);
 }
 
 // ─── Role groupings ──────────────────────────────────────────────────────────

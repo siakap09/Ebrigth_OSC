@@ -47,12 +47,17 @@ const ROLE_RULES: Array<{ prefix: string; allowed: readonly Role[] }> = [
 // widened accidentally by adding a new ROLE_RULES entry that happens to
 // include FULL_TIME / PART_TIME.
 const EMPLOYEE_FALLBACK_PATH = "/manpower-cost-report";
+// FT/PT coaches may reach only two feature pages — the Manpower Cost Report
+// (scoped to their own data by /api/manpower-cost) and the Staff Directory.
+// /home + /dashboards/hrms are kept as the navigation shell (every other tile
+// renders locked client-side); /profile stays for self-service. Anything else
+// redirects to EMPLOYEE_FALLBACK_PATH.
 const EMPLOYEE_ALLOWED_PATHS = [
   "/home",              // tile dashboard — non-HRMS tiles are locked client-side
-  "/dashboards/hrms",   // HRMS hub — only Manpower Cost Report tile is enabled
+  "/dashboards/hrms",   // HRMS hub — only the two allowed tiles are enabled
   "/manpower-cost-report",
+  "/staff-directory",   // coaches may view the staff directory
   "/profile",           // standard self-service page
-  "/burnlist",          // new burnlist page — visible to all roles for preview
 ];
 const EMPLOYEE_LOCKED_ROLES: readonly Role[] = [ROLES.FULL_TIME, ROLES.PART_TIME];
 
@@ -181,8 +186,8 @@ export const config = {
   // Run on every page navigation, but skip:
   //   - API routes (they enforce their own role/scope and return JSON 401/403)
   //   - Static assets (_next/static, _next/image, favicon)
-  //   - /login and /forgot-password (public auth pages)
+  //   - /login, /signup and /forgot-password (public auth pages)
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|login|forgot-password).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|login|signup|forgot-password).*)",
   ],
 };
