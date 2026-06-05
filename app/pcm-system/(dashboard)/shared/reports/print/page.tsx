@@ -32,7 +32,16 @@ function BulkPrintInner() {
     return raw.split(",").map(s => s.trim()).filter(Boolean);
   }, [search]);
 
+  // The bulk-print view opens in a NEW TAB via target="_blank", which
+  // bypasses AppShell — so the FA store's lazy report loader never
+  // fires. Trigger it here so the report lookup below has data to
+  // match against. Without this, every bulk-print opens to "Nothing
+  // to print" because allReports is [] on a fresh tab.
   const allReports = useFAStore(s => s.reports);
+  const reportsLoaded = useFAStore(s => s.reportsLoaded);
+  const loadReports = useFAStore(s => s.loadReports);
+  useEffect(() => { if (!reportsLoaded) void loadReports(); }, [reportsLoaded, loadReports]);
+
   const reports = useMemo(() => {
     const byInv = new Map(allReports.map(r => [r.invitationId, r]));
     return ids.map(id => byInv.get(id)).filter(Boolean) as PcmReport[];
@@ -46,6 +55,16 @@ function BulkPrintInner() {
     const t = setTimeout(() => window.print(), 400);
     return () => clearTimeout(t);
   }, [reports.length]);
+
+  // While reports fetch, show a friendly loading state instead of
+  // flashing the "Nothing to print" empty state.
+  if (!reportsLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-ink-500 text-sm">
+        Loading certificates…
+      </div>
+    );
+  }
 
   if (reports.length === 0) {
     return (
