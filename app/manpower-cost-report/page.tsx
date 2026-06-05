@@ -283,8 +283,22 @@ export default function ManpowerCostReportPage() {
   const { data: session } = useSession({ required: true });
   const userRole = (session?.user as any)?.role || "";
   const userName = (session?.user as any)?.name || "";
-  // For employee accounts, User.branchName currently stores their name (matches Employee.name and ManpowerSchedule.selections values).
-  const employeeName = (session?.user as any)?.branchName || "";
+  // Full name from the user's BranchStaff record (matched by email via /api/me).
+  // This is the reliable display name; session.branchName is the branch ("HQ"),
+  // not the person, so we don't use it as a name fallback for the heading.
+  const [meName, setMeName] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.name === "string" && d.name.trim()) setMeName(d.name.trim());
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const isEmployee = isEmployeeRole(userRole);
   const isEmployeePT = isPartTime(userRole);
   const isEmployeeFT = isFullTime(userRole);
@@ -667,7 +681,7 @@ export default function ManpowerCostReportPage() {
             </div>
           </div>
           <UserHeader
-            userName={(isEmployee ? employeeName : userName) || userName || session?.user?.email?.split("@")[0] || "User"}
+            userName={meName || userName || session?.user?.email?.split("@")[0] || "User"}
             userEmail={session?.user?.email || ""}
           />
         </div>
@@ -823,7 +837,7 @@ export default function ManpowerCostReportPage() {
                   <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-6">
                     <div className="flex items-center justify-between gap-4 flex-wrap">
                       <div className="min-w-0">
-                        <h2 className="text-xl font-black text-slate-800">{employeeName || userName || "Employee"}</h2>
+                        <h2 className="text-xl font-black text-slate-800">{meName || userName || "Employee"}</h2>
                         <p className="text-sm text-slate-500 mt-1">
                           {isEmployeePT ? "Part-Time" : isEmployeeFT ? "Full-Time" : ""} — Select a month to view your manpower report.
                         </p>
@@ -1341,7 +1355,7 @@ export default function ManpowerCostReportPage() {
                                     ? "bg-purple-100 text-purple-700 border border-purple-200"
                                     : "bg-blue-100 text-blue-700 border border-blue-200"
                                 }`}>
-                                  {c.isPT ? "PT - Coach" : "FT - Coach"}
+                                  {c.isPT ? "PT Coach" : "FT Coach"}
                                 </span>
                               </td>
                               <td className="px-5 py-4 text-sm text-slate-600">{c.contract || "-"}</td>

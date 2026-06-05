@@ -12,11 +12,17 @@ import { sanitiseCallbackUrl } from "@/lib/callback-url";
 // fails the production build otherwise (prerender error on /login).
 function ResetBanner() {
   const searchParams = useSearchParams();
-  if (searchParams.get("reset") !== "1") return null;
+  const message =
+    searchParams.get("reset") === "1"
+      ? "Password updated. Please sign in with your new password."
+      : searchParams.get("registered") === "1"
+        ? "Account created. Please sign in with your new password."
+        : null;
+  if (!message) return null;
   return (
     <div role="status" className="mb-5 flex items-start gap-2 bg-emerald-500/20 border border-emerald-500/50 text-emerald-100 text-sm py-2.5 px-3 rounded-xl font-medium">
       <CircleCheck className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
-      <span>Password updated. Please sign in with your new password.</span>
+      <span>{message}</span>
     </div>
   );
 }
@@ -184,6 +190,14 @@ export default function LoginPage() {
                 "Sign In"
               )}
             </button>
+
+            {/* Sign up link */}
+            <p className="text-center text-sm text-blue-200">
+              Don&apos;t have an account?{" "}
+              <Link href="/signup" className="text-blue-300 font-semibold hover:text-white transition-colors">
+                Sign up
+              </Link>
+            </p>
           </form>
 
           {/* Footer */}

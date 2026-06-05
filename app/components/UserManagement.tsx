@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { BRANCH_OPTIONS, DEPARTMENT_OPTIONS, ROLE_OPTIONS, CONTRACT_OPTIONS, GENDER_OPTIONS, ROLE_CODES } from "@/lib/constants";
+import { BRANCH_OPTIONS, DEPARTMENT_OPTIONS, ROLE_OPTIONS, CONTRACT_OPTIONS, GENDER_OPTIONS, ROLE_CODES, COACH_ROLES_WITH_LEGACY } from "@/lib/constants";
 import { isAdmin, isAcademy, isHR } from "@/lib/roles";
 import { isInTraining } from "@/lib/training";
 import EmployeeIdInput from "@/app/components/EmployeeIdInput";
@@ -242,7 +242,7 @@ export default function UserManagement({ userRole = "" }: UserManagementProps) {
     user.fullName || `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || "-";
 
   const filteredUsers = users
-    .filter((u) => !academyView || ["FT - Coach", "PT - Coach"].includes(u.role))
+    .filter((u) => !academyView || (COACH_ROLES_WITH_LEGACY as readonly string[]).includes(u.role))
     .filter(
       (user) =>
         getDisplayName(user).toLowerCase().includes(searchTerm.toLowerCase()) ||

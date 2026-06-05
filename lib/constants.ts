@@ -36,6 +36,7 @@ export function normalizeLocation(raw: string | null): string {
     'tsg': 'Taman Sri Gombak',
     'ktg': 'Kajang TTDI Groove', 'kajang ttdi groove': 'Kajang TTDI Groove', 'kota warisan': 'Kota Warisan',
     'kajang': 'Kajang',
+    'dpu': 'Dataran Puchong Utama', 'dataran puchong utama': 'Dataran Puchong Utama',
   };
   return MAP[key] ?? clean;
 }
@@ -73,15 +74,27 @@ export const DEPARTMENT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "HR/IOP", label: "HR/IOP" },
 ];
 
+// Canonical job-role values stored in BranchStaff.role and shown in the
+// employee form (add + edit). Standardised on a single convention: employment
+// prefix + single space + role, no hyphens, short codes. Keep this list and
+// the lib/roles.ts auth mapping (authRoleForStaffRole) in sync.
 export const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "CEO", label: "CEO" },
   { value: "FT HOD", label: "FT HOD" },
   { value: "FT EXEC", label: "FT EXEC" },
-  { value: "FT - Coach", label: "FT - Coach" },
-  { value: "PT - Coach", label: "PT - Coach" },
+  { value: "FT Coach", label: "FT Coach" },
+  { value: "PT Coach", label: "PT Coach" },
   { value: "BM", label: "BM" },
   { value: "INT", label: "INT" },
 ];
+
+// Coach roles, used by Academy-scoped filters. The legacy hyphenated forms
+// ("FT - Coach" / "PT - Coach") are included so those filters keep matching any
+// rows that predate the role-naming standardisation migration. Once the
+// migration is confirmed across all environments the legacy entries can be
+// dropped, leaving just the canonical values.
+export const COACH_ROLES = ["FT Coach", "PT Coach"] as const;
+export const COACH_ROLES_WITH_LEGACY = ["FT Coach", "PT Coach", "FT - Coach", "PT - Coach"] as const;
 
 export const CONTRACT_OPTIONS = [
   { value: "", label: "None" },

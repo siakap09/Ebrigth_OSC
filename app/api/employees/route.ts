@@ -7,6 +7,7 @@ import {
   isEmployee, isExecutive, isIntern,
 } from '@/lib/roles';
 import { isValidEmployeeId } from '@/lib/employeeId';
+import { COACH_ROLES_WITH_LEGACY } from '@/lib/constants';
 
 // Map BranchStaff DB row → Employee shape expected by the frontend
 function toEmployee(s: Record<string, unknown>) {
@@ -117,7 +118,7 @@ export async function GET(request: Request) {
   // Academy callers are restricted to FT/PT coaches. This intersects with any
   // client-supplied role filter, so passing role=BM yields an empty result.
   if (isAcademy(callerRole)) {
-    where.role = { in: ["FT - Coach", "PT - Coach"] };
+    where.role = { in: [...COACH_ROLES_WITH_LEGACY] };
   }
 
   const staff = await hrfsPrisma.branchStaff.findMany({ where, orderBy: { id: 'asc' } });
@@ -260,9 +261,9 @@ export async function PUT(request: Request) {
         where: { id: parseInt(id) },
         select: { role: true },
       });
-      if (!target || !['FT - Coach', 'PT - Coach'].includes(target.role || '')) {
+      if (!target || !(COACH_ROLES_WITH_LEGACY as readonly string[]).includes(target.role || '')) {
         return NextResponse.json(
-          { error: 'Academy can only edit FT-Coach or PT-Coach' },
+          { error: 'Academy can only edit FT Coach or PT Coach' },
           { status: 403 },
         );
       }
