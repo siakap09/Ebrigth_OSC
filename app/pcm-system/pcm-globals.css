@@ -543,11 +543,14 @@ h1, h2, h3, h4 {
     break-after: page;
   }
   .fa-print-cert-page > * {
-    /* 0.95 fills the A4 page tightly. The 400-char maxLength on
-       Strengths + Improvement Plan bounds the worst-case content
-       height — even maxed-out narrative boxes leave the signature
-       row visible. Wrapper overflow:hidden is the strict safety net. */
-    zoom: 0.95;
+    /* 0.85 — verified value that fits the FULL PCM cert including
+       Prepared-by + Received-by signature names. 0.95 was too tight
+       and clipped the names off the bottom because PCM has more
+       content than FA (rubric grid + two narrative boxes + signature
+       row with images). The 400-char limit on Strengths/Improvement
+       Plan keeps the cert bounded; some bottom whitespace remains for
+       short reports as the safe tradeoff. */
+    zoom: 0.85;
   }
   .fa-print-cert-page:last-child {
     page-break-after: auto;

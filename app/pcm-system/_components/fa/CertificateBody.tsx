@@ -188,17 +188,21 @@ export function CertificateBody({ report }: { report: PcmReport }) {
         <div className="grid grid-cols-2 gap-10 mt-12">
           <div>
             <div className="font-bold mb-3" style={{ fontSize: 16 }}>Prepared by:</div>
-            <div className="flex items-end" style={{ minHeight: 64 }}>
+            {/* Signature container with bottom padding so the signature's
+                ink ends BEFORE the line below — without the gap the
+                signature's bottom strokes touch the line and visually
+                "merge" with it, making one half of the line look
+                thicker than the other. */}
+            <div className="flex items-end" style={{ minHeight: 56, paddingBottom: 4 }}>
               {report.preparedBySignature ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={report.preparedBySignature}
                   alt="Coach signature"
-                  className="max-h-[64px] max-w-[300px] object-contain"
+                  className="max-h-[56px] max-w-[260px] object-contain"
                 />
               ) : null}
             </div>
-            {/* Dotted underline matching the PDF "............" style. */}
             <div
               className="pt-2 text-ink-900"
               style={{ borderTop: "2px dotted #1f2937", fontSize: 15 }}
@@ -208,7 +212,7 @@ export function CertificateBody({ report }: { report: PcmReport }) {
           </div>
           <div>
             <div className="font-bold mb-3" style={{ fontSize: 16 }}>Received by:</div>
-            <div style={{ minHeight: 64 }} />
+            <div style={{ minHeight: 56, paddingBottom: 4 }} />
             <div
               className="pt-2 text-ink-900"
               style={{ borderTop: "2px dotted #1f2937", fontSize: 15 }}
