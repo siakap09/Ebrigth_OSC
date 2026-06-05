@@ -10,9 +10,10 @@ export async function GET() {
     return NextResponse.json({ students, report });
   } catch (err) {
     console.error("[/api/students] failed:", err);
+    const e = err as { message?: string; code?: string };
     return NextResponse.json(
-      { error: "Failed to load students" },
-      { status: 500 }
+      { error: "Failed to load students", detail: e?.message ?? String(err), code: e?.code },
+      { status: 500 },
     );
   }
 }
