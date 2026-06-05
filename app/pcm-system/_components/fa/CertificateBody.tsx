@@ -30,22 +30,26 @@ export function CertificateBody({ report }: { report: PcmReport }) {
       {/* Red header bar with white wordmark + address. The "ebright"
           wordmark gets a faux-bracket frame so it reads as a logo lock-up
           rather than plain text — closest we can get without an SVG asset. */}
-      <div style={{ background: "#dc2626", color: "white", padding: "16px 24px" }}>
+      {/* Banner red matched to the eBright PNG's brand red so the logo
+          blends seamlessly with the banner instead of looking like a
+          differently-shaded box. */}
+      <div style={{ background: "#e30613", color: "white", padding: "16px 24px" }}>
         <div className="flex items-start justify-between gap-6">
-          <div
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/ebright-logo.png"
+            alt="eBright"
+            // White border drawn directly on the image with no extra
+            // padding — matches the eBright brand lock-up where the
+            // border hugs the red rectangle exactly, no gap.
             style={{
-              display: "inline-block",
-              padding: "6px 14px",
-              border: "2px solid white",
-              fontFamily: "var(--font-display, serif)",
-              fontWeight: 700,
-              fontSize: 26,
-              lineHeight: 1,
-              letterSpacing: "-0.02em",
+              height: 60,
+              width: "auto",
+              display: "block",
+              border: "3px solid white",
+              boxSizing: "content-box",
             }}
-          >
-            ebright
-          </div>
+          />
           <div className="text-right text-[11px] leading-snug" style={{ opacity: 0.92 }}>
             <div className="font-semibold">EBRIGHT SDN. BHD.</div>
             <div>21-2, Jalan USJ 10/1D, Taipan Business Centre,</div>
@@ -142,7 +146,7 @@ export function CertificateBody({ report }: { report: PcmReport }) {
                         key={i}
                         className="border border-ink-400 align-top px-3 py-3"
                         style={picked
-                          ? { background: "#fee2e2", outline: "3px solid #dc2626", outlineOffset: "-3px", fontSize: 13, lineHeight: 1.4 }
+                          ? { background: "#fee2e2", outline: "3px solid #e30613", outlineOffset: "-3px", fontSize: 13, lineHeight: 1.4 }
                           : { fontSize: 13, lineHeight: 1.4 }
                         }
                       >
@@ -178,22 +182,27 @@ export function CertificateBody({ report }: { report: PcmReport }) {
           <NarrativeBox label="Improvement Plan" dotColor="#d97706" content={report.improvementPlan} />
         </div>
 
+
         {/* Signatures — dotted underline like the PDF. Generous spacing
             so the signature image (when present) has room to breathe. */}
         <div className="grid grid-cols-2 gap-10 mt-12">
           <div>
             <div className="font-bold mb-3" style={{ fontSize: 16 }}>Prepared by:</div>
-            <div className="flex items-end" style={{ minHeight: 64 }}>
+            {/* Signature container with bottom padding so the signature's
+                ink ends BEFORE the line below — without the gap the
+                signature's bottom strokes touch the line and visually
+                "merge" with it, making one half of the line look
+                thicker than the other. */}
+            <div className="flex items-end" style={{ minHeight: 56, paddingBottom: 4 }}>
               {report.preparedBySignature ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={report.preparedBySignature}
                   alt="Coach signature"
-                  className="max-h-[64px] max-w-[300px] object-contain"
+                  className="max-h-[56px] max-w-[260px] object-contain"
                 />
               ) : null}
             </div>
-            {/* Dotted underline matching the PDF "............" style. */}
             <div
               className="pt-2 text-ink-900"
               style={{ borderTop: "2px dotted #1f2937", fontSize: 15 }}
@@ -203,7 +212,7 @@ export function CertificateBody({ report }: { report: PcmReport }) {
           </div>
           <div>
             <div className="font-bold mb-3" style={{ fontSize: 16 }}>Received by:</div>
-            <div style={{ minHeight: 64 }} />
+            <div style={{ minHeight: 56, paddingBottom: 4 }} />
             <div
               className="pt-2 text-ink-900"
               style={{ borderTop: "2px dotted #1f2937", fontSize: 15 }}
@@ -237,7 +246,7 @@ function NarrativeBox({
   return (
     <div
       className="rounded"
-      style={{ border: "2px solid #dc2626", padding: 16, minHeight: 160 }}
+      style={{ border: "2px solid #e30613", padding: 16, minHeight: 160 }}
     >
       <div className="flex items-center gap-2 mb-3">
         <span
