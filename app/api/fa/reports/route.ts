@@ -7,9 +7,9 @@ import { BranchCode, FA_REPORT_MAX_PER_CRITERION, isBackOfficeRole } from "@fa/_
 export const dynamic = "force-dynamic";
 
 /** Roles permitted to write a report. Per current policy:
- *  Marketing + Admin can fill. Everyone else gets 403 on POST.
+ *  Marketing, Academy, and Admin can fill. Everyone else gets 403 on POST.
  *  Read is open to any signed-in user (BMs can view + print). */
-const WRITE_ROLES = new Set(["MARKETING", "MKT", "ADMIN", "SUPER_ADMIN"]);
+const WRITE_ROLES = new Set(["MARKETING", "MKT", "ACADEMY", "ADMIN", "SUPER_ADMIN"]);
 
 /** GET — all FA reports (tenant-scoped). Any signed-in user. */
 export async function GET() {
@@ -22,7 +22,11 @@ export async function GET() {
     return NextResponse.json({ reports });
   } catch (err) {
     console.error("[api/fa/reports GET] failed:", err);
-    return NextResponse.json({ error: "Failed to load reports" }, { status: 500 });
+    const e = err as { message?: string; code?: string };
+    return NextResponse.json(
+      { error: "Failed to load reports", detail: e?.message ?? String(err), code: e?.code },
+      { status: 500 },
+    );
   }
 }
 
@@ -78,10 +82,19 @@ export async function POST(req: NextRequest) {
       remarks: String(body.remarks ?? ""),
       preparedBy: String(body.preparedBy ?? "").trim(),
       preparedById: body.preparedById ? String(body.preparedById) : undefined,
+      // Video link of the student's recorded performance. Trimmed +
+      // bounded to 2KB.
+      videoLink: typeof body.videoLink === "string" && body.videoLink.trim().length > 0 && body.videoLink.length < 2000
+        ? body.videoLink.trim()
+        : undefined,
     });
     return NextResponse.json({ report });
   } catch (err) {
     console.error("[api/fa/reports POST] failed:", err);
-    return NextResponse.json({ error: "Failed to save report" }, { status: 500 });
+    const e = err as { message?: string; code?: string };
+    return NextResponse.json(
+      { error: "Failed to save report", detail: e?.message ?? String(err), code: e?.code },
+      { status: 500 },
+    );
   }
 }

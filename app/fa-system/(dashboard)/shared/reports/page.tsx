@@ -235,6 +235,8 @@ export default function FaReportsListPage() {
                 <th>Event</th>
                 <th>Status</th>
                 <th>Total</th>
+                <th>Prepared by</th>
+                <th>Video</th>
                 <th></th>
               </tr>
             </thead>
@@ -279,19 +281,50 @@ export default function FaReportsListPage() {
                         <span className="text-ink-300 italic text-xs">—</span>
                       )}
                     </td>
+                    <td>
+                      {r?.preparedBy ? (
+                        <span className="text-sm text-ink-700">{r.preparedBy}</span>
+                      ) : (
+                        <span className="text-ink-300 italic text-xs">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {/* Video link as evidence — clickable, opens in a
+                          new tab. Not rendered on the printed cert; only
+                          surfaced here for Marketing/BM review. */}
+                      {r?.videoLink ? (
+                        <a
+                          href={r.videoLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
+                          title={r.videoLink}
+                        >
+                          ▶ Watch
+                        </a>
+                      ) : (
+                        <span className="text-ink-300 italic text-xs">—</span>
+                      )}
+                    </td>
                     <td className="text-right">
                       <div className="inline-flex items-center gap-1.5">
-                        <Link
-                          href={`/fa-system/shared/reports/${row.invitationId}`}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border ${
-                            r
-                              ? "border-ivory-300 bg-white text-ink-700 hover:bg-ivory-100"
-                              : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                          }`}
-                          title={r ? "Edit report" : "Fill report"}
-                        >
-                          <Pencil className="w-3 h-3" /> {r ? "Edit" : "Fill"}
-                        </Link>
+                        {/* BMs are view-only — they see filled reports
+                            via the printable cert but cannot Fill or
+                            Edit. Only Marketing/Admin (role === "MKT"
+                            in the FA store) get the edit affordances. */}
+                        {user?.role === "MKT" && (
+                          <Link
+                            href={`/fa-system/shared/reports/${row.invitationId}`}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border ${
+                              r
+                                ? "border-ivory-300 bg-white text-ink-700 hover:bg-ivory-100"
+                                : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                            }`}
+                            title={r ? "Edit report" : "Fill report"}
+                          >
+                            <Pencil className="w-3 h-3" /> {r ? "Edit" : "Fill"}
+                          </Link>
+                        )}
                         {r && (
                           <Link
                             href={`/fa-system/shared/reports/${row.invitationId}/certificate`}

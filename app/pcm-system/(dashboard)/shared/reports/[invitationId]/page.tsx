@@ -375,27 +375,39 @@ export default function CoachReportFormPage() {
           </div>
         </section>
 
-        {/* Narrative */}
+        {/* Narrative — capped at 400 chars each so the printed cert
+            always fits within one A4 page at zoom 0.85 (the cert
+            wrapper has overflow:hidden so anything over the limit
+            would otherwise be clipped silently). The counter goes red
+            near the limit so the coach can pace themselves. */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-2xl bg-white border border-emerald-200 shadow-sm overflow-hidden">
-            <div className="bg-emerald-50 px-4 py-2 text-emerald-700 font-semibold text-sm border-b border-emerald-200">
-              Strengths
+            <div className="bg-emerald-50 px-4 py-2 text-emerald-700 font-semibold text-sm border-b border-emerald-200 flex items-center justify-between">
+              <span>Strengths</span>
+              <span className={`fa-mono text-[11px] ${strengths.length > 380 ? "text-rose-600 font-bold" : "text-emerald-600"}`}>
+                {strengths.length}/400
+              </span>
             </div>
             <textarea
               className="fa-input border-0 rounded-none min-h-[140px] resize-y"
               placeholder="What did the student do well?"
               value={strengths}
+              maxLength={400}
               onChange={e => setStrengths(e.target.value)}
             />
           </div>
           <div className="rounded-2xl bg-white border border-amber-200 shadow-sm overflow-hidden">
-            <div className="bg-amber-50 px-4 py-2 text-amber-700 font-semibold text-sm border-b border-amber-200">
-              Improvement plan
+            <div className="bg-amber-50 px-4 py-2 text-amber-700 font-semibold text-sm border-b border-amber-200 flex items-center justify-between">
+              <span>Improvement plan</span>
+              <span className={`fa-mono text-[11px] ${improvementPlan.length > 380 ? "text-rose-600 font-bold" : "text-amber-600"}`}>
+                {improvementPlan.length}/400
+              </span>
             </div>
             <textarea
               className="fa-input border-0 rounded-none min-h-[140px] resize-y"
               placeholder="What should they work on before next assessment?"
               value={improvementPlan}
+              maxLength={400}
               onChange={e => setImprovementPlan(e.target.value)}
             />
           </div>
