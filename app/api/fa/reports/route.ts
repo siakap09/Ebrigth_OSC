@@ -7,9 +7,9 @@ import { BranchCode, FA_REPORT_MAX_PER_CRITERION, isBackOfficeRole } from "@fa/_
 export const dynamic = "force-dynamic";
 
 /** Roles permitted to write a report. Per current policy:
- *  Marketing + Admin can fill. Everyone else gets 403 on POST.
+ *  Marketing, Academy, and Admin can fill. Everyone else gets 403 on POST.
  *  Read is open to any signed-in user (BMs can view + print). */
-const WRITE_ROLES = new Set(["MARKETING", "MKT", "ADMIN", "SUPER_ADMIN"]);
+const WRITE_ROLES = new Set(["MARKETING", "MKT", "ACADEMY", "ADMIN", "SUPER_ADMIN"]);
 
 /** GET — all FA reports (tenant-scoped). Any signed-in user. */
 export async function GET() {
