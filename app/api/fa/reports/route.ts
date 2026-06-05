@@ -22,7 +22,11 @@ export async function GET() {
     return NextResponse.json({ reports });
   } catch (err) {
     console.error("[api/fa/reports GET] failed:", err);
-    return NextResponse.json({ error: "Failed to load reports" }, { status: 500 });
+    const e = err as { message?: string; code?: string };
+    return NextResponse.json(
+      { error: "Failed to load reports", detail: e?.message ?? String(err), code: e?.code },
+      { status: 500 },
+    );
   }
 }
 
@@ -87,6 +91,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ report });
   } catch (err) {
     console.error("[api/fa/reports POST] failed:", err);
-    return NextResponse.json({ error: "Failed to save report" }, { status: 500 });
+    const e = err as { message?: string; code?: string };
+    return NextResponse.json(
+      { error: "Failed to save report", detail: e?.message ?? String(err), code: e?.code },
+      { status: 500 },
+    );
   }
 }
