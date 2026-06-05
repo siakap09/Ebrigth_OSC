@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   });
   if (!staff) {
     return NextResponse.json(
-      { eligible: false, error: "No staff record found for this email. Contact HR if you believe this is a mistake." },
+      { eligible: false, error: "This email isn't registered in our staff records. Please contact HR at 01116491088 to update your email." },
       { status: 404 },
     );
   }
