@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
+import { createTransferNotifications } from '@/lib/crm/notifications'
 
 const MAX_TRANSFERS_PER_LEAD = 3
 
@@ -43,6 +44,8 @@ export async function POST(
         stageId:    true,
         contactId:  true,
         stage:      { select: { shortCode: true } },
+        branch:     { select: { name: true } },
+        contact:    { select: { firstName: true, lastName: true, parentFullName: true } },
       },
     })
     if (!opp) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
@@ -152,6 +155,29 @@ export async function POST(
         },
       })
     })
+
+    // Fan-out notifications to both source and target branches. Best-effort —
+    // the transfer is already committed by the time this runs, so failures
+    // are logged but don't roll anything back.
+    const leadName =
+      `${opp.contact.firstName} ${opp.contact.lastName ?? ''}`.trim() ||
+      opp.contact.parentFullName ||
+      'A lead'
+    try {
+      await createTransferNotifications(prisma, {
+        tenantId:            access.tenantId,
+        fromBranchId:        opp.branchId,
+        toBranchId,
+        fromBranchName:      opp.branch?.name ?? 'Unknown',
+        toBranchName:        toBranch.name,
+        opportunityId:       opp.id,
+        leadName,
+        reason,
+        transferredByUserId: session.user.id,
+      })
+    } catch (e) {
+      console.warn('[transfer] notification fan-out failed:', (e as Error).message)
+    }
 
     return NextResponse.json({
       ok: true,
