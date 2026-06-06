@@ -5,7 +5,7 @@ import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
 
-export const MAX_TRANSFERS_PER_LEAD = 3
+const MAX_TRANSFERS_PER_LEAD = 3
 
 const TransferSchema = z.object({
   toBranchId: z.string().uuid('Invalid branch ID'),
