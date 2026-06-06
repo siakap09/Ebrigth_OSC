@@ -53,6 +53,7 @@ export default async function OpportunitiesPage() {
     '21 Ebright (Dataran Puchong Utama)',
     '22 Ebright (Puncak Jalil)',
     '23 Ebright (Tropicana Sungai Buloh)',
+    'Ebright Marketing',
   ]
 
   // Parallelise every independent query — the remote Postgres is on a round-
