@@ -324,7 +324,19 @@ export default async function OpportunityDetailPage({ params }: PageProps) {
               <Row icon={<User className="h-3.5 w-3.5" />}    label="Parent" value={parentDisplay} />
               <Row icon={<Mail className="h-3.5 w-3.5" />}    label="Email"  value={contact.email ?? '—'} />
               <Row icon={<Phone className="h-3.5 w-3.5" />}   label="Phone"  value={contact.phone ?? '—'} />
-              <Row icon={<MapPin className="h-3.5 w-3.5" />}  label="Branch" value={branch?.name ?? '—'} />
+              <Row
+                icon={<MapPin className="h-3.5 w-3.5" />}
+                label="Branch"
+                value={
+                  // Leads routed to "Ebright Marketing" arrived with no
+                  // resolvable branch in the source data — display Unknown
+                  // so the Marketing team knows to triage + transfer the
+                  // lead to the correct branch via the panel below.
+                  branch?.name === 'Ebright Marketing'
+                    ? 'Unknown'
+                    : (branch?.name ?? '—')
+                }
+              />
               {contact.leadSource && (
                 <Row icon={<Tag className="h-3.5 w-3.5" />}   label="Source" value={contact.leadSource.name} />
               )}
