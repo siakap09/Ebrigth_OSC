@@ -114,6 +114,9 @@ export interface ImportCaches {
   stageByBranchByCode: Map<string, Map<string, string>>
   /** lead-source name (lower-cased) → lead_source.id */
   leadSourceByName: Map<string, string>
+  /** Fallback branch for leads with no resolvable clean_branch.
+   *  Cached as `null` once resolution fails so we don't re-query each row. */
+  fallbackBranch?: { id: string; tenantId: string } | null
 }
 
 export function makeEmptyCaches(): ImportCaches {
@@ -123,6 +126,28 @@ export function makeEmptyCaches(): ImportCaches {
     stageByBranchByCode: new Map(),
     leadSourceByName:    new Map(),
   }
+}
+
+const FALLBACK_BRANCH_NAME = 'Ebright Marketing'
+
+/**
+ * Look up the catch-all branch every lead with no resolvable clean_branch
+ * gets routed to. Cached per ImportCaches instance — checked once and
+ * stored (including the negative result, so a missing Marketing branch
+ * doesn't trigger 6M extra queries during a seed).
+ */
+async function resolveFallbackBranch(
+  prisma: PrismaClient,
+  tenantId: string,
+  caches: ImportCaches,
+): Promise<{ id: string; tenantId: string } | null> {
+  if (caches.fallbackBranch !== undefined) return caches.fallbackBranch
+  const branch = await prisma.crm_branch.findFirst({
+    where:  { tenantId, name: FALLBACK_BRANCH_NAME },
+    select: { id: true, tenantId: true },
+  })
+  caches.fallbackBranch = branch ?? null
+  return caches.fallbackBranch
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -359,11 +384,19 @@ export async function importLead(
     return { status: 'no_pii', reason: 'row has no name, phone, or email' }
   }
 
-  const branch = await resolveBranch(prisma, ctx.tenantId, row.clean_branch, caches)
+  let branch = await resolveBranch(prisma, ctx.tenantId, row.clean_branch, caches)
   if (!branch) {
-    return {
-      status: 'no_branch',
-      reason: `clean_branch="${row.clean_branch ?? 'null'}" did not match any crm_branch.name`,
+    // Fallback: leads with no resolvable clean_branch land on the
+    // "Ebright Marketing" catch-all branch instead of being dropped, so the
+    // Marketing BM can triage and transfer them to the correct branch.
+    branch = await resolveFallbackBranch(prisma, ctx.tenantId, caches)
+    if (!branch) {
+      return {
+        status: 'no_branch',
+        reason:
+          `clean_branch="${row.clean_branch ?? 'null'}" did not match any crm_branch.name ` +
+          `and fallback branch "${FALLBACK_BRANCH_NAME}" is not seeded`,
+      }
     }
   }
 
