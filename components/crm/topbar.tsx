@@ -8,6 +8,7 @@ import {
   PanelLeftOpen,
   Search,
   Bell,
+  BellOff,
   ChevronDown,
   Check,
   CheckCheck,
@@ -15,6 +16,7 @@ import {
   HelpCircle,
   Home,
   LogOut,
+  Loader2,
   RefreshCw,
   UserCircle,
   UserCog,
@@ -25,6 +27,7 @@ import {
   Sun,
   Moon,
 } from 'lucide-react'
+import { usePushSubscription } from '@/hooks/crm/usePushSubscription'
 import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
@@ -890,7 +893,7 @@ function NotificationBell() {
             )}
           </div>
 
-          {/* Footer — link to the full page */}
+          {/* Footer — link to the full page + push toggle */}
           <div className="border-t border-slate-100 px-3 py-2 dark:border-slate-700">
             <button
               onClick={() => {
@@ -901,9 +904,76 @@ function NotificationBell() {
             >
               View all notifications
             </button>
+            <PushNotificationToggle />
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Push notification toggle (in notification dropdown footer) ──────────────
+//
+// Lets the user opt in/out of browser push for the in-app notifications they
+// already get via the bell. Toggle OFF removes only the push subscription —
+// notifications still write to crm_notification and appear on the bell list.
+//
+// The user's tenantId is read off the first accessible branch (every branch
+// in BranchContext carries it). Hidden when the browser doesn't support
+// the Push API or when no tenantId is available yet.
+
+function PushNotificationToggle() {
+  const { branches } = useBranchContext()
+  const tenantId = branches[0]?.tenantId ?? null
+  const push     = usePushSubscription(tenantId)
+
+  if (!push.ready)     return null
+  if (push.unsupported) return null
+
+  const handleClick = () => {
+    if (push.pending) return
+    if (push.subscribed) void push.unsubscribe()
+    else                 void push.subscribe()
+  }
+
+  return (
+    <div className="mt-1 flex items-center justify-between gap-2 rounded-md px-2 py-1.5">
+      <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+        {push.subscribed ? (
+          <Bell className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+        ) : (
+          <BellOff className="h-3.5 w-3.5 text-slate-400" />
+        )}
+        <span>Browser push notifications</span>
+      </div>
+
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={push.pending || push.denied}
+        aria-pressed={push.subscribed}
+        title={
+          push.denied
+            ? 'Browser blocked notifications — re-enable in site settings'
+            : push.subscribed
+              ? 'Push is on. Click to turn off (in-app bell still works).'
+              : 'Push is off. Click to receive browser notifications too.'
+        }
+        className={cn(
+          'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+          push.subscribed ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600',
+          (push.pending || push.denied) && 'opacity-50 cursor-not-allowed',
+        )}
+      >
+        <span
+          className={cn(
+            'inline-flex h-3.5 w-3.5 transform items-center justify-center rounded-full bg-white shadow-sm transition-transform',
+            push.subscribed ? 'translate-x-4' : 'translate-x-1',
+          )}
+        >
+          {push.pending && <Loader2 className="h-2.5 w-2.5 animate-spin text-slate-500" />}
+        </span>
+      </button>
     </div>
   )
 }

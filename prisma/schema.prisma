@@ -243,6 +243,7 @@ model crm_auth_user {
   automationRuns crm_automation_run[]
   messages      crm_message[]
   appointments  crm_appointment[]
+  leadTransfers crm_lead_transfer[]
 
   @@map("crm_auth_user")
 }
@@ -347,6 +348,8 @@ model crm_branch {
   tags             crm_tag[]
   customValues     crm_custom_value[]   @relation("BranchCustomValues")
   messageTemplates crm_message_template[]
+  transfersFrom    crm_lead_transfer[]  @relation("TransferFrom")
+  transfersTo      crm_lead_transfer[]  @relation("TransferTo")
 
   @@index([tenantId])
   @@map("crm_branch")
@@ -503,6 +506,7 @@ model crm_opportunity {
   stage         crm_stage          @relation(fields: [stageId], references: [id])
   assignedUser  crm_auth_user?     @relation("AssignedUser", fields: [assignedUserId], references: [id])
   stageHistory  crm_stage_history[]
+  leadTransfers crm_lead_transfer[]
 
   @@index([tenantId, branchId, stageId])
   @@index([tenantId, pipelineId])
@@ -526,6 +530,29 @@ model crm_stage_history {
 
   @@index([tenantId, opportunityId])
   @@map("crm_stage_history")
+}
+
+model crm_lead_transfer {
+  id                  String   @id @default(uuid())
+  tenantId            String
+  opportunityId       String
+  fromBranchId        String
+  toBranchId          String
+  fromPipelineId      String
+  toPipelineId        String
+  fromStageId         String
+  toStageId           String
+  transferredByUserId String?
+  reason              String
+  transferredAt       DateTime @default(now())
+
+  opportunity   crm_opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  fromBranch    crm_branch      @relation("TransferFrom", fields: [fromBranchId], references: [id])
+  toBranch      crm_branch      @relation("TransferTo",   fields: [toBranchId],   references: [id])
+  transferredBy crm_auth_user?  @relation(fields: [transferredByUserId], references: [id])
+
+  @@index([tenantId, opportunityId])
+  @@map("crm_lead_transfer")
 }
 
 model crm_lead_source {
@@ -711,6 +738,7 @@ enum AutomationTriggerType {
   APPOINTMENT_BOOKED
   CONTACT_REPLIED
   NO_REPLY_AFTER
+  LEAD_TRANSFERRED
 }
 
 enum AutomationRunStatus {

@@ -37,6 +37,7 @@ export const TRIGGER_TYPES = [
   'APPOINTMENT_BOOKED',
   'CONTACT_REPLIED',
   'NO_REPLY_AFTER',
+  'LEAD_TRANSFERRED',
 ] as const
 
 export type TriggerType = (typeof TRIGGER_TYPES)[number]
@@ -102,6 +103,7 @@ export const TRIGGER_TYPE_LABELS: Record<TriggerType, string> = {
   APPOINTMENT_BOOKED: 'Appointment Booked',
   CONTACT_REPLIED: 'Contact Replied',
   NO_REPLY_AFTER: 'No Reply After',
+  LEAD_TRANSFERRED: 'Lead Transferred',
 }
 
 // ─── Action type labels ───────────────────────────────────────────────────────
