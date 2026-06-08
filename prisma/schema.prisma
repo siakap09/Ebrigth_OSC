@@ -738,6 +738,7 @@ enum AutomationTriggerType {
   APPOINTMENT_BOOKED
   CONTACT_REPLIED
   NO_REPLY_AFTER
+  LEAD_TRANSFERRED
 }
 
 enum AutomationRunStatus {
