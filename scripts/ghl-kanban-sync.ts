@@ -289,10 +289,13 @@ async function main() {
 
     interface Row { phone: string; email: string; code: string; child: string; oppName: string }
     const groups = new Map<string, Row[]>() // matchKey → rows
-    let unmappableStage = 0, noKey = 0
+    let unmappableStage = 0, noKey = 0, ctNoSlot = 0
     for (const r of rows) {
       const code = stageToCode(r['stage'] ?? '')
       if (!code) { unmappableStage++; continue }
+      // CT only moves when the GHL row carries a Time Slot (a real confirmed
+      // trial). Slot-less CT rows have no signal, so leave them at NL.
+      if (code === 'CT' && !((r['time slot'] ?? r['timeslot'] ?? '').trim())) { ctNoSlot++; continue }
       const phone = phoneKey(r['phone'])
       const email = (r['email'] ?? '').trim().toLowerCase()
       const key = phone ? `p:${phone}` : email ? `e:${email}` : ''
@@ -304,11 +307,11 @@ async function main() {
     // ── Decide moves ─────────────────────────────────────────────────────────
     const updates: { oppId: string; fromStageId: string; toStageId: string; code: string; branchId: string }[] = []
     const skips: Skip[] = []
-    let inSync = 0, noCrmMatch = 0, multiBranch = 0, conflictSkipped = 0, leftCtEnr = 0
+    let inSync = 0, noCrmMatch = 0, multiBranch = 0, conflictSkipped = 0, leftEnr = 0
 
-    // CT (Confirmed for Trial) and ENR (Enrolled) require popup data we don't
-    // have (trial date/slot, package). Per spec, leave those leads at NL.
-    const SKIP_CODES = new Set(['CT', 'ENR'])
+    // ENR (Enrolled) needs package length we don't have → leave at NL.
+    // CT is allowed here (slot-less CT rows were already dropped above).
+    const SKIP_CODES = new Set(['ENR'])
 
     for (const [key, grp] of groups) {
       // Phone-keyed groups match by phone ONLY. Email is used solely for rows
@@ -330,7 +333,7 @@ async function main() {
       const distinctCodes = new Set(grp.map((r) => r.code))
 
       const setStage = (oppId: string, pipelineId: string, curStageId: string, branchId: string, code: string) => {
-        if (SKIP_CODES.has(code)) { leftCtEnr++; return }   // ENR/CT → leave at NL
+        if (SKIP_CODES.has(code)) { leftEnr++; return }   // ENR → leave at NL
         const target = stageByPipelineCode.get(`${pipelineId}:${code}`)
         if (!target) { skips.push({ reason: `pipeline lacks stage ${code}`, key }); return }
         if (target === curStageId) { inSync++; return }
@@ -369,7 +372,8 @@ async function main() {
     console.log(`Opportunities to MOVE : ${updates.length}`)
     console.log(`Already in sync       : ${inSync}`)
     console.log(`No CRM match (stay NL): ${noCrmMatch}  (groups)`)
-    console.log(`Left at NL — ENR/CT (popup unknown): ${leftCtEnr}`)
+    console.log(`Left at NL — ENR (package unknown): ${leftEnr}`)
+    console.log(`Left at NL — CT without slot: ${ctNoSlot}`)
     console.log(`Skipped — multi-branch: ${multiBranch}`)
     console.log(`Skipped — sibling conflict: ${conflictSkipped}`)
     console.log(`Other skips           : ${skips.length - multiBranch - conflictSkipped}`)
@@ -385,8 +389,10 @@ async function main() {
 
     if (apply && updates.length) {
       // Rollback snapshot FIRST — records every opp's original stage so the
-      // moves can be reverted. Written before any DB write.
-      const backupPath = path.resolve('docs/ghl-sync-rollback.json')
+      // moves can be reverted. Written before any DB write. Never clobber a
+      // previous run's rollback (so earlier applies stay revertible).
+      let backupPath = path.resolve('docs/ghl-sync-rollback.json')
+      for (let i = 2; fs.existsSync(backupPath); i++) backupPath = path.resolve(`docs/ghl-sync-rollback-${i}.json`)
       fs.writeFileSync(backupPath, JSON.stringify(updates.map((u) => ({ oppId: u.oppId, fromStageId: u.fromStageId, toStageId: u.toStageId })), null, 2))
       console.log(`\nRollback snapshot written: ${backupPath} (${updates.length} rows)`)
 
