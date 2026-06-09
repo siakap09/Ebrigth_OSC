@@ -13,7 +13,7 @@ import {
   COLUMNS, BRANCH_SLOTS_CONFIG,
   getTimeSlotsForDay, isAdminSlot, getStaffColorByIndex,
   getWorkingDaysForBranch, isOpeningClosingSlot,
-  isManagerOnDutySlot,
+  isManagerOnDutySlot, isOnlineCoachOnly,
   SELECT_ARROW_WHITE, SELECT_ARROW_DARK
 } from "@/lib/manpowerUtils";
 import { isBranchManager } from "@/lib/roles";
@@ -117,6 +117,7 @@ function PlanNewWeekPage() {
   const [branchManagerData, setBranchManagerData] = useState<Record<string, string[]>>({});
   const [trainingMap, setTrainingMap] = useState<Record<string, { start?: string; end?: string }>>({});
   const [endDateMap, setEndDateMap] = useState<Record<string, string>>({});
+  const [employeeIdMap, setEmployeeIdMap] = useState<Record<string, string>>({});
   const [columnReplacementBranch, setColumnReplacementBranch] = useState<Record<string, string>>({});
   const [managerReplacementBranch, setManagerReplacementBranch] = useState<Record<string, string>>({});
   const [selectedDay, setSelectedDay] = useState<string>("");
@@ -190,6 +191,7 @@ function PlanNewWeekPage() {
     const managers: Record<string, string[]> = {};
     const tmap: Record<string, { start?: string; end?: string }> = {};
     const emap: Record<string, string> = {};
+    const idmap: Record<string, string> = {};
     staffList.forEach((s: any) => {
       if (!s.branch) return;
       if (!grouped[s.branch]) grouped[s.branch] = [];
@@ -204,11 +206,15 @@ function PlanNewWeekPage() {
       if (s.endDate) {
         emap[s.name] = s.endDate;
       }
+      if (s.employeeId) {
+        idmap[s.name] = s.employeeId;
+      }
     });
     setBranchStaffData(grouped);
     setBranchManagerData(managers);
     setTrainingMap(tmap);
     setEndDateMap(emap);
+    setEmployeeIdMap(idmap);
   };
 
   useEffect(() => { fetchStaff(); }, []);
@@ -365,8 +371,13 @@ function PlanNewWeekPage() {
         });
         
         if (workedThatDay) {
-          staffStats[emp].coachHrs += coachingHoursForDay; 
-          staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
+          // Online-branch coaches (except the exempt two) have no exec hours —
+          // they're tracked on coaching hours only.
+          const coachOnly = isOnlineCoachOnly(selectedBranch, employeeIdMap[emp]);
+          staffStats[emp].coachHrs += coachingHoursForDay;
+          if (!coachOnly) {
+            staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
+          }
           staffStats[emp].total = staffStats[emp].coachHrs + staffStats[emp].execHrs;
         }
       });

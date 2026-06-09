@@ -459,7 +459,7 @@ export default function StaffDirectory({
   // Two-step picker: filterType (Branch / Dept) drives which list is shown
   // in the second dropdown. Only one of branchFilter / deptFilter is ever
   // active at a time — switching filterType resets the other.
-  const [filterType, setFilterType] = useState<"branch" | "dept">("branch");
+  const [filterType, setFilterType] = useState<"branch" | "dept" | "all">("branch");
   const [branchFilter, setBranchFilter] = useState<number | null>(null);
   const [deptFilter, setDeptFilter] = useState<number | null>(null);
   // Working-day filter: restrict to staff who work the chosen day. Empty
@@ -646,15 +646,18 @@ export default function StaffDirectory({
               label="Filter by"
               value={filterType}
               onChange={(v) => {
-                const next = v as "branch" | "dept";
+                const next = v as "branch" | "dept" | "all";
                 setFilterType(next);
                 // Clear the other side's filter so switching modes always
                 // starts from "All" — avoids a stale dept filter hiding
-                // rows after the user switched to Branch mode.
+                // rows after the user switched to Branch mode. "All Location"
+                // spans every branch and department, so it clears both.
                 if (next === "branch") setDeptFilter(null);
-                else setBranchFilter(null);
+                else if (next === "dept") setBranchFilter(null);
+                else { setBranchFilter(null); setDeptFilter(null); }
               }}
               options={[
+                { value: "all",    label: "All"    },
                 { value: "branch", label: "Branch" },
                 { value: "dept",   label: "Dept"   },
               ]}
@@ -670,7 +673,7 @@ export default function StaffDirectory({
                   ...branches.map(b => ({ value: String(b.id), label: b.name })),
                 ]}
               />
-            ) : (
+            ) : filterType === "dept" ? (
               <FilterSelect
                 label="Department"
                 value={deptFilter === null ? ALL : String(deptFilter)}
@@ -680,7 +683,7 @@ export default function StaffDirectory({
                   ...populatedDepartments.map(d => ({ value: String(d.id), label: d.name })),
                 ]}
               />
-            )}
+            ) : null}
 
             {viewMode !== "timeline" && (
               <>
@@ -1757,9 +1760,15 @@ function TableView({
   people: DirectoryPerson[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  groupBy: "branch" | "dept";
+  groupBy: "branch" | "dept" | "all";
 }) {
-  const groupLabel = groupBy === "dept" ? "Department" : "Branch";
+  // Header label per filter mode. "all" shows a combined column (real branch
+  // for branch staff, department for HQ staff who have no branch), so it reads
+  // "Branch / Department". "dept" → Department, "branch" → Branch.
+  const groupLabel =
+    groupBy === "dept"  ? "Department"
+    : groupBy === "all" ? "Branch / Department"
+    : "Branch";
   if (people.length === 0) {
     return (
       <div className="p-12 text-center text-sm text-slate-500">
@@ -1830,7 +1839,12 @@ function TableView({
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-sm text-slate-700">
-                    {(groupBy === "dept" ? p.departmentName : p.branchName) ?? "—"}
+                    {groupBy === "dept"
+                      ? (p.departmentName ?? "—")
+                      // Branch column: HQ isn't a real branch (it houses
+                      // departments), so HQ staff have no branchName — show
+                      // their department instead. Real branches show as-is.
+                      : (p.branchName ?? p.departmentName ?? "—")}
                   </td>
                   {DAYS_ORDER.map(d => {
                     const works = Boolean(schedule?.[d]);

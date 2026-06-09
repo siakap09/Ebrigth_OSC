@@ -344,7 +344,30 @@ export default function AttendanceSummary() {
       // Dept column shows BranchStaff.branch (the short code like OD / FNC /
       // HR) to match what HR Employee Management displays under "Branch/Dept".
       // Falls back to .department only if branch is missing.
-      const records: AttendanceRecord[] = dbRows.map(row => {
+      // /api/attendance-today concatenates two scanner tables (AttendanceLog +
+      // AttendanceLogST). Each enforces one row per (date, empNo), but a person
+      // who scans across both surfaces twice with the SAME empNo — which would
+      // collide on React's key and double-count them. Collapse to one row per
+      // person per scanner location (earliest check-in, latest check-out) so we
+      // honour the "exactly one row per day" invariant this component assumes.
+      const mergedRows = new Map<string, typeof dbRows[number]>();
+      for (const row of dbRows) {
+        const key = `${row.empNo}__${row.scannerLocation ?? ""}`;
+        const prev = mergedRows.get(key);
+        if (!prev) {
+          mergedRows.set(key, { ...row });
+          continue;
+        }
+        // Keep the earliest clock-in and the latest clock-out across the dupes.
+        if (row.clockInTime && (!prev.clockInTime || row.clockInTime < prev.clockInTime)) {
+          prev.clockInTime = row.clockInTime;
+        }
+        if (row.clockOutTime && (!prev.clockOutTime || row.clockOutTime > prev.clockOutTime)) {
+          prev.clockOutTime = row.clockOutTime;
+        }
+      }
+
+      const records: AttendanceRecord[] = Array.from(mergedRows.values()).map(row => {
         const staff = allBranchStaffRef.current.find(s => s.employeeId === row.empNo);
         const emp   = employeesRef.current.find(e => e.scannerRef === row.empNo);
         const checkInDate = new Date(`${row.date}T${row.clockInTime}`);
@@ -369,7 +392,8 @@ export default function AttendanceSummary() {
         };
       });
 
-      const ids = dbRows.map(r => r.empNo).filter(Boolean);
+      // De-dupe here too: this list is rendered with key={id} in Diagnostics.
+      const ids = Array.from(new Set(dbRows.map(r => r.empNo).filter(Boolean)));
       setSeenScannerIds(ids);
       setLogs(records);
       setScannerStatus("ok");
@@ -472,13 +496,26 @@ export default function AttendanceSummary() {
     return true;
   }
 
-  const effectivelyActiveCount = branchStaff.filter(isEffectivelyActive).length;
-
-  const missingEmployees = branchStaff.filter(s => {
+  // Staff expected on-site on the selected date. On top of being effectively
+  // active, the date must be a working day for them per their weekly schedule:
+  //   • slot = {start,end} → a working day → expected.
+  //   • slot = null        → that weekday is their rest day → NOT expected
+  //                          (e.g. an ST coach scheduled Wed–Sun isn't expected
+  //                          on Mon/Tue, so they never count as "missing" then).
+  //   • slot = undefined   → no schedule configured at all → still expected, so
+  //                          they stay visible and the "No Working Hours Set"
+  //                          panel nudges admins to fill it in.
+  const expectedTodayStaff = branchStaff.filter(s => {
     if (!s.name) return false;
     if (!isEffectivelyActive(s)) return false;
+    return slotForDate(s.workingHours, selectedDate) !== null;
+  });
+
+  const effectivelyActiveCount = expectedTodayStaff.length;
+
+  const missingEmployees = expectedTodayStaff.filter(s => {
     if (s.employeeId && scannedEmpNos.has(s.employeeId)) return false; // exact-ID hit
-    const fullName = s.name.toUpperCase();
+    const fullName = (s.name ?? "").toUpperCase();
     return !scannedNames.some(sn => fullName.includes(sn) || sn.includes(fullName));
   });
 
@@ -645,8 +682,8 @@ export default function AttendanceSummary() {
               value={missingEmployees.length}
               icon={UserX}
               tone="red"
-              subtitle={`of ${effectivelyActiveCount} active`}
-              tooltip={`Active staff registered to ${selectedLocation} who haven't scanned today.`}
+              subtitle={`of ${effectivelyActiveCount} expected`}
+              tooltip={`Staff registered to ${selectedLocation} who are scheduled to work ${isViewingToday ? "today" : "that day"} but haven't scanned. Rest days (per each person's working-hours schedule) are excluded.`}
             />
           </motion.div>
 
@@ -822,7 +859,7 @@ export default function AttendanceSummary() {
                     </tr>
                   ) : (
                     visibleLogs.map((record) => (
-                      <Tooltip key={record.empNo}>
+                      <Tooltip key={`${record.empNo}-${record.scannerLocation ?? "none"}`}>
                         <TooltipTrigger asChild>
                           <tr className="border-b border-gray-100 hover:bg-blue-50/40 transition-colors cursor-default">
                             <td className="px-4 py-3.5">
@@ -964,7 +1001,7 @@ export default function AttendanceSummary() {
                     {isViewingToday ? "Missing Today" : `Missing on ${prettyDateLabel(selectedDate)}`}
                   </h2>
                   <p className="text-xs text-gray-500 mt-0.5 truncate">
-                    {selectedLocation} branch · {isViewingToday ? "Active staff not yet scanned" : "Active staff with no scan that day"}
+                    {selectedLocation} branch · {isViewingToday ? "Scheduled staff not yet scanned" : "Scheduled staff with no scan that day"}
                   </p>
                 </div>
               </div>

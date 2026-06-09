@@ -11,6 +11,31 @@ export const ALL_BRANCHES = [
 export const DAYS = ["Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
 export const WEEKDAY_DAYS = ["Wednesday", "Thursday", "Friday"] as const;
 
+// Online-branch pay rule.
+//
+// Online-branch coaches are paid purely on the hours they actually coach — they
+// have no exec/admin hours, so their exec time should always be 0. The standard
+// branches instead top each working day up to a daily target with "exec" hours
+// (dailyTarget − coachHrs).
+//
+// Two people are exempt and keep the standard coach+exec calculation:
+//   77000093 — Pooja (PT): counts both coach and exec hours.
+//   66020086 — Amin (FT): also counts exec (as FT he yields no pay anyway).
+export const ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS = new Set(["77000093", "66020086"]);
+
+/**
+ * True when this staff member is an Online-branch coach paid on coaching hours
+ * only (no exec hours) — i.e. the branch is Online and they are not one of the
+ * exempt employee IDs above. `branch` must already be the full name "Online".
+ */
+export function isOnlineCoachOnly(
+  branch: string | null | undefined,
+  employeeId: string | null | undefined,
+): boolean {
+  if ((branch ?? "").trim().toLowerCase() !== "online") return false;
+  return !ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS.has((employeeId ?? "").trim());
+}
+
 export const BRANCH_WORKING_DAYS: Record<string, string[]> = {
   "Ampang": ["Thursday", "Friday", "Saturday", "Sunday"],
   "Bandar Seri Putra": ["Thursday", "Friday", "Saturday", "Sunday"],
