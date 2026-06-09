@@ -8,6 +8,7 @@ import {
   isOpeningClosingSlot,
   isAdminSlot,
   COLUMNS,
+  ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS,
 } from "@/lib/manpowerUtils";
 import { isEmployee, isBranchManager, isAcademy } from "@/lib/roles";
 import { normalizeLocation } from "@/lib/constants";
@@ -104,6 +105,7 @@ function managerOnDutyEntries(
 
 type StaffRecord = {
   id: number;
+  employeeId: string | null;
   name: string | null;
   nickname: string | null;
   branch: string | null;
@@ -310,6 +312,18 @@ function isPartTimeStaff(staff: StaffRecord): boolean {
   );
 }
 
+/**
+ * True when this staff member should be treated as an Online-branch coach who
+ * is paid on coaching hours only (no exec hours / no exec pay). See
+ * ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS for the two people who keep the standard
+ * coach+exec calculation.
+ */
+function isOnlineCoachOnly(staff: StaffRecord | null, branch: string): boolean {
+  if (norm(normalizeLocation(branch)) !== "online") return false;
+  const empId = (staff?.employeeId ?? "").trim();
+  return !ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS.has(empId);
+}
+
 function shouldExcludeStaff(staff: StaffRecord): boolean {
   const pos = (staff.position || staff.role || "").toUpperCase();
   const name = (staff.name || "").toUpperCase();
@@ -372,6 +386,7 @@ export async function GET(request: Request) {
     const allStaff: StaffRecord[] = await hrfsPrisma.branchStaff.findMany({
       select: {
         id: true,
+        employeeId: true,
         name: true,
         nickname: true,
         branch: true,
@@ -601,17 +616,31 @@ export async function GET(request: Request) {
                      roleStr.includes("PART-TIME") || roleStr.includes("PART TIME");
             })();
 
+        // Online-branch coaches (except the exempt two) have no exec hours —
+        // drop their exec time entirely so they're paid on coaching hours only.
+        const coachOnly = isOnlineCoachOnly(staff ?? null, emp.branch);
+        const execHrs = coachOnly ? 0 : emp.execHrs;
+        const managerExecHrs = coachOnly ? 0 : emp.managerExecHrs;
+        const totalHrs = coachOnly ? emp.coachHrs : emp.totalHrs;
+        const days = coachOnly
+          ? emp.days.map((d) => ({ ...d, execHrs: 0, managerExecHrs: 0, totalHrs: d.coachHrs }))
+          : emp.days;
+
         const hasRate = emp.rate !== null && emp.rate > 0;
         const coachPay = isPT && hasRate ? emp.coachHrs * (emp.rate || 0) : 0;
         // Manager-on-duty hours are paid at the elevated BM rate; the remaining
         // exec time is paid at the normal rate.
-        const regularExecHrs = Math.max(0, emp.execHrs - emp.managerExecHrs);
+        const regularExecHrs = Math.max(0, execHrs - managerExecHrs);
         const execPay = isPT && hasRate
-          ? regularExecHrs * EXECUTIVE_RATE + emp.managerExecHrs * BM_EXEC_RATE
+          ? regularExecHrs * EXECUTIVE_RATE + managerExecHrs * BM_EXEC_RATE
           : 0;
 
         return {
           ...emp,
+          execHrs,
+          managerExecHrs,
+          totalHrs,
+          days,
           isPT,
           coachPay,
           execPay,

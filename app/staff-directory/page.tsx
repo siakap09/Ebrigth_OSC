@@ -64,8 +64,10 @@ const CANONICAL_DEPARTMENTS = [
   { name: "Operation",    code: "ops" },
   { name: "Optimisation", code: "od"  },
   { name: "Finance",      code: "fnc" },
-  { name: "HR",           code: "hr"  },
-  { name: "IOP",          code: "iop" },
+  // HR and IOP are the same team — surfaced as one combined department so the
+  // dropdown shows a single "HR/IOP" entry and staff form values of "HR/IOP"
+  // (see lib/constants DEPARTMENT_OPTIONS) resolve correctly.
+  { name: "HR/IOP",       code: "hr"  },
   { name: "Academy",      code: "acd" },
 ] as const;
 
@@ -74,9 +76,20 @@ type CanonicalDeptName = (typeof CANONICAL_DEPARTMENTS)[number]["name"];
 // Reverse lookup: short code → canonical name. Used when the dept code leaks
 // into BranchStaff.branch (e.g. row with branch="od"), or when
 // BranchStaff.department itself holds the code instead of the name.
-const DEPT_CODE_TO_NAME: Record<string, CanonicalDeptName> = Object.fromEntries(
-  CANONICAL_DEPARTMENTS.map((d) => [d.code.toLowerCase(), d.name]),
-) as Record<string, CanonicalDeptName>;
+const DEPT_CODE_TO_NAME: Record<string, CanonicalDeptName> = {
+  ...Object.fromEntries(
+    CANONICAL_DEPARTMENTS.map((d) => [d.code.toLowerCase(), d.name]),
+  ),
+  // "iop" no longer has its own canonical entry — fold it into HR/IOP.
+  iop: "HR/IOP",
+  // Real-world code aliases seen in BranchStaff that differ from the canonical
+  // codes above: the data uses "op"/"ops" for Operation and "fin" for Finance,
+  // while the canonical codes are "ops" and "fnc". Without these, HQ staff
+  // whose department is "OP" or "FIN" resolve to no department and vanish from
+  // the Department filter.
+  op: "Operation",
+  fin: "Finance",
+} as Record<string, CanonicalDeptName>;
 
 function isDeptCode(raw: string | null | undefined): boolean {
   if (!raw) return false;
@@ -89,8 +102,9 @@ function isDeptCode(raw: string | null | undefined): boolean {
 // Branch dropdown and from the "All branches" scope; HQ staff still flow into
 // the Department dropdown via BranchStaff.department.
 //
-// "IOP" is handled via the dept-code path (it's in CANONICAL_DEPARTMENTS), so
-// it doesn't need to be listed here — isDeptCode catches it.
+// "IOP" is handled via the dept-code path (the "iop" alias in DEPT_CODE_TO_NAME
+// folds into the combined "HR/IOP" department), so it doesn't need to be listed
+// here — isDeptCode catches it.
 const NON_BRANCH_VALUES = new Set(["hq"]);
 
 function isNonBranch(raw: string | null | undefined): boolean {
@@ -116,8 +130,9 @@ function normalizeDepartment(raw: string | null | undefined): CanonicalDeptName 
   if (s.includes("OPTIMISATION") || s.includes("OPTIMIZATION")) return "Optimisation";
   if (s.includes("OPERATION"))                                  return "Operation";
   if (s.includes("ACADEMY") || s.includes("ACADEMIC"))          return "Academy";
-  if (s === "HR" || s.includes("HUMAN"))                        return "HR";
-  if (s === "IOP")                                              return "IOP";
+  // HR and IOP are one combined team — collapse every spelling into "HR/IOP".
+  if (s === "HR" || s === "IOP" || s.replace(/\s+/g, "") === "HR/IOP" || s.includes("HUMAN"))
+                                                                return "HR/IOP";
   if (s.includes("FINANCE") || s.includes("ACCOUNT"))           return "Finance";
   if (s.includes("CEO") || s.includes("CHIEF EXECUTIVE"))       return "CEO";
   return null;
@@ -285,7 +300,14 @@ export default async function StaffDirectoryPage() {
     const branchIsActuallyDeptCode = rawBranch !== null && isDeptCode(rawBranch);
     const branchIsNonBranch = rawBranch !== null && isNonBranch(rawBranch);
     const branchName = (branchIsActuallyDeptCode || branchIsNonBranch) ? null : rawBranch;
-    const deptName = normalizeDepartment(r.department) ?? branchAsDept;
+    // Canonical department drives filtering / chart grouping (must be one of
+    // CANONICAL_DEPARTMENTS). The DISPLAY name falls back to the raw
+    // BranchStaff.department value when it isn't a recognised canonical dept —
+    // otherwise HQ / non-branch staff whose department is free-text (e.g. "IT")
+    // would render as "—" even though a department is on file.
+    const canonicalDept = normalizeDepartment(r.department) ?? branchAsDept;
+    const rawDept = r.department?.trim() || null;
+    const deptDisplay = canonicalDept ?? rawDept;
     const emailKey = r.email?.trim().toLowerCase() ?? "";
     const linkedUserId = emailKey ? userIdByEmail.get(emailKey) ?? null : null;
 
@@ -317,8 +339,8 @@ export default async function StaffDirectoryPage() {
       branchName,
       branchCode: null,
       branchLocation: r.location?.trim() || null,
-      departmentId: deptName ? departmentIdByName.get(deptName) ?? null : null,
-      departmentName: deptName,
+      departmentId: canonicalDept ? departmentIdByName.get(canonicalDept) ?? null : null,
+      departmentName: deptDisplay,
       departmentCode: null,
       joinedYear: startISO ? Number(startISO.slice(0, 4)) : null,
       startDate: startISO,

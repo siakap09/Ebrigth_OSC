@@ -35,6 +35,7 @@ export async function GET(request: Request) {
   try {
     type StaffRow = {
       id: number;
+      employeeId: string | null;
       nickname: string | null;
       branch: string | null;
       role: string | null;
@@ -46,6 +47,7 @@ export async function GET(request: Request) {
     const staff = await hrfsPrisma.branchStaff.findMany({
       select: {
         id: true,
+        employeeId: true,
         nickname: true,
         branch: true,
         role: true,
@@ -63,6 +65,7 @@ export async function GET(request: Request) {
         const fullBranch = BRANCH_CODE_MAP[s.branch ?? ''] ?? s.branch;
         return {
           id: s.id,
+          employeeId: s.employeeId,
           name: s.nickname as string,
           branch: fullBranch,
           role: s.role?.toUpperCase() === 'BM'

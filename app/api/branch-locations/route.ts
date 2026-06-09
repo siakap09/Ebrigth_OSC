@@ -4,6 +4,15 @@ import { requireSession, canSeeAllBranches } from '@/lib/auth';
 import { isEmployee } from '@/lib/roles';
 import { BRANCH_LIST, normalizeLocation } from '@/lib/constants';
 
+// Staff intentionally hidden from the attendance dashboard (Missing box, active
+// counts, reports). They work flexible / remote with no fixed on-site hours, so
+// the scanner-based attendance tracking doesn't apply to them. Matched by the
+// stable BranchStaff.employeeId.
+const ATTENDANCE_HIDDEN_EMPLOYEE_IDS = [
+  '33030010', // CHOW CHIN HUI
+  '33010041', // ROHAN KUMAR A/L MANOHAR LAL
+];
+
 // Scoping:
 //   Admin / HOD            → any location.
 //   Branch Manager         → only their own branch's location.
@@ -75,7 +84,10 @@ export async function GET(req: NextRequest) {
         endDate:      true,
         workingHours: true,
       },
-      where:   { status: 'Active' },
+      where:   {
+        status: 'Active',
+        NOT: { employeeId: { in: ATTENDANCE_HIDDEN_EMPLOYEE_IDS } },
+      },
       orderBy: { name: 'asc' },
     });
 
