@@ -346,6 +346,12 @@ export interface Invitation {
   /** Did the student pay for this slot? Independent of attendance —
    *  surfaced on dashboards as paid/unpaid/not-attended buckets. */
   paid: boolean;
+  /** Academy follow-up: was the absence make-up video sent to the parent?
+   *  Only meaningful (and editable) while status = no_show. */
+  videoSentToParent: boolean;
+  /** The absence make-up video link to send to the parent. Once set, the
+   *  "Video to Parent" control becomes a Send action. */
+  videoLink?: string | null;
   invitedBy: string;            // User id (BM)
   invitedAt: string;
   confirmedAt?: string;
@@ -398,13 +404,25 @@ export interface PcmReport {
 
 // ----------------------------------------------------------------------------
 // Event branch overrides — per-event, per-branch toggle that lets a single
-// branch invite the same student to multiple grades within one event (all
-// on the same day, different sessions). Defaults to OFF for every branch on
-// every event. Only Academy/Admin can toggle it.
+// branch invite the same student to multiple grades within one event.
+// Defaults to OFF for every branch on every event. Only Academy/Admin can
+// toggle it. When ON, `dayPolicy` decides which extra invites are allowed.
 // ----------------------------------------------------------------------------
+
+/**
+ * Which extra multi-grade invites an unlocked branch may issue for the same
+ * student within one event. A different target_grade is ALWAYS required on top
+ * of this, regardless of policy.
+ *   • SAME_DAY — extra invites must be on the same day (different session). [default]
+ *   • DIFF_DAY — extra invites must be on a different day from existing ones.
+ *   • BOTH     — no day restriction; any day is allowed.
+ */
+export type DayPolicy = "SAME_DAY" | "DIFF_DAY" | "BOTH";
+
 export interface EventBranchOverride {
   eventId: string;
   branchCode: BranchCode;
+  dayPolicy: DayPolicy;         // which extra invites this branch may issue
   grantedBy: string;            // email of the Academy/Admin user who toggled it on
   grantedAt: string;            // ISO timestamp
   reason?: string;              // optional free-text audit note

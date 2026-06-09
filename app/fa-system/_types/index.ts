@@ -292,13 +292,25 @@ export interface Invitation {
 
 // ----------------------------------------------------------------------------
 // Event branch overrides — per-event, per-branch toggle that lets a single
-// branch invite the same student to multiple grades within one event (all
-// on the same day, different sessions). Defaults to OFF for every branch on
-// every event. Only Marketing/Admin can toggle it.
+// branch invite the same student to multiple grades within one event.
+// Defaults to OFF for every branch on every event. Only Marketing/Admin can
+// toggle it. When ON, `dayPolicy` decides which extra invites are allowed.
 // ----------------------------------------------------------------------------
+
+/**
+ * Which extra multi-grade invites an unlocked branch may issue for the same
+ * student within one event. A different target_grade is ALWAYS required on top
+ * of this, regardless of policy.
+ *   • SAME_DAY — extra invites must be on the same day (different session). [default]
+ *   • DIFF_DAY — extra invites must be on a different day from existing ones.
+ *   • BOTH     — no day restriction; any day is allowed.
+ */
+export type DayPolicy = "SAME_DAY" | "DIFF_DAY" | "BOTH";
+
 export interface EventBranchOverride {
   eventId: string;
   branchCode: BranchCode;
+  dayPolicy: DayPolicy;         // which extra invites this branch may issue
   grantedBy: string;            // email of the Marketing/Admin user who toggled it on
   grantedAt: string;            // ISO timestamp
   reason?: string;              // optional free-text audit note

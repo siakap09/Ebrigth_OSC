@@ -1,15 +1,18 @@
 ﻿"use client";
 
-import { Clock, CheckCircle2, XCircle, GripVertical, DollarSign } from "lucide-react";
+import { useState } from "react";
+import { Clock, CheckCircle2, XCircle, GripVertical, DollarSign, Video, Send, Pencil, Eye, CalendarClock, Ban } from "lucide-react";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { StatusPill } from "@pcm/_components/fa/StatusPill";
+import { InvitationDetailModal } from "@pcm/_components/fa/InvitationDetailModal";
+import { RescheduleModal } from "@pcm/_components/fa/RescheduleModal";
 import { BRANCHES, Invitation, Student } from "@pcm/_types";
 
 export function AttendanceRoster({
-  session, orderedInvitations, pendingConfirmationsCount, canEdit, canDrag,
+  session, orderedInvitations, pendingConfirmationsCount, canEdit, canDrag, academyView = false,
 }: {
   session: { dayNumber: number; sessionNumber: number; startTime: string; endTime: string; label?: string };
   /** Pre-filtered, pre-ordered list of invitations the page wants displayed.
@@ -20,18 +23,30 @@ export function AttendanceRoster({
   canEdit: boolean;
   /** When true, render drag handles and wire up dnd-kit sortable rows. MKT-only. */
   canDrag: boolean;
+  /** Academy view: hide the Parent column and tighten cell padding so the
+   *  wider roster (Type + Paid + Video columns) fits without scrolling. */
+  academyView?: boolean;
 }) {
   const user = useCurrentUser();
   const students = useFAStore(s => s.students);
   const updateStatus = useFAStore(s => s.updateInvitationStatus);
   const setInvitationPaid = useFAStore(s => s.setInvitationPaid);
+  const setInvitationVideoSent = useFAStore(s => s.setInvitationVideoSent);
+
+  // Row-end Edit (branch) / Detail (academy) modal + the reschedule flow it
+  // hands off to. Academy gets a read-only detail; branch can edit.
+  const [detailInv, setDetailInv] = useState<Invitation | null>(null);
+  const [rescheduleInv, setRescheduleInv] = useState<Invitation | null>(null);
 
   const attended = orderedInvitations.filter(i => i.status === "attended").length;
   const noShow = orderedInvitations.filter(i => i.status === "no_show").length;
   const awaiting = orderedInvitations.filter(i => i.status === "confirmed").length;
 
+  // Academy is strictly read-only; the branch can click everything.
+  const interactive = canEdit && !academyView;
+
   function setAttendance(invId: string, status: "attended" | "no_show" | "confirmed") {
-    if (!canEdit) return;
+    if (!interactive) return;
     updateStatus(invId, status, user?.id);
   }
 
@@ -85,8 +100,24 @@ export function AttendanceRoster({
           No confirmed students for this session yet.
         </div>
       ) : (
-        <div className="fa-card overflow-hidden">
-          <table className="fa-table">
+        <div className="rounded-2xl bg-white border border-ivory-300 shadow-sm overflow-hidden">
+          {/* Invitations-style header band */}
+          <div className="bg-gradient-to-r from-violet-50 to-indigo-50 px-5 py-3 border-b border-ivory-300 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-violet-900">
+              {session.label || `Session ${session.sessionNumber}`}
+              <span className="text-violet-400 font-normal"> · Day {session.dayNumber} · {session.startTime}–{session.endTime}</span>
+            </h3>
+            <span className="text-[11px] text-ink-400">
+              {orderedInvitations.length} student{orderedInvitations.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <table
+            className={`fa-table ${
+              academyView
+                ? "[&_th]:px-2 [&_td]:px-2 [&_th]:py-2.5 [&_td]:py-2.5 text-[13px]"
+                : ""
+            }`}
+          >
             <thead>
               <tr>
                 <th className="w-10 text-right">#</th>
@@ -94,10 +125,13 @@ export function AttendanceRoster({
                 <th>Student</th>
                 <th>Branch</th>
                 <th>Grade</th>
+                <th>Type</th>
                 <th>Parent</th>
                 <th>Confirmation</th>
                 <th className="text-right">Attendance</th>
                 <th>Paid</th>
+                <th>Video to Parent</th>
+                <th className="text-right">{academyView ? "Detail" : "Edit"}</th>
               </tr>
             </thead>
             <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
@@ -126,12 +160,16 @@ export function AttendanceRoster({
                       inv={inv}
                       student={student}
                       position={idx + 1}
-                      canEdit={canEdit}
+                      interactive={interactive}
                       canDrag={canDrag}
+                      academyView={academyView}
                       onAttended={() => setAttendance(inv.id, "attended")}
                       onNoShow={() => setAttendance(inv.id, "no_show")}
                       onReset={() => setAttendance(inv.id, "confirmed")}
+                      onReschedule={() => setRescheduleInv(inv)}
                       onTogglePaid={() => void setInvitationPaid(inv.id, !inv.paid)}
+                      onToggleVideo={() => void setInvitationVideoSent(inv.id, !inv.videoSentToParent)}
+                      onOpenDetail={() => setDetailInv(inv)}
                     />
                   );
                 })}
@@ -140,23 +178,44 @@ export function AttendanceRoster({
           </table>
         </div>
       )}
+
+      {/* Row-end detail / edit modal (+ the reschedule flow it hands off to) */}
+      <InvitationDetailModal
+        open={detailInv !== null}
+        onClose={() => setDetailInv(null)}
+        invitation={detailInv}
+        session={session}
+        editable={!academyView && canEdit}
+        onReschedule={(inv) => { setDetailInv(null); setRescheduleInv(inv); }}
+      />
+      <RescheduleModal
+        open={rescheduleInv !== null}
+        onClose={() => setRescheduleInv(null)}
+        invitation={rescheduleInv}
+      />
     </div>
   );
 }
 
 function SortableInvitationRow({
-  inv, student, position, canEdit, canDrag,
-  onAttended, onNoShow, onReset, onTogglePaid,
+  inv, student, position, interactive, canDrag, academyView,
+  onAttended, onNoShow, onReset, onReschedule, onTogglePaid, onToggleVideo, onOpenDetail,
 }: {
   inv: Invitation;
   student: Student;
   position: number;
-  canEdit: boolean;
+  /** True only when the viewer may change things (branch, non-draft event).
+   *  Academy is always read-only. */
+  interactive: boolean;
   canDrag: boolean;
+  academyView: boolean;
   onAttended: () => void;
   onNoShow: () => void;
   onReset: () => void;
+  onReschedule: () => void;
   onTogglePaid: () => void;
+  onToggleVideo: () => void;
+  onOpenDetail: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: inv.id,
@@ -197,6 +256,21 @@ function SortableInvitationRow({
       </td>
       <td className="font-mono text-sm">G{inv.targetGrade ?? student.grade}</td>
       <td>
+        {/* Read-only mirror of the branch view's Type — set when inviting,
+            shown here for reference only (no flip control). */}
+        <span
+          className={`inline-block px-2 py-1 rounded-md text-[10px] font-bold uppercase text-white ${
+            inv.inviteType === "renewal"
+              ? "bg-gradient-to-r from-cyan-500 to-teal-500"
+              : "bg-gradient-to-r from-violet-500 to-fuchsia-500"
+          }`}
+          style={{ letterSpacing: "0.06em" }}
+          title="Set in the branch invite view — read-only here"
+        >
+          {inv.inviteType === "renewal" ? "Renewal" : "Progress"}
+        </span>
+      </td>
+      <td>
         <div className="text-sm text-ink-900">{student.parentName}</div>
         <div className="text-xs text-ink-400 font-mono">{student.parentPhone}</div>
       </td>
@@ -211,32 +285,42 @@ function SortableInvitationRow({
         )}
       </td>
       <td>
-        <div className="flex items-center gap-1 justify-end">
+        <div className="flex items-center gap-1 justify-end flex-wrap">
           <button
             onClick={onAttended}
-            disabled={!canEdit}
+            disabled={!interactive}
             className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
               inv.status === "attended"
                 ? "bg-success-soft text-success ring-1 ring-success/30"
                 : "text-ink-500 hover:bg-ivory-200"
-            } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
+            } ${!interactive ? "opacity-60 cursor-not-allowed" : ""}`}
           >
             <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />
             Present
           </button>
           <button
             onClick={onNoShow}
-            disabled={!canEdit}
+            disabled={!interactive}
             className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
               inv.status === "no_show"
                 ? "bg-danger-soft text-danger ring-1 ring-danger/30"
                 : "text-ink-500 hover:bg-ivory-200"
-            } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
+            } ${!interactive ? "opacity-60 cursor-not-allowed" : ""}`}
           >
             <XCircle className="w-3.5 h-3.5 inline mr-1" />
             Absent
           </button>
-          {(inv.status === "attended" || inv.status === "no_show") && canEdit && (
+          {interactive && (
+            <button
+              onClick={onReschedule}
+              className="px-2.5 py-1.5 rounded text-xs font-medium text-violet-700 hover:bg-violet-50 transition-colors"
+              title="Reschedule to another session"
+            >
+              <CalendarClock className="w-3.5 h-3.5 inline mr-1" />
+              Reschedule
+            </button>
+          )}
+          {(inv.status === "attended" || inv.status === "no_show") && interactive && (
             <button
               onClick={onReset}
               className="text-xs text-ink-400 hover:text-ink-700 px-2"
@@ -248,21 +332,19 @@ function SortableInvitationRow({
         </div>
       </td>
       <td>
-        {/* Paid pill only renders after the student is marked attended —
-            payment is collected on arrival, so before that there's nothing
-            to mark. Hidden as a dim placeholder otherwise to keep the
-            column width stable. */}
-        {inv.status === "attended" ? (
+        {/* Paid applies to RENEWAL students (regardless of attendance).
+            Progress students never pay here, so they show a dim placeholder. */}
+        {inv.inviteType === "renewal" ? (
           <button
             type="button"
             onClick={onTogglePaid}
-            disabled={!canEdit}
-            title={inv.paid ? "Paid — click to mark unpaid" : "Mark this student as paid"}
+            disabled={!interactive}
+            title={inv.paid ? "Paid — click to mark unpaid" : "Mark this renewal student as paid"}
             className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold uppercase transition-all ${
               inv.paid
                 ? "bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200"
                 : "bg-ivory-100 text-ink-500 border border-ivory-300 hover:bg-ivory-200"
-            } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
+            } ${!interactive ? "opacity-60 cursor-not-allowed" : ""}`}
             style={{ letterSpacing: "0.06em" }}
           >
             <DollarSign className="w-3 h-3" />
@@ -272,6 +354,90 @@ function SortableInvitationRow({
           <span className="text-ink-300 italic text-xs">—</span>
         )}
       </td>
+      <td>
+        {/* Absence follow-up. The control only "sends" once a video link has
+            been pasted (in Edit/Detail): no link → can't send; link → Send;
+            already sent → Sent. */}
+        <VideoToParentCell inv={inv} interactive={interactive} onToggleVideo={onToggleVideo} />
+      </td>
+      <td className="text-right">
+        <button
+          type="button"
+          onClick={onOpenDetail}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-ivory-300 text-ink-600 hover:bg-ivory-100 hover:text-ink-900 transition-colors"
+          title={academyView ? "View student detail" : "Edit invitation"}
+        >
+          {academyView ? <Eye className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
+          {academyView ? "Detail" : "Edit"}
+        </button>
+      </td>
     </tr>
+  );
+}
+
+/* ── Video-to-Parent cell ───────────────────────────────────────────────────
+ * Only relevant for absent (no_show) students. The Send action unlocks once a
+ * link has been pasted in Edit/Detail:
+ *   no link            → "No link" (disabled — paste one first)
+ *   link, not sent     → "Send"    (opens the link + marks sent)
+ *   link, sent         → "Sent"    (click to undo, branch only)
+ * Academy sees the state read-only.
+ */
+function VideoToParentCell({
+  inv, interactive, onToggleVideo,
+}: {
+  inv: Invitation;
+  interactive: boolean;
+  onToggleVideo: () => void;
+}) {
+  if (inv.status !== "no_show") {
+    return <span className="text-ink-300 italic text-xs">—</span>;
+  }
+
+  const link = (inv.videoLink ?? "").trim();
+  const hasLink = link.length > 0;
+  const sent = inv.videoSentToParent;
+
+  // No link yet → can't send. Show a muted, disabled chip.
+  if (!hasLink) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold uppercase bg-ivory-100 text-ink-400 border border-ivory-300 cursor-not-allowed"
+        style={{ letterSpacing: "0.06em" }}
+        title="Paste a video link in Edit/Detail first, then you can send it."
+      >
+        <Ban className="w-3 h-3" /> No link
+      </span>
+    );
+  }
+
+  function handleClick() {
+    if (!interactive) return;
+    if (!sent) {
+      // "Send" — open the link so staff can forward it, then mark as sent.
+      try { window.open(link, "_blank", "noopener,noreferrer"); } catch { /* ignore */ }
+      onToggleVideo();
+    } else {
+      // Undo
+      onToggleVideo();
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={!interactive}
+      title={sent ? "Sent to parent — click to undo" : "Send the make-up video link to the parent"}
+      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold uppercase transition-all ${
+        sent
+          ? "bg-sky-100 text-sky-700 border border-sky-300 hover:bg-sky-200"
+          : "bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100"
+      } ${!interactive ? "opacity-60 cursor-not-allowed" : ""}`}
+      style={{ letterSpacing: "0.06em" }}
+    >
+      {sent ? <Video className="w-3 h-3" /> : <Send className="w-3 h-3" />}
+      {sent ? "Sent" : "Send"}
+    </button>
   );
 }

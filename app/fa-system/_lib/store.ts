@@ -23,6 +23,7 @@ import {
   StudentLoadReport,
   User,
   BranchCode,
+  DayPolicy,
 } from "@fa/_types";
 import { MOCK_USERS } from "./mockData";
 
@@ -112,6 +113,7 @@ interface FAStore {
   grantEventBranchOverride: (args: {
     eventId: string;
     branchCode: BranchCode;
+    dayPolicy?: DayPolicy;
     reason?: string;
   }) => Promise<EventBranchOverride>;
   revokeEventBranchOverride: (eventId: string, branchCode: BranchCode) => Promise<void>;
@@ -480,12 +482,12 @@ export const useFAStore = create<FAStore>()(
       },
 
       // ------- Multi-grade override toggles -------
-      grantEventBranchOverride: async ({ eventId, branchCode, reason }) => {
+      grantEventBranchOverride: async ({ eventId, branchCode, dayPolicy, reason }) => {
         const r = await apiJson<{ override: EventBranchOverride }>(
           "/api/fa/event-overrides",
           {
             method: "POST",
-            body: JSON.stringify({ eventId, branchCode, reason }),
+            body: JSON.stringify({ eventId, branchCode, dayPolicy, reason }),
           }
         );
         if (!r.ok) {

@@ -2,6 +2,7 @@ import "server-only";
 import { pool } from "./db";
 import {
   BranchCode,
+  DayPolicy,
   EventBranchOverride,
   EventStatus,
   FAEvent,
@@ -80,6 +81,7 @@ interface InvitationRow {
 interface EventBranchOverrideRow {
   event_id: string;
   branch_code: string;
+  day_policy: string | null;
   granted_by: string;
   granted_at: Date | string;
   reason: string | null;
@@ -140,10 +142,17 @@ function rowToOverride(r: EventBranchOverrideRow): EventBranchOverride {
   return {
     eventId: r.event_id,
     branchCode: r.branch_code as BranchCode,
+    dayPolicy: normalizeDayPolicy(r.day_policy),
     grantedBy: r.granted_by,
     grantedAt: isoTimestamp(r.granted_at) ?? new Date().toISOString(),
     reason: r.reason ?? undefined,
   };
+}
+
+/** Coerce a raw day_policy value (possibly null on pre-migration rows) into
+ *  the DayPolicy union, defaulting to the legacy SAME_DAY behaviour. */
+function normalizeDayPolicy(v: string | null | undefined): DayPolicy {
+  return v === "DIFF_DAY" || v === "BOTH" ? v : "SAME_DAY";
 }
 
 function rowToInvitation(r: InvitationRow): Invitation {
@@ -207,12 +216,22 @@ export async function fetchAllEventData(): Promise<{
     // table may not exist on older deploys yet — wrap in a try so the FA
     // dashboard still loads if the migration hasn't been applied.
     pool.query<EventBranchOverrideRow>(
-      `SELECT event_id, branch_code, granted_by, granted_at, reason
+      `SELECT event_id, branch_code, day_policy, granted_by, granted_at, reason
          FROM fa_event_branch_overrides`,
     ).catch((err) => {
-      if ((err as { code?: string }).code === "42P01") {
-        // undefined_table — migration not applied yet
+      const code = (err as { code?: string }).code;
+      if (code === "42P01") {
+        // undefined_table — overrides migration not applied yet
         return { rows: [] as EventBranchOverrideRow[] };
+      }
+      if (code === "42703") {
+        // undefined_column — day_policy migration not applied yet. Read the
+        // legacy shape; normalizeDayPolicy() defaults the missing column to
+        // SAME_DAY so behaviour matches pre-day-policy deploys.
+        return pool.query<EventBranchOverrideRow>(
+          `SELECT event_id, branch_code, granted_by, granted_at, reason
+             FROM fa_event_branch_overrides`,
+        );
       }
       throw err;
     }),
@@ -393,12 +412,16 @@ export async function createInvitationRow(args: {
   invitedBy: string;
 }): Promise<Invitation> {
   // Multi-step business-rule check, run as one logical transaction:
-  //   1. Is this (event, branch) opted into multi-grade invites?
+  //   1. Is this (event, branch) opted into multi-grade invites, and under
+  //      which day-policy (SAME_DAY / DIFF_DAY / BOTH)?
   //   2. Look up existing invitations for this (event, student).
   //      • If none → free to insert.
   //      • If toggle OFF → reject (any prior invite blocks).
-  //      • If toggle ON → must be (a) same dayNumber as the new session and
-  //        (b) different target_grade.
+  //      • If toggle ON → target_grade must differ, AND the day must satisfy
+  //        the branch's day-policy:
+  //          SAME_DAY → must be the same day as every prior invite.
+  //          DIFF_DAY → must be a different day from every prior invite.
+  //          BOTH     → any day allowed.
   //   3. INSERT. The DB still has a final UNIQUE on (event, student, grade)
   //      as a race-condition safety net (23505 trips → "duplicate grade").
   //
@@ -406,18 +429,31 @@ export async function createInvitationRow(args: {
   // returns 409 with a descriptive reason.
 
   // 1. Override check
-  const overrideRes = await pool.query<{ branch_code: string }>(
-    `SELECT branch_code
+  const overrideRes = await pool.query<{ day_policy: string | null }>(
+    `SELECT day_policy
        FROM fa_event_branch_overrides
       WHERE event_id = $1 AND branch_code = $2
       LIMIT 1`,
     [args.eventId, args.branch],
-  ).catch((err) => {
-    // If the migration hasn't been applied, treat as no overrides.
-    if ((err as { code?: string }).code === "42P01") return { rows: [] };
+  ).catch(async (err) => {
+    const code = (err as { code?: string }).code;
+    // Overrides table missing entirely → treat as no overrides.
+    if (code === "42P01") return { rows: [] as { day_policy: string | null }[] };
+    // day_policy column not migrated yet → existence check only, default policy.
+    if (code === "42703") {
+      const legacy = await pool.query<{ branch_code: string }>(
+        `SELECT branch_code
+           FROM fa_event_branch_overrides
+          WHERE event_id = $1 AND branch_code = $2
+          LIMIT 1`,
+        [args.eventId, args.branch],
+      );
+      return { rows: legacy.rows.map(() => ({ day_policy: null })) };
+    }
     throw err;
   });
   const multiGradeAllowed = overrideRes.rows.length > 0;
+  const dayPolicy: DayPolicy = normalizeDayPolicy(overrideRes.rows[0]?.day_policy);
 
   // 2. Look up prior invites + the new session's day number in one query
   const priorRes = await pool.query<{
@@ -450,15 +486,24 @@ export async function createInvitationRow(args: {
     if (!multiGradeAllowed) {
       throw new InvitationRejected("Already invited");
     }
-    // Toggle on → enforce same-day + different-grade.
-    const otherDay = priorInvites.find((p) => p.day !== newDayNumber);
-    if (otherDay) {
-      throw new InvitationRejected(`Booked on day ${otherDay.day}`);
-    }
+    // Toggle on → different target_grade is always required.
     const dupGrade = priorInvites.some((p) => p.grade === args.targetGrade);
     if (dupGrade) {
       throw new InvitationRejected(`Already invited for grade ${args.targetGrade}`);
     }
+    // …and the day must satisfy the branch's day-policy.
+    if (dayPolicy === "SAME_DAY") {
+      const otherDay = priorInvites.find((p) => p.day !== newDayNumber);
+      if (otherDay) {
+        throw new InvitationRejected(`Booked on day ${otherDay.day} — same-day invites only`);
+      }
+    } else if (dayPolicy === "DIFF_DAY") {
+      const sameDay = priorInvites.find((p) => p.day === newDayNumber);
+      if (sameDay) {
+        throw new InvitationRejected(`Already booked on day ${newDayNumber} — different-day invites only`);
+      }
+    }
+    // dayPolicy === "BOTH" → no day restriction.
   }
 
   // 3. INSERT — final DB safety net via UNIQUE(event, student, target_grade).
@@ -583,18 +628,21 @@ export async function getEventStatus(eventId: string): Promise<EventStatus | nul
 export async function upsertEventBranchOverrideRow(args: {
   eventId: string;
   branchCode: BranchCode;
+  dayPolicy?: DayPolicy;
   grantedBy: string;
   reason?: string;
 }): Promise<EventBranchOverride> {
+  const dayPolicy = normalizeDayPolicy(args.dayPolicy);
   const { rows } = await pool.query<EventBranchOverrideRow>(
-    `INSERT INTO fa_event_branch_overrides (event_id, branch_code, granted_by, reason)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO fa_event_branch_overrides (event_id, branch_code, day_policy, granted_by, reason)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (event_id, branch_code) DO UPDATE
-       SET granted_by = EXCLUDED.granted_by,
+       SET day_policy = EXCLUDED.day_policy,
+           granted_by = EXCLUDED.granted_by,
            granted_at = now(),
            reason     = EXCLUDED.reason
-     RETURNING event_id, branch_code, granted_by, granted_at, reason`,
-    [args.eventId, args.branchCode, args.grantedBy, args.reason ?? null]
+     RETURNING event_id, branch_code, day_policy, granted_by, granted_at, reason`,
+    [args.eventId, args.branchCode, dayPolicy, args.grantedBy, args.reason ?? null]
   );
   return rowToOverride(rows[0]);
 }
