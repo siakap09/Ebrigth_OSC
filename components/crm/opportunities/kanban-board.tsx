@@ -44,13 +44,14 @@ const ALLOWED_LEAD_TRANSITIONS: Record<string, string[]> = {
   // NL: must start with FU1 (no skipping to FU2 / FU3), but can short-cut
   // directly to CT when a lead is already confirmed for a trial. RSD is the
   // sole backward escape hatch (see "Recovery to RSD" below).
-  NL: ['FU1', 'CT', 'RSD'],
-  // FU1/FU2/FU3: can advance to a later follow-up, jump to CT, or drop the
-  // lead directly to Cold Lead without going through UR_W1/UR_W2/FU3M first.
-  FU1: ['FU2', 'FU3', 'CT', 'CL', 'DND'],
-  FU2: ['FU3', 'CT', 'CL', 'DND'],
-  FU3: ['RSD', 'URW1', 'CT', 'CL', 'DND'],
-  RSD: ['CT', 'DND'],
+  NL: ['FU1', 'CT', 'CTB', 'RSD'],
+  // FU1/FU2/FU3: can advance to a later follow-up, jump to CT (or park in the
+  // Trial Buffer CTB), or drop the lead directly to Cold Lead without going
+  // through UR_W1/UR_W2/FU3M first.
+  FU1: ['FU2', 'FU3', 'CT', 'CTB', 'CL', 'DND'],
+  FU2: ['FU3', 'CT', 'CTB', 'CL', 'DND'],
+  FU3: ['RSD', 'URW1', 'CT', 'CTB', 'CL', 'DND'],
+  RSD: ['CT', 'CTB', 'DND'],
   // Recovery to RSD: CT → RSD lets a confirmed trial be rescheduled without
   // an admin override. The "terminal-ish" / unresponsive stages below
   // (NL, CNS, SNE, URW1-3, CL, DND) also allow → RSD so a lead that was
@@ -62,8 +63,14 @@ const ALLOWED_LEAD_TRANSITIONS: Record<string, string[]> = {
   URW2: ['URW3', 'FU3M', 'CL', 'DND', 'RSD'],
   URW3: ['CL', 'DND', 'RSD'],
   FU3M: ['CL', 'DND'],
-  SU: ['ENR', 'SNE'],
+  // Trial Buffer (CTB): a holding pen for imported "confirmed for trial" leads
+  // that lack a trial date. Moving CTB → CT fires the trial date/slot popup.
+  CTB: ['CT', 'RSD', 'CL', 'DND'],
+  SU: ['ENR', 'ENRB', 'SNE'],
   SNE: ['CL', 'RSD'],
+  // Enroll Buffer (ENRB): a holding pen for imported "enrolled" leads that lack
+  // a package. Moving ENRB → ENR fires the package popup.
+  ENRB: ['ENR', 'SNE', 'CL', 'DND', 'RSD'],
   ENR: [],
   CL: ['RSD'],
   DND: ['RSD'],
