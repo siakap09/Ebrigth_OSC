@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { X, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
 import { useBranchContext } from '@/components/crm/branch-context'
 import {
@@ -70,6 +71,15 @@ interface MetricsResponse {
 }
 
 type Preset = 'today' | 'yesterday' | 'last_week' | 'this_week' | '30d'
+type Metric = 'NL' | 'CT' | 'SU' | 'ENR'
+type Scope = 'main' | 'A' | 'B' | 'C'
+
+const METRIC_LABEL: Record<Metric, string> = {
+  NL: 'New Leads',
+  CT: 'Confirmed for Trial',
+  SU: 'Show-Up',
+  ENR: 'Enrolled',
+}
 
 const PRESETS: Array<{ key: Preset; label: string }> = [
   { key: 'today',     label: 'Today' },
@@ -90,6 +100,9 @@ export function DashboardClient() {
   // When an admin picks a branch from the topbar, send branchId so the API
   // returns that branch's metrics + monthly trend (admin-as-branch view).
   const branchId = selectedBranch?.id ?? null
+
+  // Drill-in: which metric+scope the user clicked to see the underlying leads.
+  const [drill, setDrill] = useState<{ metric: Metric; scope: Scope; scopeLabel: string } | null>(null)
 
   const { data, isLoading } = useQuery<MetricsResponse>({
     queryKey: ['crm', 'dashboard', 'leads-metrics', preset, branchId],
@@ -147,12 +160,18 @@ export function DashboardClient() {
         </div>
       ) : (
         <>
-          <MetricsBlock
-            title={data.elevated === false ? (data.scopedBranchName ?? 'Your branch') : 'Main'}
-            subtitle={data.elevated === false ? 'Pipeline performance' : 'Overall pipeline'}
-            metrics={data.main}
-            accent="indigo"
-          />
+          {(() => {
+            const mainTitle = data.elevated === false ? (data.scopedBranchName ?? 'Your branch') : 'Main'
+            return (
+              <MetricsBlock
+                title={mainTitle}
+                subtitle={data.elevated === false ? 'Pipeline performance' : 'Overall pipeline'}
+                metrics={data.main}
+                accent="indigo"
+                onMetric={(m) => setDrill({ metric: m, scope: 'main', scopeLabel: mainTitle })}
+              />
+            )
+          })()}
 
           {/* Branch view (BM users + admins viewing a single branch via the
               topbar picker): show a 6-month line chart instead of the
@@ -173,6 +192,7 @@ export function DashboardClient() {
                 metrics={data.regions.A}
                 accent="rose"
                 compact
+                onMetric={(m) => setDrill({ metric: m, scope: 'A', scopeLabel: 'Region A' })}
               />
               <MetricsBlock
                 title="Region B"
@@ -180,6 +200,7 @@ export function DashboardClient() {
                 metrics={data.regions.B}
                 accent="amber"
                 compact
+                onMetric={(m) => setDrill({ metric: m, scope: 'B', scopeLabel: 'Region B' })}
               />
               <MetricsBlock
                 title="Region C"
@@ -187,6 +208,7 @@ export function DashboardClient() {
                 metrics={data.regions.C}
                 accent="emerald"
                 compact
+                onMetric={(m) => setDrill({ metric: m, scope: 'C', scopeLabel: 'Region C' })}
               />
             </div>
           )}
@@ -232,6 +254,17 @@ export function DashboardClient() {
           )}
         </>
       )}
+
+      {drill && (
+        <LeadListModal
+          metric={drill.metric}
+          scope={drill.scope}
+          scopeLabel={drill.scopeLabel}
+          preset={preset}
+          branchId={branchId}
+          onClose={() => setDrill(null)}
+        />
+      )}
     </div>
   )
 }
@@ -252,12 +285,14 @@ function MetricsBlock({
   metrics,
   accent,
   compact = false,
+  onMetric,
 }: {
   title: string
   subtitle?: string
   metrics: BranchMetrics
   accent: Accent
   compact?: boolean
+  onMetric?: (m: Metric) => void
 }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
@@ -273,10 +308,10 @@ function MetricsBlock({
         // is intentionally absent here (snapshot-only — meaningful at the
         // branch level, not the regional level).
         <div className="grid grid-cols-2 gap-3">
-          <Stat label="NL"  value={metrics.NL}  bold />
-          <Stat label="CT"  value={metrics.CT}  bold />
-          <Stat label="SU"  value={metrics.SU}  bold />
-          <Stat label="ENR" value={metrics.ENR} bold />
+          <Stat label="NL"  value={metrics.NL}  bold onClick={onMetric && (() => onMetric('NL'))} />
+          <Stat label="CT"  value={metrics.CT}  bold onClick={onMetric && (() => onMetric('CT'))} />
+          <Stat label="SU"  value={metrics.SU}  bold onClick={onMetric && (() => onMetric('SU'))} />
+          <Stat label="ENR" value={metrics.ENR} bold onClick={onMetric && (() => onMetric('ENR'))} />
         </div>
       ) : (
         // Main / branch view: funnel stat above its matching rate so the
@@ -286,10 +321,10 @@ function MetricsBlock({
         // funnel.
         <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_auto]">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <FunnelPair label="NL"  value={metrics.NL}  rateLabel="Conversion Rate" rateValue={pct(metrics.conversionRate)} rateHint="ENR / NL" />
-            <FunnelPair label="CT"  value={metrics.CT}  rateLabel="Confirmed Rate"  rateValue={pct(metrics.confirmedRate)}  rateHint="CT / NL" />
-            <FunnelPair label="SU"  value={metrics.SU}  rateLabel="Show Up Rate"    rateValue={pct(metrics.showUpRate)}     rateHint="SU / CT" />
-            <FunnelPair label="ENR" value={metrics.ENR} rateLabel="Enrolment Rate"  rateValue={pct(metrics.enrolmentRate)}  rateHint="ENR / SU" />
+            <FunnelPair label="NL"  value={metrics.NL}  rateLabel="Conversion Rate" rateValue={pct(metrics.conversionRate)} rateHint="ENR / NL" onClick={onMetric && (() => onMetric('NL'))} />
+            <FunnelPair label="CT"  value={metrics.CT}  rateLabel="Confirmed Rate"  rateValue={pct(metrics.confirmedRate)}  rateHint="CT / NL" onClick={onMetric && (() => onMetric('CT'))} />
+            <FunnelPair label="SU"  value={metrics.SU}  rateLabel="Show Up Rate"    rateValue={pct(metrics.showUpRate)}     rateHint="SU / CT" onClick={onMetric && (() => onMetric('SU'))} />
+            <FunnelPair label="ENR" value={metrics.ENR} rateLabel="Enrolment Rate"  rateValue={pct(metrics.enrolmentRate)}  rateHint="ENR / SU" onClick={onMetric && (() => onMetric('ENR'))} />
           </div>
           <div className="lg:border-l lg:pl-4 lg:border-slate-200 lg:dark:border-slate-700">
             <BufferCard value={metrics.BUF} />
@@ -309,16 +344,18 @@ function FunnelPair({
   rateLabel,
   rateValue,
   rateHint,
+  onClick,
 }: {
   label: string
   value: number
   rateLabel: string
   rateValue: string
   rateHint: string
+  onClick?: () => void
 }) {
   return (
     <div className="space-y-2">
-      <Stat label={label} value={value} bold />
+      <Stat label={label} value={value} bold onClick={onClick} />
       <Stat label={rateLabel} value={rateValue} hint={rateHint} />
     </div>
   )
@@ -343,9 +380,9 @@ function BufferCard({ value }: { value: number }) {
   )
 }
 
-function Stat({ label, value, hint, bold }: { label: string; value: string | number; hint?: string; bold?: boolean }) {
-  return (
-    <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
+function Stat({ label, value, hint, bold, onClick }: { label: string; value: string | number; hint?: string; bold?: boolean; onClick?: () => void }) {
+  const inner = (
+    <>
       <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
         {label}
       </div>
@@ -353,6 +390,23 @@ function Stat({ label, value, hint, bold }: { label: string; value: string | num
         {value}
       </div>
       {hint && <div className="text-[10px] text-slate-400 dark:text-slate-500">{hint}</div>}
+    </>
+  )
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title="Click to see the leads behind this number"
+        className="group w-full rounded-md border border-slate-200 px-3 py-2 text-left transition-colors hover:border-indigo-400 hover:bg-indigo-50/50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
+      >
+        {inner}
+      </button>
+    )
+  }
+  return (
+    <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
+      {inner}
     </div>
   )
 }
@@ -467,6 +521,130 @@ function BranchTable({ branches }: { branches: BranchMetrics[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// ─── Drill-in modal: the leads behind a clicked number ────────────────────────
+
+interface LeadRow {
+  parentName: string
+  childName: string
+  leadSource: string | null
+  email: string | null
+  phone: string | null
+  branchName: string
+  branchCode: string
+}
+interface LeadListResponse {
+  metric: Metric
+  scope: Scope
+  count: number
+  truncated: boolean
+  canSeeBranch: boolean
+  rows: LeadRow[]
+}
+
+function LeadListModal({
+  metric,
+  scope,
+  scopeLabel,
+  preset,
+  branchId,
+  onClose,
+}: {
+  metric: Metric
+  scope: Scope
+  scopeLabel: string
+  preset: Preset
+  branchId: string | null
+  onClose: () => void
+}) {
+  const { data, isLoading, isError } = useQuery<LeadListResponse>({
+    queryKey: ['crm', 'dashboard', 'leads-list', metric, scope, preset, branchId],
+    queryFn: async () => {
+      const params = new URLSearchParams({ metric, scope, preset })
+      if (branchId) params.set('branchId', branchId)
+      const res = await fetch(`/api/crm/dashboard/leads-metrics/list?${params.toString()}`)
+      if (!res.ok) throw new Error('Failed to load leads')
+      return res.json()
+    },
+  })
+
+  const showBranch = data?.canSeeBranch ?? false
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className="relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-700">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              {METRIC_LABEL[metric]} — {scopeLabel}
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {isLoading ? 'Loading…' : `${data?.count ?? 0} ${(data?.count ?? 0) === 1 ? 'lead' : 'leads'}`}
+              {data?.truncated && ' (showing first 1000)'}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+            </div>
+          ) : isError ? (
+            <div className="py-16 text-center text-sm text-slate-500">Failed to load leads.</div>
+          ) : !data || data.rows.length === 0 ? (
+            <div className="py-16 text-center text-sm text-slate-400">No leads in this range.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 border-b border-slate-200 bg-slate-50 text-left text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                <tr>
+                  <th className="px-4 py-2.5">Parent</th>
+                  <th className="px-4 py-2.5">Child</th>
+                  <th className="px-4 py-2.5">Lead Source</th>
+                  <th className="px-4 py-2.5">Email</th>
+                  <th className="px-4 py-2.5">Phone</th>
+                  {showBranch && <th className="px-4 py-2.5">Branch</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((r, i) => (
+                  <tr
+                    key={i}
+                    className="border-b border-slate-100 text-slate-800 last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800/50"
+                  >
+                    <td className="px-4 py-2.5 font-medium">{r.parentName}</td>
+                    <td className="px-4 py-2.5">{r.childName}</td>
+                    <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">{r.leadSource ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">{r.email ?? '—'}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-slate-600 dark:text-slate-400">{r.phone ?? '—'}</td>
+                    {showBranch && (
+                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">
+                        {r.branchCode || r.branchName.replace(/^\d+\s*/, '') || '—'}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
