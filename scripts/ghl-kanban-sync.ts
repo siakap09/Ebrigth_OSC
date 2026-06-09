@@ -208,13 +208,54 @@ const JUNK_CHILD = new Set(['', '-', '1', '11111', 'online', 'online parents'])
 
 interface Skip { reason: string; key: string; oppName?: string; stage?: string }
 
+// Ensure the two buffer stages exist in every pipeline (idempotent). Enroll
+// Buffer (ENRB) is inserted right before ENR; Trial Buffer (CTB) right before
+// CT. Order shifts are relative, so doing both in one pass is safe.
+async function ensureBufferStages(prisma: PrismaClient, tenantId: string): Promise<number> {
+  const specs = [
+    { code: 'ENRB', name: 'Enroll Buffer', before: 'ENR' },
+    { code: 'CTB', name: 'Trial Buffer', before: 'CT' },
+  ]
+  const pipelines = await prisma.crm_pipeline.findMany({
+    where: { tenantId },
+    select: { id: true, stages: { select: { shortCode: true, order: true } } },
+  })
+  let created = 0
+  for (const p of pipelines) {
+    const have = new Set(p.stages.map((s) => s.shortCode))
+    for (const spec of specs) {
+      if (have.has(spec.code)) continue
+      const ref = p.stages.find((s) => s.shortCode === spec.before)
+      await prisma.$transaction(async (tx) => {
+        let order: number
+        if (ref) {
+          order = ref.order
+          await tx.crm_stage.updateMany({
+            where: { pipelineId: p.id, tenantId, order: { gte: ref.order } },
+            data: { order: { increment: 1 } },
+          })
+        } else {
+          order = p.stages.reduce((m, s) => Math.max(m, s.order), -1) + 1
+        }
+        await tx.crm_stage.create({
+          data: { tenantId, pipelineId: p.id, name: spec.name, shortCode: spec.code, color: 'cyan', order, stuckHoursYellow: 24, stuckHoursRed: 48 },
+        })
+      })
+      have.add(spec.code)
+      created++
+    }
+  }
+  return created
+}
+
 async function main() {
   const argv = process.argv.slice(2)
   const apply = argv.includes('--apply')
   const stagesOnly = argv.includes('--stages-only')
+  const buffers = argv.includes('--buffers')
   const file = path.resolve(argv.find((a) => a.startsWith('--file='))?.split('=')[1] ?? 'docs/opportunities_combined.xlsx')
 
-  console.log(`Mode: ${apply ? 'APPLY (writes)' : 'DRY-RUN (no writes)'}`)
+  console.log(`Mode: ${apply ? 'APPLY (writes)' : 'DRY-RUN (no writes)'}${buffers ? '  [--buffers: ENR→ENRB, CT→CTB]' : ''}`)
   console.log(`File: ${file}\n`)
 
   const prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL })
@@ -245,6 +286,21 @@ async function main() {
     }
     console.log('')
 
+    // ── Stage prep: create Enroll Buffer (ENRB) + Trial Buffer (CTB) ─────────
+    if (buffers) {
+      const missing = pipelines.filter((p) => {
+        const codes = new Set(p.stages.map((s) => s.shortCode))
+        return !codes.has('ENRB') || !codes.has('CTB')
+      }).length
+      console.log(`━━━ Stage prep: Enroll Buffer / Trial Buffer ━━━`)
+      console.log(`Pipelines total: ${pipelines.length}  |  needing a buffer stage: ${missing}`)
+      if (apply) {
+        const created = await ensureBufferStages(prisma, tenant.id)
+        console.log(`  ✓ created ${created} buffer stage rows`)
+      }
+      console.log('')
+    }
+
     if (stagesOnly) { console.log('(--stages-only) done.'); return }
 
     // ── Load CRM contacts + opportunities (tenant-wide) ──────────────────────
@@ -262,6 +318,15 @@ async function main() {
       if (codes.has('UR_W3')) continue
       const fu3m = p.stages.find((s) => s.shortCode === 'FU3M')
       if (fu3m) stageByPipelineCode.set(`${p.id}:UR_W3`, fu3m.id)
+    }
+    // DRY-RUN simulation for buffers: on --apply the stages exist (created
+    // above) and pipes2 already has real ids; on dry-run they don't, so point
+    // ENRB/CTB at a sentinel so the plan counts the moves correctly.
+    if (buffers) {
+      for (const p of pipes2) {
+        if (!stageByPipelineCode.has(`${p.id}:ENRB`)) stageByPipelineCode.set(`${p.id}:ENRB`, `SIM:${p.id}:ENRB`)
+        if (!stageByPipelineCode.has(`${p.id}:CTB`)) stageByPipelineCode.set(`${p.id}:CTB`, `SIM:${p.id}:CTB`)
+      }
     }
 
     const contacts = await prisma.crm_contact.findMany({
@@ -291,11 +356,18 @@ async function main() {
     const groups = new Map<string, Row[]>() // matchKey → rows
     let unmappableStage = 0, noKey = 0, ctNoSlot = 0
     for (const r of rows) {
-      const code = stageToCode(r['stage'] ?? '')
+      let code = stageToCode(r['stage'] ?? '')
       if (!code) { unmappableStage++; continue }
       // CT only moves when the GHL row carries a Time Slot (a real confirmed
       // trial). Slot-less CT rows have no signal, so leave them at NL.
       if (code === 'CT' && !((r['time slot'] ?? r['timeslot'] ?? '').trim())) { ctNoSlot++; continue }
+      // --buffers: route the popup-requiring stages into their buffer instead.
+      // ENR (needs package) → Enroll Buffer; CT-with-slot (needs date) → Trial
+      // Buffer. Staff then drag Buffer→ENR/CT to capture the missing data.
+      if (buffers) {
+        if (code === 'ENR') code = 'ENRB'
+        else if (code === 'CT') code = 'CTB'
+      }
       const phone = phoneKey(r['phone'])
       const email = (r['email'] ?? '').trim().toLowerCase()
       const key = phone ? `p:${phone}` : email ? `e:${email}` : ''
@@ -312,6 +384,14 @@ async function main() {
     // ENR (Enrolled) needs package length we don't have → leave at NL.
     // CT is allowed here (slot-less CT rows were already dropped above).
     const SKIP_CODES = new Set(['ENR'])
+
+    // stageId → shortCode, for the idempotency guard below.
+    const codeByStageId = new Map<string, string>()
+    for (const p of pipes2) for (const s of p.stages) codeByStageId.set(s.id, s.shortCode)
+    // Decide each opportunity at most once per run. A lead can appear in both a
+    // phone-group and an email-group (duplicate GHL rows); without this, two
+    // groups fight over its stage and the script never reaches a fixpoint.
+    const assignedOppIds = new Set<string>()
 
     for (const [key, grp] of groups) {
       // Phone-keyed groups match by phone ONLY. Email is used solely for rows
@@ -333,9 +413,11 @@ async function main() {
       const distinctCodes = new Set(grp.map((r) => r.code))
 
       const setStage = (oppId: string, pipelineId: string, curStageId: string, branchId: string, code: string) => {
+        if (assignedOppIds.has(oppId)) return             // already decided this run
         if (SKIP_CODES.has(code)) { leftEnr++; return }   // ENR → leave at NL
         const target = stageByPipelineCode.get(`${pipelineId}:${code}`)
         if (!target) { skips.push({ reason: `pipeline lacks stage ${code}`, key }); return }
+        assignedOppIds.add(oppId)
         if (target === curStageId) { inSync++; return }
         updates.push({ oppId, fromStageId: curStageId, toStageId: target, code, branchId })
       }
@@ -347,6 +429,11 @@ async function main() {
       } else {
         // Conflicting siblings → match each CRM opp to a row by child name.
         for (const { o, c } of opps) {
+          if (assignedOppIds.has(o.id)) continue
+          // Idempotent: if this opp already sits at one of the group's target
+          // codes, leave it — prevents oscillation between conflicting siblings.
+          const curCode = codeByStageId.get(o.stageId)
+          if (curCode && distinctCodes.has(curCode)) { inSync++; assignedOppIds.add(o.id); continue }
           const crmChild = c.parentFullName ? norm(`${c.firstName} ${c.lastName ?? ''}`) : ''
           let chosen: Row | undefined
           if (crmChild && !JUNK_CHILD.has(crmChild)) {
