@@ -100,6 +100,25 @@ export default function DashboardPage() {
     };
   }, [filteredInvs]);
 
+  // Outcome breakdown scope. Paid/Unpaid only applies to RENEWAL students, so
+  // "Overall" mixes in Progress attendees (who never pay) — the "PCM Renewal"
+  // scope answers the payment question accurately.
+  const [outcomeScope, setOutcomeScope] = useState<"overall" | "renewal">("overall");
+  const outcomeInvs = useMemo(
+    () => outcomeScope === "renewal" ? filteredInvs.filter(i => i.inviteType === "renewal") : filteredInvs,
+    [filteredInvs, outcomeScope],
+  );
+  const outcomeStats = useMemo(() => {
+    const invited = outcomeInvs.length;
+    const attended = outcomeInvs.filter(i => i.status === "attended").length;
+    return {
+      paid: outcomeInvs.filter(i => i.status === "attended" && i.paid).length,
+      attendedUnpaid: outcomeInvs.filter(i => i.status === "attended" && !i.paid).length,
+      notAttended: invited - attended,
+      invited,
+    };
+  }, [outcomeInvs]);
+
   // Per-(event, branch) breakdown. Each row is one branch within one event.
   // Branches with zero invitations in an event are skipped so the table
   // stays compact. When the page-level branch filter is set, only that
@@ -281,15 +300,18 @@ export default function DashboardPage() {
           invited, how many showed up and paid vs. came but haven't paid
           vs. didn't come at all". */}
       <PaymentBreakdown
-        paid={stats.attendedPaid}
-        attendedUnpaid={stats.attendedUnpaid}
-        notAttended={stats.notAttended}
-        totalInvited={stats.invited}
+        paid={outcomeStats.paid}
+        attendedUnpaid={outcomeStats.attendedUnpaid}
+        notAttended={outcomeStats.notAttended}
+        totalInvited={outcomeStats.invited}
+        scope={outcomeScope}
+        onScopeChange={setOutcomeScope}
       />
 
       {/* Per-student list of who fell into which bucket. Useful for chasing
-          up unpaid attendees and re-inviting the no-shows. */}
-      <OutcomeStudentLists invitations={filteredInvs} />
+          up unpaid attendees and re-inviting the no-shows. Respects the same
+          Overall / PCM Renewal scope toggle. */}
+      <OutcomeStudentLists invitations={outcomeInvs} />
 
       {/* Attendance rate = attended / invited. Single calmer gradient card. */}
       <div className="rounded-2xl shadow-sm mb-6 border border-violet-200 bg-white overflow-hidden">
@@ -484,12 +506,14 @@ function TypeSplitCard({
  * mapping immediately.
  */
 function PaymentBreakdown({
-  paid, attendedUnpaid, notAttended, totalInvited,
+  paid, attendedUnpaid, notAttended, totalInvited, scope, onScopeChange,
 }: {
   paid: number;
   attendedUnpaid: number;
   notAttended: number;
   totalInvited: number;
+  scope: "overall" | "renewal";
+  onScopeChange: (s: "overall" | "renewal") => void;
 }) {
   // Pct each bucket contributes to total invited — used both for bar
   // widths and for the small "X% of invited" sub-text on each card.
@@ -500,10 +524,27 @@ function PaymentBreakdown({
 
   return (
     <div className="rounded-2xl bg-white border border-ivory-300 shadow-sm p-4 mb-4">
-      <div className="flex items-baseline justify-between mb-3">
-        <h3 className="fa-display text-base text-ink-900">Outcome breakdown</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-3">
+          <h3 className="fa-display text-base text-ink-900">Outcome breakdown</h3>
+          {/* Overall vs PCM Renewal — paid/unpaid is only meaningful for renewals */}
+          <div className="inline-flex rounded-lg border border-ivory-300 overflow-hidden text-[11px] font-semibold">
+            {(["overall", "renewal"] as const).map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onScopeChange(s)}
+                className={`px-3 py-1 transition-colors ${
+                  scope === s ? "bg-violet-600 text-white" : "bg-white text-ink-500 hover:bg-ivory-100"
+                }`}
+              >
+                {s === "overall" ? "Overall" : "PCM Renewal"}
+              </button>
+            ))}
+          </div>
+        </div>
         <span className="text-[11px] text-ink-500">
-          across {totalInvited} invited student{totalInvited !== 1 ? "s" : ""}
+          across {totalInvited} {scope === "renewal" ? "renewal" : "invited"} student{totalInvited !== 1 ? "s" : ""}
         </span>
       </div>
 

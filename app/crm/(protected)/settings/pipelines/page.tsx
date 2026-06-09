@@ -29,6 +29,15 @@ interface Pipeline {
   id: string
   name: string
   stages: Stage[]
+  /** The branch this pipeline belongs to — used to label + order the dropdown
+   *  consistently with the topbar branch switcher ("01 …" → "23 …"). */
+  branch?: { id: string; name: string }
+}
+
+/** Dropdown label: prefer the branch name (matches the topbar numbering) and
+ *  fall back to the pipeline's own name. */
+function pipelineLabel(p: Pipeline): string {
+  return p.branch?.name ?? p.name
 }
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
@@ -499,7 +508,11 @@ export default function PipelinesPage() {
   const [pendingDelete, setPendingDelete] = useState<Stage | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  const pipelines = data?.pipelines ?? []
+  // Order branches the same way the topbar switcher does: numerically by the
+  // "NN …" prefix of the BRANCH name, not the pipeline's own (region-order) name.
+  const pipelines = [...(data?.pipelines ?? [])].sort((a, b) =>
+    pipelineLabel(a).localeCompare(pipelineLabel(b), undefined, { numeric: true }),
+  )
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId) ?? pipelines[0]
   const [stages, setStages] = useState<Stage[]>([])
 
@@ -610,7 +623,7 @@ export default function PipelinesPage() {
             className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {pipelines.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id}>{pipelineLabel(p)}</option>
             ))}
           </select>
           <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">

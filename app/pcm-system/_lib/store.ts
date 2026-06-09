@@ -24,6 +24,7 @@ import {
   StudentLoadReport,
   User,
   BranchCode,
+  DayPolicy,
 } from "@pcm/_types";
 import { MOCK_USERS } from "./mockData";
 
@@ -137,6 +138,10 @@ interface FAStore {
   updateInviteType: (invitationId: string, inviteType: InviteType) => Promise<void>;
   /** Mark an invitation as paid or unpaid. Independent of attendance. */
   setInvitationPaid: (invitationId: string, paid: boolean) => Promise<void>;
+  /** Mark whether the absence make-up video was sent to the parent (no_show). */
+  setInvitationVideoSent: (invitationId: string, videoSentToParent: boolean) => Promise<void>;
+  /** Save (or clear with null) the absence make-up video link for an invitation. */
+  setInvitationVideoLink: (invitationId: string, videoLink: string | null) => Promise<void>;
   /** Move an invitation to a (possibly different) event + session. The
    *  server writes both event_id and session_id in one PATCH. Use this
    *  for the "Reschedule with target picker" flow; `moveInvitationToSession`
@@ -151,6 +156,7 @@ interface FAStore {
   grantEventBranchOverride: (args: {
     eventId: string;
     branchCode: BranchCode;
+    dayPolicy?: DayPolicy;
     reason?: string;
   }) => Promise<EventBranchOverride>;
   revokeEventBranchOverride: (eventId: string, branchCode: BranchCode) => Promise<void>;
@@ -544,6 +550,30 @@ export const useFAStore = create<FAStore>()(
         }));
       },
 
+      setInvitationVideoSent: async (id, videoSentToParent) => {
+        const r = await apiJson<Invitation>(
+          `/api/pcm/invitations/${encodeURIComponent(id)}`,
+          { method: "PATCH", body: JSON.stringify({ videoSentToParent }) },
+        );
+        if (!r.ok) throw new Error(`Set video-sent failed (HTTP ${r.status})`);
+        const updated = r.data;
+        set((s) => ({
+          invitations: s.invitations.map((i) => (i.id === id ? updated : i)),
+        }));
+      },
+
+      setInvitationVideoLink: async (id, videoLink) => {
+        const r = await apiJson<Invitation>(
+          `/api/pcm/invitations/${encodeURIComponent(id)}`,
+          { method: "PATCH", body: JSON.stringify({ videoLink }) },
+        );
+        if (!r.ok) throw new Error(`Set video-link failed (HTTP ${r.status})`);
+        const updated = r.data;
+        set((s) => ({
+          invitations: s.invitations.map((i) => (i.id === id ? updated : i)),
+        }));
+      },
+
       updateInviteType: async (id, inviteType) => {
         const r = await apiJson<Invitation>(
           `/api/pcm/invitations/${encodeURIComponent(id)}`,
@@ -588,12 +618,12 @@ export const useFAStore = create<FAStore>()(
       },
 
       // ------- Multi-grade override toggles -------
-      grantEventBranchOverride: async ({ eventId, branchCode, reason }) => {
+      grantEventBranchOverride: async ({ eventId, branchCode, dayPolicy, reason }) => {
         const r = await apiJson<{ override: EventBranchOverride }>(
           "/api/pcm/event-overrides",
           {
             method: "POST",
-            body: JSON.stringify({ eventId, branchCode, reason }),
+            body: JSON.stringify({ eventId, branchCode, dayPolicy, reason }),
           }
         );
         if (!r.ok) {

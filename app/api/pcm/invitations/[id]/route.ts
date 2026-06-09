@@ -22,6 +22,14 @@ export async function PATCH(
         ? (body.inviteType as InviteType)
         : undefined,
       paid: typeof body.paid === "boolean" ? body.paid : undefined,
+      videoSentToParent:
+        typeof body.videoSentToParent === "boolean" ? body.videoSentToParent : undefined,
+      videoLink:
+        body.videoLink === undefined
+          ? undefined
+          : (body.videoLink === null || body.videoLink === ""
+              ? null
+              : String(body.videoLink).slice(0, 2000)),
     });
     if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(updated);
