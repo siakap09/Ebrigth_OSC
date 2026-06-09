@@ -82,6 +82,13 @@ const DEPT_CODE_TO_NAME: Record<string, CanonicalDeptName> = {
   ),
   // "iop" no longer has its own canonical entry — fold it into HR/IOP.
   iop: "HR/IOP",
+  // Real-world code aliases seen in BranchStaff that differ from the canonical
+  // codes above: the data uses "op"/"ops" for Operation and "fin" for Finance,
+  // while the canonical codes are "ops" and "fnc". Without these, HQ staff
+  // whose department is "OP" or "FIN" resolve to no department and vanish from
+  // the Department filter.
+  op: "Operation",
+  fin: "Finance",
 } as Record<string, CanonicalDeptName>;
 
 function isDeptCode(raw: string | null | undefined): boolean {
