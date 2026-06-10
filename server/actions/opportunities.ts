@@ -198,6 +198,21 @@ export async function moveOpportunity(
           notes: note ?? undefined,
         },
       })
+
+      // Mirror the trial weekday onto the contact. The Region "Day
+      // Distribution" dashboard buckets CT/ENR by contact.preferredTrialDay,
+      // so without this a confirmed trial booked from the kanban never shows
+      // there (only the appointment-based Trial Schedule widget did).
+      const TRIAL_DAY_BY_DOW: Record<number, 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN'> = {
+        3: 'WED', 4: 'THU', 5: 'FRI', 6: 'SAT', 0: 'SUN',
+      }
+      const trialDay = TRIAL_DAY_BY_DOW[new Date(`${extras.trialDate}T00:00:00`).getDay()]
+      if (trialDay) {
+        await tx.crm_contact.update({
+          where: { id: opportunity.contactId },
+          data: { preferredTrialDay: trialDay },
+        })
+      }
     }
 
     const updated = await tx.crm_opportunity.update({

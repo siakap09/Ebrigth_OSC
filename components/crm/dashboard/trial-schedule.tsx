@@ -162,10 +162,16 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
               <select
                 value={pickedBranchId ?? ''}
                 onChange={(e) => setPickedBranchId(e.target.value || null)}
-                className="bg-transparent text-[11px] font-medium text-slate-700 focus:outline-none dark:text-slate-200"
+                className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
               >
                 {pickerBranches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
+                  <option
+                    key={b.id}
+                    value={b.id}
+                    className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white"
+                  >
+                    {b.name}
+                  </option>
                 ))}
               </select>
             </label>
