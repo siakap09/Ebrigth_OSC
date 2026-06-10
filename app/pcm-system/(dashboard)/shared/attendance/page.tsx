@@ -13,6 +13,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
+import { addDays, parseISO, format } from "date-fns";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { AppShell } from "@pcm/_components/shared/AppShell";
@@ -20,7 +21,7 @@ import { EventStatusPill } from "@pcm/_components/fa/StatusPill";
 import { AttendanceRoster } from "@pcm/_components/fa/AttendanceRoster";
 import { WalkInModal } from "@pcm/_components/fa/WalkInModal";
 import { getDisplayOrder, mergeFilteredReorder } from "@pcm/_lib/sessionOrder";
-import { BRANCHES, BranchCode } from "@pcm/_types";
+import { BRANCHES, BranchCode, Invitation, Session } from "@pcm/_types";
 import { downloadCSV } from "@pcm/_lib/csv";
 import { buildEventAttendanceCsv } from "@pcm/_lib/eventAttendanceCsv";
 
@@ -70,18 +71,16 @@ export default function AttendancePage() {
     () => eventSessions.filter(s => selectedDay === "all" || s.dayNumber === selectedDay),
     [eventSessions, selectedDay]
   );
-  const selectedSession = filteredSessions.find(s => s.id === selectedSessionId) ?? null;
-
   // Default the event to the newest one once data lands.
   useEffect(() => {
     if (!selectedEventId && relevantEvents[0]) setSelectedEventId(relevantEvents[0].id);
   }, [relevantEvents, selectedEventId]);
 
-  // Keep a valid session selected as event/day filters change.
+  // Keep a valid session selected as event/day filters change. "all" stays valid.
   useEffect(() => {
     if (filteredSessions.length === 0) {
       if (selectedSessionId !== null) setSelectedSessionId(null);
-    } else if (!filteredSessions.some(s => s.id === selectedSessionId)) {
+    } else if (selectedSessionId !== "all" && !filteredSessions.some(s => s.id === selectedSessionId)) {
       setSelectedSessionId(filteredSessions[0].id);
     }
   }, [filteredSessions, selectedSessionId]);
@@ -89,20 +88,27 @@ export default function AttendancePage() {
   const visibleBranchFilter = user?.role === "BM" ? user.branch : branchFilter;
   const canDrag = user?.role === "MKT";
 
-  const fullSessionOrder = useMemo(
-    () => selectedSession ? getDisplayOrder(selectedSession.id, invitations, sessionOrderMap) : [],
-    [selectedSession, invitations, sessionOrderMap]
-  );
+  // The calendar date (→ weekday) for a 1-based day number of the selected event.
+  const dayDateOf = (dayNumber: number): Date | null =>
+    selectedEvent ? addDays(parseISO(selectedEvent.startDate), dayNumber - 1) : null;
 
-  // Ordered + filtered roster (branch + status + search). Single source of
-  // truth for the table AND the dnd reorder handler.
-  const orderedInvitations = useMemo(() => {
-    if (!selectedSession) return [];
+  // Which sessions to render: "all" → every session in the current day filter;
+  // a concrete id → just that one; null → none.
+  const sessionsToRender = useMemo<Session[]>(() => {
+    if (filteredSessions.length === 0) return [];
+    if (selectedSessionId === "all") return filteredSessions;
+    const one = filteredSessions.find(s => s.id === selectedSessionId);
+    return one ? [one] : [];
+  }, [filteredSessions, selectedSessionId]);
+
+  // Build the ordered + filtered roster (branch + status + search) for a session.
+  function orderedFor(session: Session): Invitation[] {
+    const fullOrder = getDisplayOrder(session.id, invitations, sessionOrderMap);
     const q = search.trim().toLowerCase();
     const byId = new Map(
       invitations
         .filter(i =>
-          i.sessionId === selectedSession.id &&
+          i.sessionId === session.id &&
           i.status !== "declined" &&
           (visibleBranchFilter === "all" || i.branch === visibleBranchFilter) &&
           (statusFilter === "all" || i.status === statusFilter) &&
@@ -114,9 +120,9 @@ export default function AttendancePage() {
         )
         .map(i => [i.id, i] as const)
     );
-    const out = [];
+    const out: Invitation[] = [];
     const seen = new Set<string>();
-    for (const id of fullSessionOrder) {
+    for (const id of fullOrder) {
       const inv = byId.get(id);
       if (inv) { out.push(inv); seen.add(id); }
     }
@@ -129,24 +135,31 @@ export default function AttendancePage() {
         return (sa?.name || "").localeCompare(sb?.name || "");
       });
     return [...out, ...newcomers];
-  }, [selectedSession, invitations, fullSessionOrder, visibleBranchFilter, statusFilter, search, students]);
+  }
 
-  const pendingConfirmationsCount = useMemo(() => {
-    if (!selectedSession) return 0;
+  // Ordered roster per rendered session (recomputed each render — a day has only
+  // a handful of sessions, so this stays cheap).
+  const orderedBySession = new Map<string, Invitation[]>();
+  for (const s of sessionsToRender) orderedBySession.set(s.id, orderedFor(s));
+
+  function pendingFor(session: { id: string }): number {
     return invitations.filter(i =>
-      i.sessionId === selectedSession.id &&
-      i.status === "invited" &&
+      i.sessionId === session.id && i.status === "invited" &&
       (visibleBranchFilter === "all" || i.branch === visibleBranchFilter)
     ).length;
-  }, [invitations, selectedSession, visibleBranchFilter]);
+  }
 
-  // Roster counts for the summary line.
-  const counts = useMemo(() => ({
-    rows: orderedInvitations.length,
-    attended: orderedInvitations.filter(i => i.status === "attended").length,
-    absent: orderedInvitations.filter(i => i.status === "no_show").length,
-    awaiting: orderedInvitations.filter(i => i.status === "confirmed").length,
-  }), [orderedInvitations]);
+  // Aggregate counts across every rendered session for the summary line.
+  const counts = (() => {
+    let rows = 0, attended = 0, absent = 0, awaiting = 0;
+    for (const list of orderedBySession.values()) {
+      rows += list.length;
+      attended += list.filter(i => i.status === "attended").length;
+      absent += list.filter(i => i.status === "no_show").length;
+      awaiting += list.filter(i => i.status === "confirmed").length;
+    }
+    return { rows, attended, absent, awaiting };
+  })();
 
   const activeInvitation = activeDragId ? invitations.find(i => i.id === activeDragId) ?? null : null;
   const activeStudent = activeInvitation ? students.find(s => s.id === activeInvitation.studentId) ?? null : null;
@@ -156,17 +169,23 @@ export default function AttendancePage() {
   function handleDragEnd(event: DragEndEvent) {
     setActiveDragId(null);
     const { active, over } = event;
-    if (!over || !selectedSession) return;
+    if (!over) return;
     const activeId = String(active.id);
     const overId = String(over.id);
     if (activeId === overId) return;
-    const visibleIds = orderedInvitations.map(i => i.id);
+    // Reorder within the dragged item's own session (cross-session drops are
+    // ignored — overId won't be in that session's visible list).
+    const inv = invitations.find(i => i.id === activeId);
+    if (!inv) return;
+    const sessId = inv.sessionId;
+    const visibleIds = (orderedBySession.get(sessId) ?? []).map(i => i.id);
     const oldIndex = visibleIds.indexOf(activeId);
     const newIndex = visibleIds.indexOf(overId);
     if (oldIndex === -1 || newIndex === -1) return;
     const newVisibleOrder = arrayMove(visibleIds, oldIndex, newIndex);
-    const mergedFullOrder = mergeFilteredReorder(fullSessionOrder, visibleIds, newVisibleOrder);
-    setSessionOrder(selectedSession.id, mergedFullOrder);
+    const fullOrder = getDisplayOrder(sessId, invitations, sessionOrderMap);
+    const mergedFullOrder = mergeFilteredReorder(fullOrder, visibleIds, newVisibleOrder);
+    setSessionOrder(sessId, mergedFullOrder);
   }
 
   function handleDownloadCSV() {
@@ -178,7 +197,7 @@ export default function AttendancePage() {
   if (!user) return null;
 
   const numberOfDays = selectedEvent?.numberOfDays ?? 0;
-  const preferredDay = typeof selectedDay === "number" ? selectedDay : (selectedSession?.dayNumber ?? null);
+  const preferredDay = typeof selectedDay === "number" ? selectedDay : (sessionsToRender[0]?.dayNumber ?? null);
   const canEdit = user.role === "MKT" || (!!selectedEvent && selectedEvent.status !== "draft");
 
   return (
@@ -212,27 +231,40 @@ export default function AttendancePage() {
 
           <span className="fa-mono text-[10px] uppercase text-ink-400" style={{ letterSpacing: "0.1em" }}>Day</span>
           <select
-            className="fa-input w-32 py-2 text-sm"
+            className="fa-input w-44 py-2 text-sm"
             value={selectedDay === "all" ? "all" : String(selectedDay)}
             onChange={e => setSelectedDay(e.target.value === "all" ? "all" : Number(e.target.value))}
           >
             <option value="all">All days</option>
-            {Array.from({ length: numberOfDays }, (_, i) => i + 1).map(d => (
-              <option key={d} value={d}>Day {d}</option>
-            ))}
+            {Array.from({ length: numberOfDays }, (_, i) => i + 1).map(d => {
+              const dt = dayDateOf(d);
+              return (
+                <option key={d} value={d}>
+                  {dt ? format(dt, "EEEE · d MMM") : `Day ${d}`}
+                </option>
+              );
+            })}
           </select>
 
           <select
-            className="fa-input min-w-[200px] py-2 text-sm"
+            className="fa-input min-w-[240px] py-2 text-sm"
             value={selectedSessionId ?? ""}
             onChange={e => setSelectedSessionId(e.target.value || null)}
           >
-            {filteredSessions.length === 0 && <option value="">No sessions</option>}
-            {filteredSessions.map(s => (
-              <option key={s.id} value={s.id}>
-                Day {s.dayNumber} · Session {s.sessionNumber} · {s.startTime}–{s.endTime}
-              </option>
-            ))}
+            {filteredSessions.length === 0 ? (
+              <option value="">No sessions</option>
+            ) : (
+              <option value="all">All sessions</option>
+            )}
+            {filteredSessions.map(s => {
+              const dt = dayDateOf(s.dayNumber);
+              const wd = dt ? format(dt, "EEE, d MMM") : `Day ${s.dayNumber}`;
+              return (
+                <option key={s.id} value={s.id}>
+                  {wd} · Session {s.sessionNumber} · {s.startTime}–{s.endTime}
+                </option>
+              );
+            })}
           </select>
 
           {user.role === "MKT" && (
@@ -310,20 +342,14 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {/* Roster */}
-      {!selectedSession ? (
+      {/* Roster(s) — one per rendered session ("All sessions" stacks them) */}
+      {sessionsToRender.length === 0 ? (
         <div className="rounded-2xl bg-white border border-ivory-300 shadow-sm p-12 text-center">
           <div className="w-14 h-14 rounded-full bg-ivory-200 text-ink-400 flex items-center justify-center mx-auto mb-4">
             <Users className="w-6 h-6" />
           </div>
-          <h3 className="fa-display text-xl text-ink-900">
-            {filteredSessions.length === 0 ? "No sessions" : "Pick a session"}
-          </h3>
-          <p className="text-sm text-ink-500 mt-1">
-            {filteredSessions.length === 0
-              ? "This event/day has no sessions scheduled."
-              : "Choose a session from the dropdown above to take attendance."}
-          </p>
+          <h3 className="fa-display text-xl text-ink-900">No sessions</h3>
+          <p className="text-sm text-ink-500 mt-1">This event / day has no sessions scheduled.</p>
         </div>
       ) : (
         <DndContext
@@ -333,14 +359,19 @@ export default function AttendancePage() {
           onDragCancel={handleDragCancel}
           onDragEnd={handleDragEnd}
         >
-          <AttendanceRoster
-            session={selectedSession}
-            orderedInvitations={orderedInvitations}
-            pendingConfirmationsCount={pendingConfirmationsCount}
-            canEdit={canEdit}
-            canDrag={canDrag}
-            academyView={user.role === "MKT"}
-          />
+          <div className="space-y-8">
+            {sessionsToRender.map(s => (
+              <AttendanceRoster
+                key={s.id}
+                session={s}
+                orderedInvitations={orderedBySession.get(s.id) ?? []}
+                pendingConfirmationsCount={pendingFor(s)}
+                canEdit={canEdit}
+                canDrag={canDrag}
+                academyView={user.role === "MKT"}
+              />
+            ))}
+          </div>
           <DragOverlay dropAnimation={null}>
             {activeStudent && activeInvitation ? (
               <div className="rounded-xl px-4 py-2.5 shadow-lg flex items-center gap-3 bg-ivory-50 border border-gold-300">

@@ -306,9 +306,12 @@ export async function syncDateToDb(date: string, sendEmails = true): Promise<voi
   );
 }
 
-/** Live sync for today — called every 10 s from instrumentation.ts. */
-export async function syncScannerToDb(): Promise<void> {
-  await syncDateToDb(todayKL(), true);
+/** Live sync for today — called every 10 s from instrumentation.ts.
+ *  `sendEmails` defaults to true for backwards-compat; instrumentation now
+ *  passes false because clock-in/out emails are handled by the Hikvision
+ *  pipeline (lib/hikvision-email-sync.ts), not the AttendanceLog poller. */
+export async function syncScannerToDb(sendEmails = true): Promise<void> {
+  await syncDateToDb(todayKL(), sendEmails);
 }
 
 /**

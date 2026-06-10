@@ -513,7 +513,26 @@ export default function AttendanceSummary() {
 
   const effectivelyActiveCount = expectedTodayStaff.length;
 
+  // Current local (KL) time as seconds since midnight, and a "HH:MM[:SS]" parser
+  // — used to hold a staff member out of "Missing" until their scheduled start
+  // time has passed.
+  const nowClockSeconds = (() => {
+    const d = new Date();
+    return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+  })();
+  const clockToSeconds = (t: string): number => {
+    const [h, m, sec] = t.split(":").map(Number);
+    return (h || 0) * 3600 + (m || 0) * 60 + (sec || 0);
+  };
+
   const missingEmployees = expectedTodayStaff.filter(s => {
+    // Live "today" view: not missing until their scheduled start time passes
+    // (e.g. a 09:00 start only counts as missing after 09:00). Past dates are
+    // always after start, so this check is skipped for them.
+    if (isViewingToday) {
+      const slot = slotForDate(s.workingHours, selectedDate);
+      if (slot && nowClockSeconds < clockToSeconds(slot.start)) return false;
+    }
     if (s.employeeId && scannedEmpNos.has(s.employeeId)) return false; // exact-ID hit
     const fullName = (s.name ?? "").toUpperCase();
     return !scannedNames.some(sn => fullName.includes(sn) || sn.includes(fullName));
