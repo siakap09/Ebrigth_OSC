@@ -13,7 +13,7 @@ import {
   Draggable,
   type DropResult,
 } from '@hello-pangea/dnd'
-import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, CalendarDays, AlertTriangle, ArrowRight, MoveRight, PenLine, Settings2 } from 'lucide-react'
+import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, CalendarDays, AlertTriangle, ArrowRight, MoveRight, PenLine, Settings2, ArrowDownWideNarrow, ArrowUpWideNarrow } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CustomiseCardDrawer } from './customise-card-drawer'
 import { loadCardPrefs, saveCardPrefs, type CardPrefs, DEFAULT_CARD_PREFS } from '@/lib/crm/kanban-card-prefs'
@@ -44,12 +44,12 @@ const ALLOWED_LEAD_TRANSITIONS: Record<string, string[]> = {
   // NL: must start with FU1 (no skipping to FU2 / FU3), but can short-cut
   // directly to CT when a lead is already confirmed for a trial. RSD is the
   // sole backward escape hatch (see "Recovery to RSD" below).
-  NL: ['FU1', 'CT', 'CTB', 'RSD'],
+  NL: ['FU1', 'CT', 'CTB', 'ENR', 'RSD'],
   // FU1/FU2/FU3: can advance to a later follow-up, jump to CT (or park in the
-  // Trial Buffer CTB), or drop the lead directly to Cold Lead without going
-  // through UR_W1/UR_W2/FU3M first.
-  FU1: ['FU2', 'FU3', 'CT', 'CTB', 'CL', 'DND'],
-  FU2: ['FU3', 'CT', 'CTB', 'CL', 'DND'],
+  // Trial Buffer CTB), reschedule (RSD), or drop the lead directly to Cold Lead
+  // without going through UR_W1/UR_W2/FU3M first.
+  FU1: ['FU2', 'FU3', 'CT', 'CTB', 'RSD', 'CL', 'DND'],
+  FU2: ['FU3', 'CT', 'CTB', 'RSD', 'CL', 'DND'],
   FU3: ['RSD', 'URW1', 'CT', 'CTB', 'CL', 'DND'],
   RSD: ['CT', 'CTB', 'DND'],
   // Recovery to RSD: CT → RSD lets a confirmed trial be rescheduled without
@@ -225,6 +225,17 @@ function KanbanColumn({
     0,
   )
 
+  // Per-stage sort by created date. 'desc' = newest first (default), 'asc' =
+  // oldest first. Each column remembers its own direction.
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
+  const sortedOpportunities = useMemo(() => {
+    return [...stage.opportunities].sort((a, b) => {
+      const da = new Date(a.createdAt).getTime()
+      const db = new Date(b.createdAt).getTime()
+      return sortDir === 'asc' ? da - db : db - da
+    })
+  }, [stage.opportunities, sortDir])
+
   return (
     <div className="flex flex-col w-72 shrink-0 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
       {/* Column header */}
@@ -242,6 +253,15 @@ function KanbanColumn({
         <span className="shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-900 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
           {stage.opportunities.length}
         </span>
+        <button
+          onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+          title={sortDir === 'desc' ? 'Sorted newest first — click for oldest first' : 'Sorted oldest first — click for newest first'}
+          className="shrink-0 flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-white transition-colors"
+        >
+          {sortDir === 'desc'
+            ? <ArrowDownWideNarrow className="h-3.5 w-3.5" />
+            : <ArrowUpWideNarrow className="h-3.5 w-3.5" />}
+        </button>
         <button
           onClick={() => onAddCard(stage.id)}
           title="Add opportunity"
@@ -272,7 +292,7 @@ function KanbanColumn({
             style={{ minHeight: 80 }}
           >
             <VirtualColumnList
-              items={stage.opportunities}
+              items={sortedOpportunities}
               stuckHoursYellow={stage.stuckHoursYellow}
               stuckHoursRed={stage.stuckHoursRed}
               selectedIds={selectedIds}
@@ -693,7 +713,7 @@ export function KanbanBoard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextBranch?.id])
-  const [weekFilter, setWeekFilter] = useState<WeekFilter>('this')
+  const [weekFilter, setWeekFilter] = useState<WeekFilter>('all')
   const [customFrom, setCustomFrom] = useState<string>('')
   const [customTo, setCustomTo] = useState<string>('')
   // Refinement filters (lead source / age class / tag). Empty string = "all".

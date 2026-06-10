@@ -79,6 +79,12 @@ export function LeadTransferPanel({
       )
       setReason('')
       setToBranchId('')
+      // The lead now belongs to the target branch — this detail page is no
+      // longer in the current user's scope (a branch manager who transfers a
+      // lead OUT can't load it anymore), which previously surfaced a 404 even
+      // though the transfer succeeded. Send them back to the board instead of
+      // refreshing the now-inaccessible page.
+      router.push('/crm/opportunities')
       router.refresh()
     } catch (err) {
       toast.error((err as Error).message || 'Transfer failed')

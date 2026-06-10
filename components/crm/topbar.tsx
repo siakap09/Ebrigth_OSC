@@ -927,6 +927,12 @@ function PushNotificationToggle() {
   const tenantId = branches[0]?.tenantId ?? null
   const push     = usePushSubscription(tenantId)
 
+  // Surface subscribe/unsubscribe failures so "the toggle won't turn on" is
+  // diagnosable instead of failing silently.
+  useEffect(() => {
+    if (push.error) toast.error(`Push notifications: ${push.error}`)
+  }, [push.error])
+
   if (!push.ready)     return null
   if (push.unsupported) return null
 

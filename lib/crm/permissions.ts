@@ -11,6 +11,7 @@
 export type CrmRole =
   | 'SUPER_ADMIN'
   | 'AGENCY_ADMIN'
+  | 'REGIONAL_MANAGER'
   | 'BRANCH_MANAGER'
   | 'BRANCH_STAFF'
 
@@ -132,6 +133,24 @@ const ROLE_PERMISSIONS: Record<CrmRole, ReadonlyArray<CrmPermission>> = {
   // Full access within their tenant
   AGENCY_ADMIN: ALL_PERMISSIONS,
 
+  // Manages every branch in their region — same capabilities as a branch
+  // manager, just across a wider branch scope (resolved via crm_user_branch
+  // links). The extra "Region" dashboard is gated in the sidebar, not here.
+  REGIONAL_MANAGER: [
+    'contacts:read',
+    'contacts:write',
+    'contacts:delete',
+    'contacts:export',
+    'opportunities:read',
+    'opportunities:write',
+    'opportunities:delete',
+    'automations:read',
+    'messages:read',
+    'messages:write',
+    'dashboard:read',
+    'reports:read',
+  ],
+
   // Manages their branch(es) — can run automations, read settings, see team
   BRANCH_MANAGER: [
     'contacts:read',
@@ -193,6 +212,7 @@ export function hasTktPermission(role: TktRole, action: 'read' | 'write' | 'admi
 const PERMISSION_SETS: Record<CrmRole, ReadonlySet<CrmPermission>> = {
   SUPER_ADMIN: new Set(ROLE_PERMISSIONS.SUPER_ADMIN),
   AGENCY_ADMIN: new Set(ROLE_PERMISSIONS.AGENCY_ADMIN),
+  REGIONAL_MANAGER: new Set(ROLE_PERMISSIONS.REGIONAL_MANAGER),
   BRANCH_MANAGER: new Set(ROLE_PERMISSIONS.BRANCH_MANAGER),
   BRANCH_STAFF: new Set(ROLE_PERMISSIONS.BRANCH_STAFF),
 }
@@ -245,5 +265,5 @@ export function getPermissionsForRole(role: CrmRole): ReadonlyArray<CrmPermissio
  * Return all defined CRM roles.
  */
 export function getAllRoles(): CrmRole[] {
-  return ['SUPER_ADMIN', 'AGENCY_ADMIN', 'BRANCH_MANAGER', 'BRANCH_STAFF']
+  return ['SUPER_ADMIN', 'AGENCY_ADMIN', 'REGIONAL_MANAGER', 'BRANCH_MANAGER', 'BRANCH_STAFF']
 }
