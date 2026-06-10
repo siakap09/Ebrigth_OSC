@@ -73,8 +73,8 @@ const PACKAGE_OPTIONS: Array<{
   priceMyr: number
 }> = [
   { months: 3,  label: '3 Months',  subtitle: 'Starter',   priceMyr:  980 },
-  { months: 6,  label: '6 Months',  subtitle: 'Standard',  priceMyr: 1960 },
-  { months: 9,  label: '9 Months',  subtitle: 'Extended',  priceMyr: 2940 },
+  { months: 6,  label: '6 Months',  subtitle: 'Standard',  priceMyr: 2160 },
+  { months: 9,  label: '9 Months',  subtitle: 'Extended',  priceMyr: 3040 },
   { months: 12, label: '12 Months', subtitle: 'Full year', priceMyr: 3920 },
 ]
 

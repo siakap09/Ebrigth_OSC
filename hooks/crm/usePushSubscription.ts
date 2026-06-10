@@ -91,7 +91,10 @@ export function usePushSubscription(tenantId: string | null): UsePushReturn {
   }, [])
 
   const subscribe = useCallback(async () => {
-    if (pending || !tenantId) return
+    // Note: we no longer bail when tenantId is null — the server resolves the
+    // tenant from the session, so a missing client tenantId must not silently
+    // block the toggle (the previous cause of "can't turn it on" for some users).
+    if (pending) return
     setPending(true)
     setError(null)
     try {
