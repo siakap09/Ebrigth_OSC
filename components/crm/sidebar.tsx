@@ -261,7 +261,11 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
   }, [pathname])
 
   const navItems = filterNav(pickNavForPath(pathname, stickyModule), user.tktRole, inBranchView)
-  const canSeeSettings = !inBranchView && (user.tktRole ?? 'user') !== 'user'
+  // Settings is admin-only. Regional managers (and basic users) work like a
+  // branch manager — branch/region data + the Region view — without the
+  // tenant settings tree, so they don't see the Settings accordion.
+  const canSeeSettings =
+    !inBranchView && (user.tktRole === 'super_admin' || user.tktRole === 'platform_admin')
 
   return (
     <aside className="flex h-full flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
