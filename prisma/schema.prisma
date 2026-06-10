@@ -178,23 +178,6 @@ model MedicalLeave {
   createdAt    DateTime  @default(now()) @db.Timestamp(6)
 }
 
-model AttendanceLogST {
-  id                Int      @id @default(autoincrement())
-  date              String
-  empNo             String
-  empName           String
-  clockInTime       String
-  clockInSerialNo   String
-  clockInEmailSent  Boolean  @default(false)
-  clockOutTime      String?
-  clockOutSerialNo  String?
-  clockOutEmailSent Boolean  @default(false)
-  createdAt         DateTime @default(now()) @db.Timestamptz
-  updatedAt         DateTime @updatedAt @db.Timestamptz
-
-  @@unique([date, empNo])
-}
-
 // ============================================================
 // SHARED AUDIT LOG (used by all Ebright modules)
 // ============================================================

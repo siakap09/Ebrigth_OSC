@@ -80,8 +80,9 @@ interface StudentRow {
   fa_progress_json: unknown;
   guardian_name: string | null;
   guardian_mobile: string | null;
-  /** From LEFT JOIN with `ade_group`. May be null when the table doesn't
-   *  have an entry for this student yet. */
+  /** Heidi's authoritative age group (Junior/Middler/Senior) straight from
+   *  the studentrecords.age_group column. May be null for a few unpopulated
+   *  rows, in which case rowToStudent falls back to the grade heuristic. */
   age_group?: string | null;
 }
 
@@ -95,9 +96,8 @@ function rowToStudent(row: StudentRow): { student: Student } | { skip: SkipReaso
   const gc = parseGradeChapter(row.grade_chapter);
   if (!gc) return { skip: "bad_grade_format" };
 
-  // ade_group is the source of truth when available; fall back to the
-  // grade-based heuristic so older records (or local dev DBs without the
-  // table) keep working.
+  // studentrecords.age_group is the source of truth (matches the student
+  // database); fall back to the grade-based heuristic only when it's null.
   const ageCategory = normaliseAgeGroup(row.age_group) ?? ageCategoryFromGrade(gc.grade);
 
   return {
@@ -118,33 +118,28 @@ function rowToStudent(row: StudentRow): { student: Student } | { skip: SkipReaso
 }
 
 
-/** Pulls every row from `studentrecords` and joins age-group info from
- *  `ade_group` (Heidi). Uses LEFT JOIN so no students are dropped if the
- *  ade_group row is missing. If the ade_group table doesn't exist on this
- *  DB yet, we transparently re-query without the join and log a warning so
- *  the FA pages keep working during the migration window. */
+/** Pulls every row from `studentrecords`, including the `age_group` column
+ *  (Heidi's authoritative Junior/Middler/Senior, DOB-derived — the same value
+ *  shown in the student database). Earlier this joined a separate `ade_group`
+ *  table which doesn't actually exist, so every student silently fell back to
+ *  a grade-based guess (e.g. a G4 Junior wrongly became "Middler"). We now read
+ *  the real column directly; the grade heuristic is only a last resort for the
+ *  handful of rows where age_group is null. */
 export async function fetchAllStudents(): Promise<{ students: Student[]; report: StudentLoadReport }> {
-  // ASSUMPTION about ade_group schema (adjust here if Heidi differs):
-  //   - foreign key column linking to studentrecords.id is `student_id`
-  //   - the human-readable category lives in `group_name`
-  //     (case-insensitive; Junior / Middler / Senior)
-  // Other column names are tolerated via normaliseAgeGroup() which only
-  // looks at the first few characters.
   let rows: StudentRow[];
   let ageGroupJoinAvailable = true;
   try {
     const result = await pool.query<StudentRow>(
-      `SELECT s.id, s.name, s.status, s.branch, s.enrollment_date, s.grade_chapter,
-              s.fa_progress_json, s.guardian_name, s.guardian_mobile,
-              ag.group_name AS age_group
-         FROM studentrecords s
-         LEFT JOIN ade_group ag ON ag.student_id = s.id`
+      `SELECT id, name, status, branch, enrollment_date, grade_chapter,
+              fa_progress_json, guardian_name, guardian_mobile, age_group
+         FROM studentrecords`
     );
     rows = result.rows;
   } catch (err) {
+    // Only hit if this DB's studentrecords has no age_group column at all.
     ageGroupJoinAvailable = false;
     console.warn(
-      "[FA] ade_group join failed (table or column missing?) — falling back to grade-derived age category:",
+      "[FA] studentrecords.age_group missing — falling back to grade-derived age category:",
       err instanceof Error ? err.message : err
     );
     const result = await pool.query<StudentRow>(

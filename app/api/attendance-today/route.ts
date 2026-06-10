@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { hrfsPrisma } from '@/lib/hrfs';
 import { requireSession, canSeeAllBranches } from '@/lib/auth';
 import { isEmployee } from '@/lib/roles';
@@ -108,7 +107,11 @@ export async function GET(req: NextRequest) {
       params.push(...empNoFilter);
     }
 
-    const rawRows = await prisma.$queryRawUnsafe<RawScanRow[]>(
+    // Query via hrfsPrisma — hikvision_attendance_all lives in ebright_hrfs,
+    // which is what HRFS_DATABASE_URL points at. (DATABASE_URL may resolve to
+    // a different DB that doesn't have this table, which is what made the
+    // dashboard show "Scanner Offline".)
+    const rawRows = await hrfsPrisma.$queryRawUnsafe<RawScanRow[]>(
       `SELECT person_id,
               name,
               device_name,

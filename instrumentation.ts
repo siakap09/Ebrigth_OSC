@@ -28,14 +28,32 @@ export async function register() {
     console.error('[scanner-sync] Yesterday backfill error:', err);
   });
 
-  // Run today's sync once immediately on boot so we don't wait for the first interval
-  syncScannerToDb().catch(err => {
+  // Run today's sync once immediately on boot so we don't wait for the first interval.
+  // sendEmails=false: clock-in/out emails are now driven by the Hikvision pipeline
+  // (below), not the AttendanceLog poller — this silences the old AttendanceLog emails.
+  syncScannerToDb(false).catch(err => {
     console.error('[scanner-sync] Initial sync error:', err);
   });
 
   setInterval(() => {
-    syncScannerToDb().catch(err => {
+    syncScannerToDb(false).catch(err => {
       console.error('[scanner-sync] Sync error:', err);
     });
   }, SYNC_INTERVAL_MS);
+
+  // ── Hikvision clock-in/out email notifications ────────────────────────────
+  // Emails are driven off public.hikvision_attendance_all (the live pipeline).
+  // Gated by HIKVISION_EMAIL_SYNC so it only runs where explicitly enabled —
+  // set HIKVISION_EMAIL_SYNC=on in the environment to switch it on.
+  if (process.env.HIKVISION_EMAIL_SYNC === 'on') {
+    const { syncHikvisionEmails } = await import('@/lib/hikvision-email-sync');
+    const EMAIL_INTERVAL_MS = 30_000; // 30s — emails don't need a 10s cadence
+    console.log(`[hikvision-email] Notifications ON — checking every ${EMAIL_INTERVAL_MS / 1000}s`);
+    syncHikvisionEmails().catch(err => console.error('[hikvision-email] Initial run error:', err));
+    setInterval(() => {
+      syncHikvisionEmails().catch(err => console.error('[hikvision-email] Run error:', err));
+    }, EMAIL_INTERVAL_MS);
+  } else {
+    console.log('[hikvision-email] Disabled (set HIKVISION_EMAIL_SYNC=on to enable).');
+  }
 }

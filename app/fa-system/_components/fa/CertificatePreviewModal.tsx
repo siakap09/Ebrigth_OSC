@@ -511,10 +511,10 @@ function formatCertDate(iso: string): string {
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 }
 
-/** Module code derived from the student's age band. Until the DB carries a
- *  DOB column we fall back to the grade-based AgeCategory the server already
- *  computes (Junior G1–G3, Middler G4–G6, Senior G7+). When the DB ships an
- *  age field, just swap the input — the mapping is the same. */
+/** Module band = the student's real AGE GROUP. `student.ageCategory` is sourced
+ *  in students.server.ts from the `ade_group` table joined to studentrecords
+ *  (Heidi); it only falls back to a grade heuristic when that record is missing.
+ *  So the module reflects the student's age group, independent of the grade. */
 function moduleCodeForStudent(student: Student): string {
   switch (student.ageCategory) {
     case "Junior":  return "JUNIOR";
@@ -689,52 +689,58 @@ function CertificateRender({
         </div>
       </div>
 
-      {/* ── Signatures (bottom-left) ── */}
+      {/* ── Bottom row: Signatory · Date · Signatory ──
+          One flex row in the clear left area (clear of the red ribbon), evenly
+          spaced and bottom-aligned so the date never overlaps a signature and
+          all three underlines sit on the same baseline. */}
       <div
         className="absolute"
         style={{
           left: "7%",
+          right: "46%",
           bottom: "8%",
           display: "flex",
-          gap: "2.4rem",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: "1.25rem",
           zIndex: 1,
         }}
       >
-        {CERT_SIGNATORIES.map(sig => (
-          <div key={sig.name} style={{ minWidth: "180px" }}>
-            <div style={{
-              borderBottom: "1px solid #1a1a1a",
-              height: "1.8rem",
-              marginBottom: "0.3rem",
-            }} />
-            <div className="fa-mono" style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.06em" }}>
-              {sig.name}
-            </div>
-            <div className="fa-mono" style={{ fontSize: "0.65rem", color: "#555", letterSpacing: "0.03em" }}>
-              {sig.title}
-            </div>
+        {/* First signatory */}
+        <div style={{ width: 150 }}>
+          <div style={{ height: "1.8rem" }} />
+          <div style={{ borderBottom: "1px solid #1a1a1a", marginBottom: "0.3rem" }} />
+          <div className="fa-mono" style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.06em" }}>
+            {CERT_SIGNATORIES[0].name}
           </div>
-        ))}
-      </div>
-
-      {/* ── DATE block (bottom-centre/right of white area) ── */}
-      <div
-        className="absolute"
-        style={{
-          right: "44%",
-          bottom: "8%",
-          textAlign: "center",
-          minWidth: "140px",
-          zIndex: 1,
-        }}
-      >
-        <div style={{ borderBottom: "1px solid #1a1a1a", height: "1.8rem", marginBottom: "0.3rem" }}>
-          <span className="fa-mono" style={{ fontSize: "0.95rem", lineHeight: "1.8rem", display: "inline-block" }}>
-            {completionDate}
-          </span>
+          <div className="fa-mono" style={{ fontSize: "0.65rem", color: "#555", letterSpacing: "0.03em" }}>
+            {CERT_SIGNATORIES[0].title}
+          </div>
         </div>
-        <div className="fa-mono" style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.1em" }}>
-          DATE
+
+        {/* Date — value sits above the line, "DATE" label below */}
+        <div style={{ width: 120, textAlign: "center", flexShrink: 0 }}>
+          <div style={{ height: "1.8rem" }}>
+            <span className="fa-mono" style={{ fontSize: "0.9rem", lineHeight: "1.8rem" }}>
+              {completionDate}
+            </span>
+          </div>
+          <div style={{ borderBottom: "1px solid #1a1a1a", marginBottom: "0.3rem" }} />
+          <div className="fa-mono" style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em" }}>
+            DATE
+          </div>
+        </div>
+
+        {/* Second signatory */}
+        <div style={{ width: 150 }}>
+          <div style={{ height: "1.8rem" }} />
+          <div style={{ borderBottom: "1px solid #1a1a1a", marginBottom: "0.3rem" }} />
+          <div className="fa-mono" style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.06em" }}>
+            {CERT_SIGNATORIES[1].name}
+          </div>
+          <div className="fa-mono" style={{ fontSize: "0.65rem", color: "#555", letterSpacing: "0.03em" }}>
+            {CERT_SIGNATORIES[1].title}
+          </div>
         </div>
       </div>
 
