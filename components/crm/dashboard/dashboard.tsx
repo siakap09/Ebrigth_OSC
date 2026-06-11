@@ -412,7 +412,7 @@ function FunnelPair({
 // surface tint so it reads as "side info" rather than "the SU column".
 function BufferCard({ value }: { value: number }) {
   return (
-    <div className="h-full rounded-md border border-slate-200 bg-[#faf6f0] px-4 py-3 text-center dark:border-slate-700 dark:bg-slate-900/40 lg:min-w-30">
+    <div className="h-full rounded-md border border-slate-200 bg-[#f3f6fc] px-4 py-3 text-center dark:border-slate-700 dark:bg-slate-900/40 lg:min-w-30">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
         Buffer
       </div>
@@ -444,14 +444,14 @@ function Stat({ label, value, hint, bold, onClick }: { label: string; value: str
         type="button"
         onClick={onClick}
         title="Click to see the leads behind this number"
-        className="group w-full rounded-lg border border-slate-200 bg-[#faf6f0] px-4 py-3 text-left transition-colors hover:border-indigo-400 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
+        className="group w-full rounded-lg border border-slate-200 bg-[#f3f6fc] px-4 py-3 text-left transition-colors hover:border-indigo-400 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
       >
         {inner}
       </button>
     )
   }
   return (
-    <div className="rounded-lg border border-slate-200 bg-[#faf6f0] px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30">
+    <div className="rounded-lg border border-slate-200 bg-[#f3f6fc] px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30">
       {inner}
     </div>
   )
