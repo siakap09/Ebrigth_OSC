@@ -341,7 +341,7 @@ function MetricsBlock({
   onMetric?: (m: Metric) => void
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:shadow-none">
       <div className="mb-4 flex items-baseline justify-between gap-2">
         <div>
           <h2 className={cn('text-lg font-bold', ACCENT_CLASSES[accent])}>{title}</h2>
@@ -412,7 +412,7 @@ function FunnelPair({
 // surface tint so it reads as "side info" rather than "the SU column".
 function BufferCard({ value }: { value: number }) {
   return (
-    <div className="h-full rounded-md border border-slate-200 bg-slate-50/60 px-4 py-3 text-center dark:border-slate-700 dark:bg-slate-900/40 lg:min-w-30">
+    <div className="h-full rounded-md border border-slate-200 bg-[#f3f6fc] px-4 py-3 text-center dark:border-slate-700 dark:bg-slate-900/40 lg:min-w-30">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
         Buffer
       </div>
@@ -444,14 +444,14 @@ function Stat({ label, value, hint, bold, onClick }: { label: string; value: str
         type="button"
         onClick={onClick}
         title="Click to see the leads behind this number"
-        className="group w-full rounded-md border border-slate-200 px-3 py-2 text-left transition-colors hover:border-indigo-400 hover:bg-indigo-50/50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
+        className="group w-full rounded-lg border border-slate-200 bg-[#f3f6fc] px-4 py-3 text-left transition-colors hover:border-indigo-400 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
       >
         {inner}
       </button>
     )
   }
   return (
-    <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
+    <div className="rounded-lg border border-slate-200 bg-[#f3f6fc] px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30">
       {inner}
     </div>
   )
@@ -468,7 +468,7 @@ function BranchBarChart({ branches }: { branches: BranchMetrics[] }) {
   const max = Math.max(1, ...branches.map((b) => b.NL))
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:shadow-none">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">New Leads by Branch</h2>
         <div className="flex items-center gap-4 text-[11px] text-slate-500 dark:text-slate-400">
@@ -531,7 +531,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 
 function BranchTable({ branches }: { branches: BranchMetrics[] }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:shadow-none">
       <table className="w-full text-sm">
         <thead className="border-b border-slate-200 bg-slate-50 text-left text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
           <tr>

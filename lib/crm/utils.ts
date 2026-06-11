@@ -106,6 +106,33 @@ export function normalizePhone(phone: string): string {
   return phone
 }
 
+/**
+ * Normalise a search term for phone matching.
+ *
+ * Stored phones are a mix of E.164 ("+60123456789"), local ("0123456789"),
+ * and raw form-submitted strings that may carry spaces / dashes / brackets.
+ * A user searching "+60 12-345 6789", "012-3456789", or "123456789" must all
+ * hit the same lead. We reduce both the query and (in SQL) the stored column
+ * to bare digits, then strip the Malaysian country code (60) and any leading
+ * zero so the "national significant number" is what we substring-match on —
+ * that core is shared by every stored form of the same number.
+ *
+ * Returns null when the term isn't phone-like (too few digits, or clearly a
+ * name/email) so callers can skip the phone branch entirely.
+ */
+export function phoneSearchDigits(search: string): string | null {
+  if (!search) return null
+  // Bail if it looks like an email or contains letters — that's a name search.
+  if (/[a-z@]/i.test(search)) return null
+  let digits = search.replace(/\D/g, '')
+  if (digits.length < 4) return null
+  // Drop a leading Malaysian country code, then a leading trunk 0, so
+  // "+60123456789" / "60123456789" / "0123456789" all reduce to "123456789".
+  if (digits.startsWith('60')) digits = digits.slice(2)
+  digits = digits.replace(/^0+/, '')
+  return digits.length >= 4 ? digits : null
+}
+
 // ─── API key generation ───────────────────────────────────────────────────────
 
 /**

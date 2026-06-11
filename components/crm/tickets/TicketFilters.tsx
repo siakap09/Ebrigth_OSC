@@ -25,6 +25,7 @@ interface TicketFiltersProps {
 
 const STATUS_OPTIONS = [
   { value: 'received', label: 'Received' },
+  { value: 'approved', label: 'Approved' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'complete', label: 'Complete' },
   { value: 'rejected', label: 'Rejected' },

@@ -431,6 +431,16 @@ model crm_contact {
   // Stored verbatim — display as written, no normalisation. Null = lead didn't
   // come from a tracked campaign; UI renders "-" in that case.
   campaignName      String?
+  // Free-text remarks the parent typed on the Wix / trial registration form.
+  // Stored directly on the contact (one per sibling) so the lead-detail card
+  // can show it without a separate note row. Null when none was entered.
+  remarks           String?
+  // Raw lead-source label as it arrived from the source system (e.g.
+  // "roadshow", "trial-class-e form") BEFORE normalizeSourceName() collapsed
+  // it into the canonical bucket on `leadSource`. Lets the lead-detail card
+  // show "Others (roadshow)" instead of a flat "Others". Null when the raw
+  // label matched the bucket or wasn't captured.
+  leadSourceDetail  String?
   childName1        String?
   childAge1         String?
   childName2        String?

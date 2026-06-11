@@ -141,6 +141,9 @@ export async function POST(req: NextRequest) {
             preferredBranchId:   branchId,
             parentFullName:      parsed.data.parentName,
             childAge1:           child.age,
+            // Parent's free-text remarks from the form — stored on every
+            // sibling so it shows on whichever child's card is opened.
+            remarks:             parsed.data.remarks?.trim() || null,
             externalSourceTable: 'trial_form',
             externalSourceId:    `${submissionId}#${i + 1}`,
           },
@@ -156,18 +159,6 @@ export async function POST(req: NextRequest) {
             value:      0,
           },
         })
-
-        // Attach remarks once on the first sibling to avoid duplicating the
-        // same note across every card.
-        if (i === 0 && parsed.data.remarks?.trim()) {
-          await tx.crm_note.create({
-            data: {
-              tenantId:  tenant.id,
-              contactId: c.id,
-              body:      parsed.data.remarks.trim(),
-            },
-          })
-        }
 
         created.push(c)
       }

@@ -1,6 +1,30 @@
 import { prisma } from '@/lib/crm/db'
 import { scopedPrisma } from '@/lib/crm/tenancy'
 import { DISPLAY_MIN_CREATED_AT } from '@/lib/crm/display-cutoff'
+import { phoneSearchDigits } from '@/lib/crm/utils'
+
+/**
+ * Resolve contact IDs whose stored phone matches a phone-like search term.
+ *
+ * Stored phones come in mixed shapes (+60…, 0…, raw with spaces/dashes), so a
+ * plain `contains` misses obvious matches. We reduce BOTH the search term (via
+ * phoneSearchDigits) and the stored column — strip to digits, drop a leading
+ * Malaysian country code + trunk zero — to the shared national number and
+ * substring-match on that. Returns null when the term isn't phone-like, so the
+ * caller leaves the name/email search untouched.
+ */
+async function phoneMatchContactIds(tenantId: string, search: string): Promise<string[] | null> {
+  const core = phoneSearchDigits(search)
+  if (!core) return null
+  const like = `%${core}%`
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM crm.crm_contact
+    WHERE "tenantId" = ${tenantId}
+      AND "deletedAt" IS NULL
+      AND regexp_replace(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), '^(60)?0*', '') LIKE ${like}
+  `
+  return rows.map((r) => r.id)
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -109,6 +133,10 @@ export async function getAllBranchesKanban(
   })
   const stageNameById = new Map(allStages.map((s) => [s.id, s.name]))
 
+  // Phone-digit pre-match: ids whose normalised phone contains the search's
+  // national number (handles +60 / spaces / dashes). Null when not phone-like.
+  const phoneIds = search ? await phoneMatchContactIds(tenantId, search) : null
+
   // Fetch every opportunity in the tenant (respecting branch + search filters)
   const opportunities = await prisma.crm_opportunity.findMany({
     where: {
@@ -124,6 +152,7 @@ export async function getAllBranchesKanban(
                 { lastName: { contains: search, mode: 'insensitive' } },
                 { email: { contains: search, mode: 'insensitive' } },
                 { phone: { contains: search, mode: 'insensitive' } },
+                ...(phoneIds && phoneIds.length ? [{ id: { in: phoneIds } }] : []),
               ],
             },
           }
@@ -196,6 +225,9 @@ export async function getPipelineKanban(
 
   const scope = scopedPrisma(tenantId)
 
+  // Phone-digit pre-match (see getAllBranchesKanban) — null when not phone-like.
+  const phoneIds = search ? await phoneMatchContactIds(tenantId, search) : null
+
   const stages = await prisma.crm_stage.findMany({
     where: scope.where({ pipelineId }),
     orderBy: { order: 'asc' },
@@ -213,6 +245,7 @@ export async function getPipelineKanban(
                     { lastName: { contains: search, mode: 'insensitive' } },
                     { email: { contains: search, mode: 'insensitive' } },
                     { phone: { contains: search, mode: 'insensitive' } },
+                    ...(phoneIds && phoneIds.length ? [{ id: { in: phoneIds } }] : []),
                   ],
                 },
               }

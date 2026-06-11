@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { GripVertical, User, Calendar } from 'lucide-react'
-import { cn, formatMYR, formatDate } from '@/lib/crm/utils'
+import { cn, formatMYR, formatDate, formatDateTime } from '@/lib/crm/utils'
 import { getAgeCategory, ageCategoryClasses } from '@/lib/crm/age-category'
 import type { OpportunityCard } from '@/server/queries/opportunities'
 import { formatDistanceToNow } from 'date-fns'
@@ -447,8 +447,8 @@ export function KanbanCard({
                 </span>
               )}
               {showField('createdAt') && (
-                <span title={`Created ${formatDate(opportunity.createdAt)}`}>
-                  Created {formatDate(opportunity.createdAt)}
+                <span title={`Created ${formatDateTime(opportunity.createdAt)}`}>
+                  Created {formatDateTime(opportunity.createdAt)}
                 </span>
               )}
               {showField('stageName') && stageName && (

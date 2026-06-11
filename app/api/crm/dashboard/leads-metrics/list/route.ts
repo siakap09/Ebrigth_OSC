@@ -83,10 +83,19 @@ export async function GET(req: NextRequest) {
     const session = await auth.api.getSession({ headers: await headers() })
     const access = session?.user?.id ? await resolveBranchAccess(session.user.id) : null
     const isElevatedUser = access?.elevated ?? true
+    // Honor the topbar branch picker for elevated admins AND non-elevated
+    // multi-branch users (BM/RM linked to >1 branch); a branch outside a
+    // non-elevated user's grant is ignored. Mirrors the metrics route so the
+    // drill-in list scopes to the same branch the card counted.
     const requestedBranchId = sp.get('branchId')
-    const viewAsBranch = isElevatedUser && requestedBranchId ? requestedBranchId : null
+    const accessibleBranchIds = access?.branchIds ?? []
+    const viewAsBranch = requestedBranchId
+      ? (isElevatedUser || accessibleBranchIds.includes(requestedBranchId))
+        ? requestedBranchId
+        : null
+      : null
     const elevated = isElevatedUser && !viewAsBranch
-    const allowedBranchIds = elevated ? null : viewAsBranch ? [viewAsBranch] : (access?.branchIds ?? [])
+    const allowedBranchIds = elevated ? null : viewAsBranch ? [viewAsBranch] : accessibleBranchIds
 
     // Branch column is shown to multi-branch roles: elevated admins + regional managers.
     const roleRows = session?.user?.id
