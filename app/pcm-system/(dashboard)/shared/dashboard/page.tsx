@@ -4,10 +4,25 @@ import { useState, useMemo } from "react";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { AppShell } from "@pcm/_components/shared/AppShell";
+import { Modal } from "@pcm/_components/shared/Modal";
 import {
   Users, CheckCircle2, XCircle, CalendarClock, TrendingUp,
-  Calendar, CalendarRange, BadgeCheck,
+  Calendar, CalendarRange, BadgeCheck, Receipt,
 } from "lucide-react";
+
+/** One renewal row from /api/pcm/renewal-details (cash from finance_renewals,
+ *  coach resolved by name match — may be blank when no confident match). */
+interface RenewalRow {
+  docNo: string;
+  docDate: string | null;
+  branch: string;
+  studentName: string;
+  studentId: string | null;
+  gradeChapter: string | null;
+  coachName: string | null;
+  package: string | null;
+  amount: number;
+}
 import { BRANCHES, BranchCode } from "@pcm/_types";
 import {
   format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
@@ -108,6 +123,35 @@ export default function DashboardPage() {
     () => outcomeScope === "renewal" ? filteredInvs.filter(i => i.inviteType === "renewal") : filteredInvs,
     [filteredInvs, outcomeScope],
   );
+
+  // ── Renewal cash drill-down ──────────────────────────────────────────────
+  // Who renewed (paid), their coach, package and RM — pulled live from
+  // finance_renewals (actual invoiced money), filtered by the same branch +
+  // date range as the dashboard.
+  const [renewalModalOpen, setRenewalModalOpen] = useState(false);
+  const [renewalLoading, setRenewalLoading] = useState(false);
+  const [renewalData, setRenewalData] =
+    useState<{ rows: RenewalRow[]; total: number; packs: number } | null>(null);
+
+  async function openRenewalDetails() {
+    setRenewalModalOpen(true);
+    setRenewalLoading(true);
+    setRenewalData(null);
+    const p = new URLSearchParams();
+    if (effectiveBranch !== "all") p.set("branch", effectiveBranch);
+    if (range) {
+      p.set("start", format(range.start, "yyyy-MM-dd"));
+      p.set("end", format(range.end, "yyyy-MM-dd"));
+    }
+    try {
+      const res = await fetch(`/api/pcm/renewal-details?${p.toString()}`, { cache: "no-store" });
+      setRenewalData(res.ok ? await res.json() : { rows: [], total: 0, packs: 0 });
+    } catch {
+      setRenewalData({ rows: [], total: 0, packs: 0 });
+    } finally {
+      setRenewalLoading(false);
+    }
+  }
   const outcomeStats = useMemo(() => {
     const invited = outcomeInvs.length;
     const attended = outcomeInvs.filter(i => i.status === "attended").length;
@@ -292,8 +336,66 @@ export default function DashboardPage() {
           attended={stats.renewalAttended}
           totalAttended={stats.attended}
           accent="cyan"
+          onViewDetails={openRenewalDetails}
         />
       </div>
+
+      <Modal
+        open={renewalModalOpen}
+        onClose={() => setRenewalModalOpen(false)}
+        kicker="PCM Renewal"
+        title="Who renewed — coach, package & cash"
+        description={`Actual invoiced renewals (from finance) for ${effectiveBranch === "all" ? "all branches" : effectiveBranch}${range ? ` · ${range.label}` : " · all time"}.`}
+        size="xl"
+      >
+        {renewalLoading ? (
+          <div className="p-8 text-center text-sm text-ink-400">Loading renewals…</div>
+        ) : !renewalData || renewalData.rows.length === 0 ? (
+          <div className="p-8 text-center text-sm text-ink-400">No renewals found for this branch / period.</div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mb-3 text-sm">
+              <span className="text-ink-500">Total packs: <strong className="text-ink-900">{renewalData.packs}</strong></span>
+              <span className="text-ink-500">Total renewals: <strong className="text-ink-900">RM {renewalData.total.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+              <span className="text-ink-400 text-xs">{renewalData.rows.length} student row{renewalData.rows.length !== 1 ? "s" : ""}</span>
+            </div>
+            <div className="max-h-[55vh] overflow-y-auto rounded-lg border border-ivory-300">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-ivory-100 text-ink-500 text-[11px] uppercase tracking-wider">
+                  <tr>
+                    <th className="text-left px-3 py-2">Student</th>
+                    <th className="text-left px-3 py-2">Coach</th>
+                    {effectiveBranch === "all" && <th className="text-left px-3 py-2">Branch</th>}
+                    <th className="text-left px-3 py-2">Package</th>
+                    <th className="text-right px-3 py-2">Amount (RM)</th>
+                    <th className="text-left px-3 py-2">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renewalData.rows.map((r, i) => (
+                    <tr key={`${r.docNo}-${i}`} className="border-t border-ivory-200">
+                      <td className="px-3 py-2">
+                        <div className="font-medium text-ink-900">{r.studentName}</div>
+                        <div className="text-[11px] text-ink-400">
+                          {r.studentId ? `#${r.studentId}` : "not matched"}{r.gradeChapter ? ` · ${r.gradeChapter}` : ""}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-ink-700">{r.coachName || <span className="text-ink-300">—</span>}</td>
+                      {effectiveBranch === "all" && <td className="px-3 py-2 font-mono text-xs text-ink-600">{r.branch}</td>}
+                      <td className="px-3 py-2 font-mono text-xs text-ink-700">{r.package || "—"}</td>
+                      <td className="px-3 py-2 text-right font-semibold text-ink-900">{r.amount.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="px-3 py-2 text-xs text-ink-500">{r.docDate ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-[11px] text-ink-400">
+              Coach is matched from the student record by name; a blank coach or "not matched" means no confident name match in the student list.
+            </p>
+          </>
+        )}
+      </Modal>
 
       {/* Payment breakdown — three buckets in one row with a stacked bar
           above. Academy wanted at-a-glance answer to "of everyone we
@@ -454,13 +556,14 @@ function CalmStatCard({
 }
 
 function TypeSplitCard({
-  label, invited, attended, totalAttended, accent,
+  label, invited, attended, totalAttended, accent, onViewDetails,
 }: {
   label: string;
   invited: number;
   attended: number;
   totalAttended: number;
   accent: Accent;
+  onViewDetails?: () => void;
 }) {
   // Two ratios surfaced for the BM:
   //   • internal: this type's attendance rate  (attended / invited)
@@ -474,9 +577,20 @@ function TypeSplitCard({
       <div className="p-4 pl-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className={`text-base font-bold ${a.text}`}>{label}</h3>
-          <span className={`fa-mono text-[10px] font-bold ${a.text}`} style={{ letterSpacing: "0.06em" }}>
-            {internalPct}%
-          </span>
+          <div className="flex items-center gap-2">
+            {onViewDetails && (
+              <button
+                onClick={onViewDetails}
+                className={`inline-flex items-center gap-1 rounded-md border border-current/30 px-2 py-0.5 text-[10px] font-semibold ${a.text} hover:bg-white/60 transition-colors`}
+                title="See who renewed, their coach, package and RM paid"
+              >
+                <Receipt className="w-3 h-3" /> View renewals
+              </button>
+            )}
+            <span className={`fa-mono text-[10px] font-bold ${a.text}`} style={{ letterSpacing: "0.06em" }}>
+              {internalPct}%
+            </span>
+          </div>
         </div>
         <div className="flex items-baseline gap-2 mb-2">
           <span className="text-3xl font-black text-ink-900">{invited}</span>

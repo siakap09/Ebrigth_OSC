@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useFAStore } from "@fa/_lib/store";
@@ -132,6 +132,20 @@ export default function FaReportFormPage() {
   );
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
+
+  // Full-time coaches for the "Prepared by" dropdown (FT* + BM roles).
+  const [coaches, setCoaches] = useState<{ id: string; name: string; branch: string | null; role: string | null }[]>([]);
+  const [coachesLoading, setCoachesLoading] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setCoachesLoading(true);
+    fetch("/api/fa/coaches", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : { coaches: [] }))
+      .then(d => { if (alive) setCoaches(d.coaches ?? []); })
+      .catch(() => { if (alive) setCoaches([]); })
+      .finally(() => { if (alive) setCoachesLoading(false); });
+    return () => { alive = false; };
+  }, []);
 
   // Preparedy-by is intentionally NOT auto-filled. The FA store
   // user.name resolves to a role/branch label (e.g. "CJY — Cyberjaya"),
@@ -301,14 +315,24 @@ export default function FaReportFormPage() {
           <label className="fa-mono text-[10px] uppercase text-ink-500 font-bold mb-1.5 block" style={{ letterSpacing: "0.12em" }}>
             Prepared by
           </label>
-          <input
-            type="text"
+          <select
             value={preparedBy}
             onChange={e => setPreparedBy(e.target.value)}
             disabled={!canFill}
-            placeholder="Your name"
             className="fa-input w-full"
-          />
+          >
+            <option value="">{coachesLoading ? "Loading coaches…" : "Select full-time coach…"}</option>
+            {/* Keep a previously-saved preparer selectable even if they're no
+                longer in the full-time list. */}
+            {preparedBy && !coaches.some(c => c.name === preparedBy) && (
+              <option value={preparedBy}>{preparedBy}</option>
+            )}
+            {coaches.map(c => (
+              <option key={c.id} value={c.name}>
+                {c.name}{c.branch ? ` · ${c.branch}` : ""}{c.role ? ` (${c.role})` : ""}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

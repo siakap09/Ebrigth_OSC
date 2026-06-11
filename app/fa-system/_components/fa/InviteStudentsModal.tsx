@@ -198,6 +198,15 @@ export function InviteStudentsModal({
         </div>
       </div>
 
+      {/* Legend — the green ✓ is COMPLETION history (from Heidi), not an
+          invitation. Spelled out so a tick is never mistaken for "invited". */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3 text-[11px] text-ink-500">
+        <span><span className="text-success font-mono">G✓</span> completed (history)</span>
+        <span><span className="text-danger font-mono">G✗</span> not done — can invite</span>
+        <span><span className="font-mono line-through text-ink-400">G✓</span> already invited this event</span>
+        <span><span className="font-mono text-brand-600">G✓</span> selected now</span>
+      </div>
+
       {/* List */}
       <div className="max-h-[50vh] overflow-y-auto">
         {visibleStudents.length === 0 ? (
@@ -335,7 +344,9 @@ export function InviteStudentsModal({
                                     title={
                                       alreadyBooked
                                         ? `Already invited for G${g} in this event`
-                                        : `Grade ${g}: ${done ? "completed" : "not yet"}`
+                                        : done
+                                          ? `G${g} already completed (history) — not an invitation. Pickable if you want to re-appraise.`
+                                          : `G${g} not done yet — click to invite`
                                     }
                                     className={`text-[11px] font-mono px-2 py-1 rounded border transition-colors ${baseCls} ${
                                       disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"

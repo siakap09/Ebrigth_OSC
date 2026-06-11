@@ -246,7 +246,12 @@ export default function StudentListPage() {
                 <th>Branch</th>
                 <th className="text-center">Grade</th>
                 <th className="text-center">Chapter</th>
-                <th>FA Progress (G1 → current)</th>
+                <th title="Grades this student has COMPLETED (from Heidi). This is completion history — not event invitations.">
+                  FA Completed (G1 → current)
+                  <div className="font-normal normal-case text-[10px] text-ink-400 mt-0.5">
+                    ✓ done · ✗ not yet — completion history, not invitations
+                  </div>
+                </th>
                 <th>Guardian</th>
               </tr>
             </thead>
@@ -305,7 +310,9 @@ export default function StudentListPage() {
                                       ? "bg-success-soft text-success border-success/30"
                                       : "bg-danger-soft text-danger border-danger/30"
                                   }`}
-                                  title={`Grade ${g} FA: ${done ? "completed" : "not yet"}`}
+                                  title={done
+                                    ? `Grade ${g} FA completed (from Heidi) — not an event invitation`
+                                    : `Grade ${g} FA not done yet`}
                                 >
                                   G{g} {done ? "✓" : "✗"}
                                 </span>
