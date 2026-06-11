@@ -157,9 +157,10 @@ export async function POST(req: NextRequest) {
           },
         })
 
-        // Attach remarks once on the first sibling to avoid duplicating the
-        // same note across every card.
-        if (i === 0 && parsed.data.remarks?.trim()) {
+        // Attach the parent's remarks to EVERY sibling's contact so the note
+        // shows no matter which child's lead card the BM opens (previously it
+        // was only on the first sibling, so the other cards looked empty).
+        if (parsed.data.remarks?.trim()) {
           await tx.crm_note.create({
             data: {
               tenantId:  tenant.id,
