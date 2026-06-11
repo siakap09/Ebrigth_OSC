@@ -8,12 +8,11 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/fa/coaches
  *
- * Full-time coaches/staff for the FA report "Prepared by" dropdown. The
+ * Full-time COACHES only, for the FA report "Prepared by" dropdown. The
  * BranchStaff.employment_type column is dirty (many free-text / NaN values),
- * so we key off the clean `role` field instead: full-timers are the FT* roles
- * (FT Coach / FT EXEC / FT HOD) plus BM (branch managers, who are full-time
- * and prepare FA reports). Part-timers (PT Coach) and interns (INT) are
- * intentionally excluded. Read-only; any signed-in user.
+ * so we key off the clean `role` field: role = 'FT Coach'. This deliberately
+ * excludes BM, FT EXEC, FT HOD, part-timers (PT Coach) and interns (INT).
+ * Read-only; any signed-in user.
  */
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -25,10 +24,7 @@ export async function GET() {
       select: { id: true, name: true, nickname: true, branch: true, role: true },
       where: {
         status: { equals: "Active", mode: "insensitive" },
-        OR: [
-          { role: { startsWith: "FT", mode: "insensitive" } },
-          { role: { equals: "BM", mode: "insensitive" } },
-        ],
+        role: { equals: "FT Coach", mode: "insensitive" },
       },
       orderBy: [{ branch: "asc" }, { nickname: "asc" }],
     });
