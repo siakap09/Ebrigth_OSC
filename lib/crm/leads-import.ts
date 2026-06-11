@@ -265,6 +265,25 @@ function normalizeSourceName(raw: string | null): string {
 }
 
 /**
+ * The raw source label worth storing as `crm_contact.leadSourceDetail`, or null
+ * when the bucket already says everything the raw label does.
+ *
+ * normalizeSourceName collapses granular labels ("roadshow", "trial-class-e
+ * form", "website (organic)") into a handful of buckets. We keep the raw label
+ * around so the card can show "Others (roadshow)" — but only when it actually
+ * adds information. We compare on alphanumerics-only so cosmetic differences
+ * ("walk in" vs "Walk-In", "self generated" vs "Self-Generated", "others" vs
+ * "Others") are treated as equal and don't produce noisy "Walk-In (walk in)".
+ */
+export function sourceDetailFor(rawLabel: string | null): string | null {
+  const raw = (rawLabel ?? '').trim()
+  if (!raw) return null
+  const canon = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const bucket = normalizeSourceName(raw)
+  return canon(raw) !== canon(bucket) ? raw : null
+}
+
+/**
  * Match the unified view's `clean_branch` against `crm_branch.name`.
  *
  * The view yields values like "Subang Taipan", "Setia Alam", "Online" —
@@ -415,6 +434,12 @@ export async function importLead(
   }
 
   const leadSourceId = await resolveLeadSourceId(prisma, ctx.tenantId, row.lead_source, caches)
+  // Preserve the raw source label when normaliseSourceName collapsed it into a
+  // generic bucket (e.g. raw "roadshow" → bucket "Others"). Stored so the
+  // lead-detail card can show "Others (roadshow)". Null when the raw label
+  // already equals the bucket (no extra info to surface).
+  const rawSourceLabel = (row.lead_source ?? '').trim()
+  const leadSourceDetail = sourceDetailFor(rawSourceLabel)
   const phone = row.phone ? normalizePhone(row.phone) : null
   const submittedAt = row.submitted_at ?? new Date()
 
@@ -482,6 +507,7 @@ export async function importLead(
           email:               row.email,
           phone,
           leadSourceId,
+          leadSourceDetail,
           // childAge1 holds the sibling's age for Wix multi-child submissions
           // so the lead detail modal can show it. The contact itself IS the
           // child, so we don't fill childName1 (that would be redundant).
@@ -583,6 +609,7 @@ export async function importLead(
         if (row.campaign_name) updates.campaignName = row.campaign_name
         if (parentFullName)    updates.parentFullName = parentFullName
         if (childAge)          updates.childAge1 = childAge
+        if (leadSourceDetail)  updates.leadSourceDetail = leadSourceDetail
 
         if (Object.keys(updates).length > 0) {
           // updateMany allows the NULL-only filter and doesn't require knowing

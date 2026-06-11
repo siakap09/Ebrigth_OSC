@@ -19,7 +19,7 @@ import { CustomiseCardDrawer } from './customise-card-drawer'
 import { loadCardPrefs, saveCardPrefs, type CardPrefs, DEFAULT_CARD_PREFS } from '@/lib/crm/kanban-card-prefs'
 import { toast } from 'sonner'
 import { startOfWeek, endOfWeek, addWeeks } from 'date-fns'
-import { cn, formatMYR, formatDate } from '@/lib/crm/utils'
+import { cn, formatMYR, formatDate, formatDateTime } from '@/lib/crm/utils'
 import { useKanban, useMoveOpportunity, useOpportunity, useDeleteOpportunity, opportunityKeys } from '@/hooks/crm/useOpportunities'
 import { getAgeCategory, ageCategoryClasses, formatChildAge } from '@/lib/crm/age-category'
 import { Trash2 } from 'lucide-react'
@@ -1646,6 +1646,9 @@ function OpportunityDetailModal({
         id: string
         /** Parent's free-text remarks from the registration/Wix form. */
         remarks?: string | null
+        /** Raw source label captured on import (e.g. "roadshow") — shown in
+         *  parentheses after the normalised source name. */
+        leadSourceDetail?: string | null
         notes?: Array<{
           id: string
           body: string
@@ -1660,6 +1663,17 @@ function OpportunityDetailModal({
   }
   const notes = full?.contact?.notes ?? []
   const formRemarks = (full?.contact?.remarks ?? '').trim()
+  // Source label: normalised bucket from the kanban payload, annotated with the
+  // raw source detail when the import captured one and it adds information
+  // beyond the bucket name — e.g. "Others (roadshow)". The detail arrives on
+  // the full-opportunity fetch (getOpportunityById includes all contact
+  // scalars), so it fills in once that settles.
+  const sourceName = contact.leadSource?.name ?? ''
+  const sourceDetail = (full?.contact?.leadSourceDetail ?? '').trim()
+  const sourceLabel =
+    sourceDetail && sourceDetail.toLowerCase() !== sourceName.toLowerCase()
+      ? `${sourceName} (${sourceDetail})`
+      : sourceName
   // Stage remarks history — every prior stage move with a non-empty note.
   // Newest-first so the most recent context is at the top of the section.
   const stageRemarks = (full?.stageHistory ?? [])
@@ -2101,11 +2115,13 @@ function OpportunityDetailModal({
               {contact.leadSource && (
                 <>
                   <div className="text-slate-500 dark:text-slate-400">Source</div>
-                  <div className="text-slate-900 dark:text-slate-100">{contact.leadSource.name}</div>
+                  <div className="text-slate-900 dark:text-slate-100">{sourceLabel}</div>
                 </>
               )}
               <div className="text-slate-500 dark:text-slate-400">Campaign</div>
               <div className="text-slate-900 dark:text-slate-100">{contact.campaignName || '-'}</div>
+              <div className="text-slate-500 dark:text-slate-400">Created On</div>
+              <div className="text-slate-900 dark:text-slate-100">{formatDateTime(opportunity.createdAt)}</div>
             </div>
           </section>
 
