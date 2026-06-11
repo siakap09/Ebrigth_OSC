@@ -55,6 +55,14 @@ jobs:
             export CRM_PREVIEW_MODE='${{ secrets.CRM_PREVIEW_MODE }}'
             export SHARED_SSO_SECRET='${{ secrets.SHARED_SSO_SECRET }}'
             export INVENTORY_URL='${{ secrets.INVENTORY_URL }}'
+            # SMTP for clock-in/out attendance emails (lib/mailer.ts). The
+            # email watcher (lib/hikvision-email-sync.ts) only runs when
+            # HIKVISION_EMAIL_SYNC=on, so leaving that secret blank keeps it off.
+            export SMTP_HOST='${{ secrets.SMTP_HOST }}'
+            export SMTP_PORT='${{ secrets.SMTP_PORT }}'
+            export SMTP_USER='${{ secrets.SMTP_USER }}'
+            export SMTP_PASS='${{ secrets.SMTP_PASS }}'
+            export HIKVISION_EMAIL_SYNC='on'
             /home/staff1/deploy-prod.sh osc
 
             # ── Health check ──────────────────────────────────────────────
