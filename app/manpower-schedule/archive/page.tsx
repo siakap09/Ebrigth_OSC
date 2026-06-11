@@ -8,7 +8,7 @@ import Sidebar from "@/app/components/Sidebar";
 
 // --- IMPORT SHARED CONSTANTS ---
 import {
-  SHARED_EMPLOYEES, ALL_COLUMNS, getColumnsForDay, ALL_BRANCHES,
+  SHARED_EMPLOYEES, ALL_COLUMNS, getColumnsForDay, TRAINING_DAY_HOURS, ALL_BRANCHES,
   getTimeSlotsForDay, isAdminSlot, getStaffColorByIndex,
   getWorkingDaysForBranch, isOpeningClosingSlot,
   isManagerOnDutySlot, isOnlineCoachOnly,
@@ -220,33 +220,51 @@ export default function ArchiveSchedulePage() {
 
       uniqueEmployeesToTrack.forEach((emp: string) => {
         let coachingHoursForDay = 0;
+        let trainingSlotHoursForDay = 0;
         let workedThatDay = false;
+        let inTrainingThatDay = false;
 
         getTimeSlotsForDay(day, selectedRecord.branch).forEach((slot: string) => {
           if (isOpeningClosingSlot(slot, selectedRecord.branch)) return;
           ALL_COLUMNS.forEach((col) => {
-            // Training columns are informational only — never count as worked hours.
-            if (col.type === "training") return;
-            if (validData[`${day}-${slot}-${col.id}`] === emp) {
-              workedThatDay = true;
-              if (col.type === "coach") coachingHoursForDay += isAdminSlot(slot, selectedRecord.branch) ? 0.25 : 1.25;
+            if (validData[`${day}-${slot}-${col.id}`] !== emp) return;
+            workedThatDay = true;
+            const slotDuration = isAdminSlot(slot, selectedRecord.branch) ? 0.25 : 1.25;
+            // A training assignment makes the whole day a flat training day
+            // (TRAINING_DAY_HOURS) — handled below.
+            if (col.type === "training") {
+              inTrainingThatDay = true;
+              trainingSlotHoursForDay += slotDuration;
+              return;
             }
+            if (col.type === "coach") coachingHoursForDay += slotDuration;
           });
         });
 
-        if (workedThatDay) {
-          // Online coaches (home branch = Online, except the exempt two) have
-          // no exec hours — coaching hours only. Keyed on the coach's HOME
-          // branch, not this schedule's branch: when an online coach covers
-          // another branch they still hold the class online, so the rule
-          // follows them there.
-          const coachOnly = isOnlineCoachOnly(homeBranchMap[emp] ?? selectedRecord.branch, employeeIdMap[emp]);
-          staffStats[emp].coachHrs += coachingHoursForDay;
-          if (!coachOnly) {
-            staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
-          }
+        if (!workedThatDay) return;
+
+        if (inTrainingThatDay) {
+          // Training day: a flat TRAINING_DAY_HOURS day, shown as slot hours
+          // (coach) plus the remainder (exec) — the same split the manpower
+          // cost report shows, where the day is paid at the flat training rate.
+          const dayCoachHrs = coachingHoursForDay + trainingSlotHoursForDay;
+          staffStats[emp].coachHrs += dayCoachHrs;
+          staffStats[emp].execHrs += Math.max(0, TRAINING_DAY_HOURS - dayCoachHrs);
           staffStats[emp].total = staffStats[emp].coachHrs + staffStats[emp].execHrs;
+          return;
         }
+
+        // Online coaches (home branch = Online) have no exec hours —
+        // coaching hours only. Keyed on the coach's HOME branch, not this
+        // schedule's branch: when an online coach covers another branch they
+        // still hold the class online, so the rule follows them there.
+        // Day-aware for Pooja (physical-style on Saturdays only).
+        const coachOnly = isOnlineCoachOnly(homeBranchMap[emp] ?? selectedRecord.branch, employeeIdMap[emp], day);
+        staffStats[emp].coachHrs += coachingHoursForDay;
+        if (!coachOnly) {
+          staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
+        }
+        staffStats[emp].total = staffStats[emp].coachHrs + staffStats[emp].execHrs;
       });
     });
     

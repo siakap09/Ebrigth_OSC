@@ -8,7 +8,7 @@ import Sidebar from "@/app/components/Sidebar";
 
 // --- IMPORT SHARED CONSTANTS ---
 import {
-  SHARED_EMPLOYEES, ALL_BRANCHES, ALL_COLUMNS, getColumnsForDay,
+  SHARED_EMPLOYEES, ALL_BRANCHES, ALL_COLUMNS, getColumnsForDay, TRAINING_DAY_HOURS,
   getTimeSlotsForDay, isAdminSlot, getStaffColorByIndex,
   getWorkingDaysForBranch, isOpeningClosingSlot,
   isManagerOnDutySlot, isOnlineCoachOnly,
@@ -286,8 +286,21 @@ export default function UpdateSchedulePage() {
       if (!name || name === "None") {
         delete next[`${day}-${targetTime}-${colId}`];
       } else {
-        // Auto-fill ALL non-opening/closing slots in this column (same logic as Plan New Week)
+        // Training is a whole-day assignment: never write a trainee into a
+        // coach/exec/manager column for the same day, or someone already
+        // doing coach/exec/manager work into a training column. The dropdowns
+        // disable these options; this guards the write itself.
         const daySlots = getTimeSlotsForDay(day, selectedRecord.branch);
+        const targetIsTraining = colId.startsWith("training");
+        const dayConflict = daySlots.some((slot) =>
+          ALL_COLUMNS.some((c) => {
+            if (next[`${day}-${slot}-${c.id}`] !== name) return false;
+            if (c.id === colId) return false;
+            return targetIsTraining ? c.type !== "training" : c.type === "training";
+          }) || (targetIsTraining && next[`${day}-${slot}-MANAGER`] === name)
+        );
+        if (dayConflict) return prev;
+        // Auto-fill ALL non-opening/closing slots in this column (same logic as Plan New Week)
         daySlots.forEach((slot) => {
           if (!isOpeningClosingSlot(slot, selectedRecord.branch)) {
             if (colId === "MANAGER") {
@@ -354,31 +367,50 @@ export default function UpdateSchedulePage() {
 
       uniqueEmployeesToTrack.forEach((emp) => {
         let coachingHoursForDay = 0;
+        let trainingSlotHoursForDay = 0;
         let workedThatDay = false;
+        let inTrainingThatDay = false;
         getTimeSlotsForDay(day, branchForDay).forEach((slot: string) => {
           if (isOpeningClosingSlot(slot, branchForDay)) return;
           ALL_COLUMNS.forEach((col) => {
-            // Training columns are informational only — never count as worked hours.
-            if (col.type === "training") return;
-            if (dataToCalculate[`${day}-${slot}-${col.id}`] === emp) {
-              workedThatDay = true;
-              if (col.type === "coach") coachingHoursForDay += isAdminSlot(slot, branchForDay) ? 0.25 : 1.25;
+            if (dataToCalculate[`${day}-${slot}-${col.id}`] !== emp) return;
+            workedThatDay = true;
+            const slotDuration = isAdminSlot(slot, branchForDay) ? 0.25 : 1.25;
+            // A training assignment makes the whole day a flat training day
+            // (TRAINING_DAY_HOURS) — handled below.
+            if (col.type === "training") {
+              inTrainingThatDay = true;
+              trainingSlotHoursForDay += slotDuration;
+              return;
             }
+            if (col.type === "coach") coachingHoursForDay += slotDuration;
           });
         });
-        if (workedThatDay) {
-          // Online coaches (home branch = Online, except the exempt two) have
-          // no exec hours — coaching hours only. Keyed on the coach's HOME
-          // branch, not this schedule's branch: when an online coach covers
-          // another branch they still hold the class online, so the rule
-          // follows them there.
-          const coachOnly = isOnlineCoachOnly(homeBranchMap[emp] ?? branchForDay, employeeIdMap[emp]);
-          staffStats[emp].coachHrs += coachingHoursForDay;
-          if (!coachOnly) {
-            staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
-          }
+
+        if (!workedThatDay) return;
+
+        if (inTrainingThatDay) {
+          // Training day: a flat TRAINING_DAY_HOURS day, shown as slot hours
+          // (coach) plus the remainder (exec) — the same split the manpower
+          // cost report shows, where the day is paid at the flat training rate.
+          const dayCoachHrs = coachingHoursForDay + trainingSlotHoursForDay;
+          staffStats[emp].coachHrs += dayCoachHrs;
+          staffStats[emp].execHrs += Math.max(0, TRAINING_DAY_HOURS - dayCoachHrs);
           staffStats[emp].total = staffStats[emp].coachHrs + staffStats[emp].execHrs;
+          return;
         }
+
+        // Online coaches (home branch = Online) have no exec hours —
+        // coaching hours only. Keyed on the coach's HOME branch, not this
+        // schedule's branch: when an online coach covers another branch they
+        // still hold the class online, so the rule follows them there.
+        // Day-aware for Pooja (physical-style on Saturdays only).
+        const coachOnly = isOnlineCoachOnly(homeBranchMap[emp] ?? branchForDay, employeeIdMap[emp], day);
+        staffStats[emp].coachHrs += coachingHoursForDay;
+        if (!coachOnly) {
+          staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
+        }
+        staffStats[emp].total = staffStats[emp].coachHrs + staffStats[emp].execHrs;
       });
     });
     return Object.entries(staffStats).map(([name, stats]) => ({ name, ...stats }));
@@ -486,6 +518,21 @@ export default function UpdateSchedulePage() {
                 const day = selectedDay;
                 const slots = getTimeSlotsForDay(day, selectedRecord.branch);
                 const dayColumns = getColumnsForDay(day, selectedRecord.branch);
+                // A name in a training column is in training the WHOLE day, so
+                // block them from coach/exec/manager dropdowns today — and
+                // block anyone already doing coach/exec/manager work today
+                // from being picked as the trainee. (Based on the Actual side.)
+                const trainingNamesForDay = new Set<string>();
+                const workingNamesForDay = new Set<string>();
+                slots.forEach((s) => {
+                  ALL_COLUMNS.forEach((c) => {
+                    const v = updatedSelections[`${day}-${s}-${c.id}`];
+                    if (!v || v === "None") return;
+                    (c.type === "training" ? trainingNamesForDay : workingNamesForDay).add(v);
+                  });
+                  const mgr = updatedSelections[`${day}-${s}-MANAGER`];
+                  if (mgr && mgr !== "None") workingNamesForDay.add(mgr);
+                });
                 const currentStaff = [...SHARED_EMPLOYEES, ...(branchStaffData[selectedRecord.branch] || [])];
                 const currentStaffLower = new Set(currentStaff.map(n => n.toLowerCase()));
                 // Include replacement staff from other branches already saved in this record
@@ -678,9 +725,11 @@ export default function UpdateSchedulePage() {
                                                 ? Object.entries(scheduledElsewhere).find(([, dayMap]) => dayMap[day]?.has(e.toUpperCase()))?.[0]
                                                 : undefined;
                                               const isConflict = !!conflictBranch;
+                                              // A trainee is in training the whole day — can't be manager on duty.
+                                              const inTrainingToday = e !== actualManagerVal && trainingNamesForDay.has(e);
                                               return (
-                                                <option key={e} value={e} disabled={isConflict}>
-                                                  {isConflict ? `${e} (at ${conflictBranch})` : `${e}${isInTraining(trainingMap[e]?.start, trainingMap[e]?.end) ? ' 🎓' : ''}`}
+                                                <option key={e} value={e} disabled={isConflict || inTrainingToday}>
+                                                  {isConflict ? `${e} (at ${conflictBranch})` : inTrainingToday ? `${e} (in training today)` : `${e}${isInTraining(trainingMap[e]?.start, trainingMap[e]?.end) ? ' 🎓' : ''}`}
                                                 </option>
                                               );
                                             })}
@@ -727,9 +776,18 @@ export default function UpdateSchedulePage() {
                                                     ? Object.entries(scheduledElsewhere).find(([, dayMap]) => dayMap[day]?.has(e.toUpperCase()))?.[0]
                                                     : undefined;
                                                   const isConflict = !!conflictBranch;
+                                                  // Training is a whole-day assignment: a trainee can't take
+                                                  // coach/exec work today, and someone already working today
+                                                  // can't be the trainee. (Their own current cell stays
+                                                  // enabled so the selection can be changed/cleared.)
+                                                  const inTrainingToday = col.type !== "training" && e !== val && trainingNamesForDay.has(e);
+                                                  const workingToday = col.type === "training" && e !== val && workingNamesForDay.has(e);
                                                   return (
-                                                    <option key={e} value={e} disabled={namesUsedInOtherColumns.has(e) || isConflict} className="text-black">
-                                                      {isConflict ? `${e} (at ${conflictBranch})` : `${e}${isInTraining(trainingMap[e]?.start, trainingMap[e]?.end) ? ' 🎓' : ''}`}
+                                                    <option key={e} value={e} disabled={namesUsedInOtherColumns.has(e) || isConflict || inTrainingToday || workingToday} className="text-black">
+                                                      {isConflict ? `${e} (at ${conflictBranch})`
+                                                        : inTrainingToday ? `${e} (in training today)`
+                                                        : workingToday ? `${e} (working today)`
+                                                        : `${e}${isInTraining(trainingMap[e]?.start, trainingMap[e]?.end) ? ' 🎓' : ''}`}
                                                     </option>
                                                   );
                                                 })}

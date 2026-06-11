@@ -22,26 +22,32 @@ export const WEEKDAY_DAYS = ["Wednesday", "Thursday", "Friday"] as const;
 // a class for another branch they still hold it online, so their replacement
 // days are also coach-hours-only.
 //
-// Two people are exempt and keep the standard coach+exec calculation:
-//   77000093 — Pooja (PT): works from the office, so she's treated like a
-//              physical coach — counts and is paid both coach and exec hours.
-//   66020086 — Amin (FT): counts both coach and exec hours, but as FT he
-//              draws a salary, so no hourly pay either way.
-export const ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS = new Set(["77000093", "66020086"]);
+// Two people get special treatment:
+//   77000093 — Pooja (PT): comes to the office on SATURDAYS, so Saturday is
+//              calculated like a physical coach (coach + exec, both paid).
+//              Any other day she coaches online — coach hours only, like the
+//              rest of the online team.
+//   66020086 — Amin (FT): counts both coach and exec hours every day, but as
+//              FT he draws a salary, so no hourly pay either way.
+export const POOJA_EMPLOYEE_ID = "77000093";
+export const AMIN_EMPLOYEE_ID = "66020086";
 
 /**
- * True when this staff member is an online coach paid on coaching hours only
- * (no exec hours) — i.e. their HOME branch is Online and they are not one of
- * the exempt employee IDs above. Pass the coach's home branch (full name
- * "Online"), not the schedule's branch, so replacement days at other branches
- * stay coach-only.
+ * True when this staff member's hours on `day` are coach-hours-only (no exec
+ * hours) — i.e. their HOME branch is Online and the special cases above don't
+ * apply. Pass the coach's home branch (full name "Online"), not the
+ * schedule's branch, so replacement days at other branches stay coach-only.
  */
 export function isOnlineCoachOnly(
   branch: string | null | undefined,
   employeeId: string | null | undefined,
+  day: string,
 ): boolean {
   if ((branch ?? "").trim().toLowerCase() !== "online") return false;
-  return !ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS.has((employeeId ?? "").trim());
+  const id = (employeeId ?? "").trim();
+  if (id === AMIN_EMPLOYEE_ID) return false;
+  if (id === POOJA_EMPLOYEE_ID) return day !== "Saturday";
+  return true;
 }
 
 export const BRANCH_WORKING_DAYS: Record<string, string[]> = {
@@ -114,21 +120,29 @@ export function getStaffColorByIndex(name: string, staffList: string[]): string 
 // --- TABLE CONFIGURATION ---
 export type ColumnDef = { id: string; label: string; type: "coach" | "exec" | "training" };
 
-// Training columns sit after the exec columns and before Notes/Remarks. They
-// record who is shadowing/being trained in a slot. In the schedule summary
-// tables they never count as worked hours; in the manpower cost report a
-// training assignment marks the whole day as a flat 10.5h training day paid
-// at the training rate (see app/api/manpower-cost/route.ts).
-function makeColumns(coachCount: number, execCount: number): ColumnDef[] {
+// A training assignment on any slot makes the person's whole day a flat
+// training day of this many hours, regardless of weekday/weekend. The hours
+// display as slot time (coach) plus the remainder (exec); the manpower cost
+// report pays the full day at the flat training rate.
+export const TRAINING_DAY_HOURS = 10.5;
+
+// The training column sits after the exec columns and before Notes/Remarks.
+// It records who is shadowing/being trained in a slot (max one trainee per
+// branch, hence a single column). A trainee's day is a flat
+// TRAINING_DAY_HOURS day — see above and app/api/manpower-cost/route.ts.
+function makeColumns(coachCount: number, execCount: number, trainingCount = 1): ColumnDef[] {
   return [
     ...Array.from({ length: coachCount }, (_, i) => ({ id: `coach${i + 1}`, label: `Coach ${i + 1}`, type: "coach" as const })),
     ...Array.from({ length: execCount }, (_, i) => ({ id: `exec${i + 1}`, label: `Exec ${i + 1}`, type: "exec" as const })),
-    { id: "training1", label: "Training 1", type: "training" as const },
-    { id: "training2", label: "Training 2", type: "training" as const },
+    ...Array.from({ length: trainingCount }, (_, i) => ({
+      id: `training${i + 1}`,
+      label: trainingCount === 1 ? "Training" : `Training ${i + 1}`,
+      type: "training" as const,
+    })),
   ];
 }
 
-// The standard grid every branch renders: 5 coach + 5 exec + 2 training.
+// The standard grid every branch renders: 5 coach + 5 exec + 1 training.
 export const COLUMNS = makeColumns(5, 5);
 
 // Online needs more class capacity on some days (and fewer exec slots), so its
@@ -146,12 +160,13 @@ export function getColumnsForDay(day: string, branchName: string): ColumnDef[] {
   return makeColumns(ONLINE_COACH_COLUMNS_BY_DAY[day] ?? 5, ONLINE_EXEC_COLUMN_COUNT);
 }
 
-// Superset of every column id any branch/day can produce. Hour/class
-// CALCULATIONS iterate this (absent keys are simply skipped) so totals stay
-// correct across branches with different grids — and so data saved under a
-// column that later got removed from a grid still counts rather than silently
-// vanishing. RENDERING uses getColumnsForDay instead.
-export const ALL_COLUMNS = makeColumns(MAX_COACH_COLUMNS, 5);
+// Superset of every column id any branch/day can produce — including ids the
+// grids no longer render (training2 from the old two-column training setup).
+// Hour/class CALCULATIONS iterate this (absent keys are simply skipped) so
+// totals stay correct across branches with different grids — and so data
+// saved under a column that later got removed from a grid still counts
+// rather than silently vanishing. RENDERING uses getColumnsForDay instead.
+export const ALL_COLUMNS = makeColumns(MAX_COACH_COLUMNS, 5, 2);
 
 const DEFAULT_WEEKDAY_TIME_SLOTS = ["06.00PM - 07.15PM", "07:15PM - 08:30PM", "08.30PM - 09:45PM"] as const;
 const DEFAULT_WEEKEND_TIME_SLOTS = ["09:15 AM – 10:30 AM", "10:30 AM – 11:45 AM", "12:00 PM – 1:15 PM", "1:15 PM – 2:30 PM", "2:45 PM – 4:00 PM", "4:00 PM – 5:15 PM", "5:30 PM – 6:45 PM"] as const;

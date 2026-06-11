@@ -8,7 +8,9 @@ import {
   isOpeningClosingSlot,
   isAdminSlot,
   ALL_COLUMNS,
-  ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS,
+  TRAINING_DAY_HOURS,
+  POOJA_EMPLOYEE_ID,
+  AMIN_EMPLOYEE_ID,
 } from "@/lib/manpowerUtils";
 import { isEmployee, isBranchManager, isAcademy } from "@/lib/roles";
 import { normalizeLocation } from "@/lib/constants";
@@ -25,7 +27,6 @@ const BM_EXEC_RATE = 13;
 // appear in are shown as coach hours and the remainder as exec hours, but the
 // split is display-only — pay is always the flat day rate.
 const TRAINING_RATE = 8;
-const TRAINING_DAY_HOURS = 10.5;
 
 // One-off "stand-in manager" overrides.
 //
@@ -354,18 +355,21 @@ function isPartTimeStaff(staff: StaffRecord): boolean {
 }
 
 /**
- * True when this staff member should be treated as an online coach who is paid
- * on coaching hours only (no exec hours / no exec pay). `branch` must be the
- * coach's HOME branch (the aggregated bucket's branch), not the schedule's:
- * when an online coach covers a class for another branch they still hold it
- * online, so their replacement days are also coach-hours-only. See
- * ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS for the two people (Pooja, Amin) who keep
- * the standard coach+exec calculation.
+ * True when this staff member's hours on `day` should be treated as
+ * online-coach hours, paid on coaching hours only (no exec hours / no exec
+ * pay). `branch` must be the coach's HOME branch (the aggregated bucket's
+ * branch), not the schedule's: when an online coach covers a class for
+ * another branch they still hold it online, so their replacement days are
+ * also coach-hours-only. Day-aware special cases: Amin (FT) always keeps the
+ * standard coach+exec calculation; Pooja keeps it on Saturdays only, when she
+ * works from the office — any other day she's a regular online coach.
  */
-function isOnlineCoachOnly(staff: StaffRecord | null, branch: string): boolean {
+function isOnlineCoachOnly(staff: StaffRecord | null, branch: string, day: string): boolean {
   if (norm(normalizeLocation(branch)) !== "online") return false;
   const empId = (staff?.employeeId ?? "").trim();
-  return !ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS.has(empId);
+  if (empId === AMIN_EMPLOYEE_ID) return false;
+  if (empId === POOJA_EMPLOYEE_ID) return day !== "Saturday";
+  return true;
 }
 
 function shouldExcludeStaff(staff: StaffRecord): boolean {
@@ -673,22 +677,23 @@ export async function GET(request: Request) {
                      roleStr.includes("PART-TIME") || roleStr.includes("PART TIME");
             })();
 
-        // Online-branch coaches (except the exempt two) have no exec hours —
-        // drop their exec time entirely so they're paid on coaching hours only.
-        // Training hours are independent of this and always kept.
-        const coachOnly = isOnlineCoachOnly(staff ?? null, emp.branch);
-        const execHrs = coachOnly ? 0 : emp.execHrs;
-        const managerExecHrs = coachOnly ? 0 : emp.managerExecHrs;
+        // Online coaches have no exec hours on their online days — drop that
+        // exec time so those days are paid on coaching hours only. Checked per
+        // day because Pooja is physical-style on Saturdays only. Training days
+        // pass through untouched: their coach/exec values are a display split
+        // of the flat 10.5h training day, not real exec time. Training hours
+        // are independent of this and always kept.
+        const days = emp.days.map((d) => {
+          if ((d.trainingHrs || 0) > 0) return d;
+          if (!isOnlineCoachOnly(staff ?? null, emp.branch, d.day)) return d;
+          return { ...d, execHrs: 0, managerExecHrs: 0, totalHrs: d.coachHrs };
+        });
+        // Re-derive the exec totals from the (possibly day-zeroed) days,
+        // skipping training days whose exec value is display-only.
+        const execHrs = days.reduce((s, d) => s + ((d.trainingHrs || 0) > 0 ? 0 : d.execHrs), 0);
+        const managerExecHrs = days.reduce((s, d) => s + ((d.trainingHrs || 0) > 0 ? 0 : (d.managerExecHrs || 0)), 0);
         const trainingHrs = emp.trainingHrs;
         const totalHrs = emp.coachHrs + execHrs + trainingHrs;
-        // Training days pass through untouched: their coach/exec values are a
-        // display split of the flat 10.5h training day, not real exec time.
-        const days = coachOnly
-          ? emp.days.map((d) =>
-              (d.trainingHrs || 0) > 0
-                ? d
-                : { ...d, execHrs: 0, managerExecHrs: 0, totalHrs: d.coachHrs })
-          : emp.days;
 
         const hasRate = emp.rate !== null && emp.rate > 0;
         const coachPay = isPT && hasRate ? emp.coachHrs * (emp.rate || 0) : 0;
