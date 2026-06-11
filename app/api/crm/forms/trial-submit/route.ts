@@ -104,13 +104,57 @@ export async function POST(req: NextRequest) {
     }
     const newLeadStage = pipeline.stages[0]
 
-    // Optional: lookup "Website" lead source, create if missing
+    // Leads submitted through the CRM trial form are tagged with the
+    // "CRM Form" lead source so they're distinguishable in the Opportunities
+    // board / lead-source filter (created on first use if missing).
     let leadSource = await prisma.crm_lead_source.findFirst({
-      where: { tenantId: tenant.id, name: 'Website' },
+      where: { tenantId: tenant.id, name: 'CRM Form' },
     })
     if (!leadSource) {
       leadSource = await prisma.crm_lead_source.create({
-        data: { tenantId: tenant.id, name: 'Website' },
+        data: { tenantId: tenant.id, name: 'CRM Form' },
+      })
+    }
+
+    // ── Duplicate guard ──────────────────────────────────────────────────────
+    // Re-submitting the same family must not create duplicate cards. A child is
+    // a duplicate when a contact for the same parent (matched by email OR phone)
+    // with the same child name already exists in this branch. We also dedupe
+    // within the submission itself (two identical children in one form).
+    const norm = (s: string) => s.trim().toLowerCase()
+    const phoneDigits = parsed.data.parentPhone.replace(/\D/g, '')
+    const phoneSuffix = phoneDigits.length >= 7 ? phoneDigits.slice(-8) : ''
+    const existing = await prisma.crm_contact.findMany({
+      where: {
+        tenantId: tenant.id,
+        branchId,
+        deletedAt: null,
+        OR: [
+          { email: { equals: parsed.data.parentEmail, mode: 'insensitive' } },
+          ...(phoneSuffix ? [{ phone: { contains: phoneSuffix } }] : []),
+        ],
+      },
+      select: { firstName: true, lastName: true },
+    })
+    const seenChildren = new Set(existing.map((c) => norm(`${c.firstName} ${c.lastName ?? ''}`)))
+
+    const childrenToCreate: typeof parsed.data.children = []
+    const duplicates: string[] = []
+    for (const child of parsed.data.children) {
+      const key = norm(child.name)
+      if (seenChildren.has(key)) { duplicates.push(child.name); continue }
+      seenChildren.add(key)
+      childrenToCreate.push(child)
+    }
+
+    if (childrenToCreate.length === 0) {
+      return NextResponse.json({
+        success: true,
+        createdCount: 0,
+        duplicateCount: duplicates.length,
+        duplicates,
+        contactIds: [],
+        message: 'Already registered for this branch — no duplicate lead was created.',
       })
     }
 
@@ -123,8 +167,8 @@ export async function POST(req: NextRequest) {
 
     const contacts = await prisma.$transaction(async (tx) => {
       const created = []
-      for (let i = 0; i < parsed.data.children.length; i++) {
-        const child = parsed.data.children[i]
+      for (let i = 0; i < childrenToCreate.length; i++) {
+        const child = childrenToCreate[i]
         const { firstName, lastName } = splitName(child.name)
 
         const c = await tx.crm_contact.create({
@@ -180,6 +224,8 @@ export async function POST(req: NextRequest) {
       meta: {
         source:           'trial-form',
         numChildren:      parsed.data.numChildren,
+        createdCount:     contacts.length,
+        duplicateCount:   duplicates.length,
         preferredBranch:  parsed.data.preferredBranch,
         submissionId,
         contactIds:       contacts.map((c) => c.id),
@@ -187,9 +233,15 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({
-      success:    true,
-      contactId:  contacts[0].id,
-      contactIds: contacts.map((c) => c.id),
+      success:        true,
+      createdCount:   contacts.length,
+      duplicateCount: duplicates.length,
+      duplicates,
+      contactId:      contacts[0].id,
+      contactIds:     contacts.map((c) => c.id),
+      message:        duplicates.length
+        ? `${contacts.length} new lead(s) created; ${duplicates.length} already existed.`
+        : undefined,
     })
   } catch (e) {
     console.error('[POST /api/crm/forms/trial-submit]', e)

@@ -146,7 +146,15 @@ export default function FormsPage() {
         }),
       })
       if (!res.ok) throw new Error(await res.text().catch(() => 'Failed'))
-      toast.success('Registration submitted')
+      const data = await res.json().catch(() => ({} as Record<string, unknown>))
+      // Tailor the toast to the duplicate-guard result.
+      if (data?.createdCount === 0 && data?.duplicateCount) {
+        toast.info('Already registered for this branch — no duplicate lead was created.')
+      } else if (data?.duplicateCount) {
+        toast.success(`Registration submitted — ${data.createdCount} new, ${data.duplicateCount} already existed.`)
+      } else {
+        toast.success('Registration submitted')
+      }
       setStep(5)
     } catch (e) {
       toast.error((e as Error).message || 'Failed to submit')
