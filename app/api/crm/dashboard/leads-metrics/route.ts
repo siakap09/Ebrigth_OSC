@@ -69,19 +69,30 @@ export async function GET(req: NextRequest) {
     const access = session?.user?.id ? await resolveBranchAccess(session.user.id) : null
     const isElevatedUser = access?.elevated ?? true   // API key callers treated as elevated
 
-    // Admin "view as branch": when an elevated user picks a specific branch
-    // in the topbar dropdown, the UI sends `?branchId=<id>` and we treat the
-    // request the same as if a branch manager for that branch were calling.
-    // This lets super admins inspect a branch without logging out.
+    // "View as branch": the topbar dropdown sends `?branchId=<id>` to narrow
+    // the dashboard to a single branch. Honored for BOTH:
+    //  - elevated admins (super/agency) → can inspect ANY branch, and
+    //  - non-elevated users linked to MORE THAN ONE branch (multi-branch BM /
+    //    regional manager) → can narrow to one of their own branches.
+    // A non-elevated user requesting a branch outside their grant is ignored
+    // (viewAsBranch stays null → falls back to all their accessible branches).
+    // Without this, a multi-branch BM's selection was silently dropped and the
+    // block showed the COMBINED total of all their branches mislabeled with
+    // branches[0].name.
     const requestedBranchId = req.nextUrl.searchParams.get('branchId')
-    const viewAsBranch = isElevatedUser && requestedBranchId ? requestedBranchId : null
+    const accessibleBranchIds = access?.branchIds ?? []
+    const viewAsBranch = requestedBranchId
+      ? (isElevatedUser || accessibleBranchIds.includes(requestedBranchId))
+        ? requestedBranchId
+        : null
+      : null
 
     const elevated = isElevatedUser && !viewAsBranch
     const allowedBranchIds = elevated
       ? null
       : viewAsBranch
         ? [viewAsBranch]
-        : (access?.branchIds ?? [])
+        : accessibleBranchIds
 
     const range = parseDateRange(req.nextUrl.searchParams)
     // Clamp the lower bound to the global display floor so this endpoint
@@ -423,14 +434,29 @@ export async function GET(req: NextRequest) {
       isSuperAdmin: access?.isSuperAdmin ?? false,
       byMonth,
       // Surface what branch the response is scoped to so the UI can label
-      // the "Your branch" block ("Viewing as Rimbayu" etc.).
-      scopedBranchName: elevated ? null : (branches[0]?.name ?? null),
+      // the "Your branch" block ("Viewing as Rimbayu" etc.). Only label with
+      // a single branch name when EXACTLY one branch is in scope — i.e. a
+      // single-branch user, or a multi-branch user who picked one in the
+      // topbar. When a multi-branch user is viewing all their branches the
+      // `main` block is a COMBINED total, so labelling it with branches[0]
+      // (e.g. "Shah Alam" while the numbers also include Bandar Seri Putra)
+      // is wrong — fall through to a neutral "all branches" label instead.
+      scopedBranchName: elevated
+        ? null
+        : branches.length === 1
+          ? branches[0].name
+          : `All ${branches.length} branches`,
       // Also surface the ID so non-elevated callers can fetch dependent
       // widgets (like the trial-schedule grid) without needing the topbar
       // branch-switcher to have an explicit selection. BMs whose access
       // covers a single branch don't get a switcher, so without this they
-      // can't drive a per-branch widget at all.
-      scopedBranchId: elevated ? null : (branches[0]?.id ?? null),
+      // can't drive a per-branch widget at all. Null when more than one
+      // branch is in scope — there's no single branch to drive the widget.
+      scopedBranchId: elevated
+        ? null
+        : branches.length === 1
+          ? branches[0].id
+          : null,
     })
   } catch (e) {
     console.error('[GET leads-metrics]', e)
