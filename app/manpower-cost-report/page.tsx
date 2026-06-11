@@ -44,15 +44,18 @@ interface StaffEntry {
   employmentType: string | null;
   position: string | null;
   isPT: boolean;
+  isTraining?: boolean;
   coachHrs: number;
   execHrs: number;
   managerExecHrs?: number;
+  trainingHrs?: number;
   totalHrs: number;
   classCount: number;
   coachPay: number;
   execPay: number;
+  trainingPay?: number;
   totalPay: number;
-  days: { date: string; day: string; coachHrs: number; execHrs: number; managerExecHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }[];
+  days: { date: string; day: string; coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }[];
 }
 
 interface Totals {
@@ -65,9 +68,12 @@ interface Totals {
   totalClasses: number;
   totalCoachPay: number;
   totalExecPay: number;
+  totalTrainingHrs?: number;
+  totalTrainingPay?: number;
   totalPay: number;
   executiveRate: number;
   bmExecRate?: number;
+  trainingRate?: number;
 }
 
 interface WeekRange {
@@ -124,6 +130,7 @@ function DailyBreakdownModal({
   weekEnd,
   execRate,
   bmRate,
+  trainingRate,
   onClose,
   onDownloadPdf,
 }: {
@@ -134,6 +141,7 @@ function DailyBreakdownModal({
   weekEnd: string;
   execRate: number;
   bmRate: number;
+  trainingRate: number;
   onClose: () => void;
   onDownloadPdf: () => void;
 }) {
@@ -157,8 +165,10 @@ function DailyBreakdownModal({
   const allDaysInMonth = weekFilter
     ? allDaysRaw.filter((d) => d.date >= weekStart && d.date <= weekEnd)
     : allDaysRaw;
-  const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
+  const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
   s.days.forEach((d) => { workedMap[d.date] = d; });
+
+  const showPay = s.isPT || s.isTraining;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
@@ -204,7 +214,7 @@ function DailyBreakdownModal({
                 <th className="px-4 py-2 text-pink-400 text-center bg-slate-50">Class</th>
                 <th className="px-4 py-2 text-indigo-400 text-center bg-slate-50">Exec Hr</th>
                 <th className="px-4 py-2 text-blue-400 text-center bg-slate-50">Total Hr</th>
-                {s.isPT && <th className="px-4 py-2 text-green-500 text-right bg-slate-50">Pay (RM)</th>}
+                {showPay && <th className="px-4 py-2 text-green-500 text-right bg-slate-50">Pay (RM)</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -214,7 +224,19 @@ function DailyBreakdownModal({
                 const worked = !!entry;
                 const mgrHrs = worked ? (entry.managerExecHrs || 0) : 0;
                 const isManagerDay = mgrHrs > 0;
-                const dayPay = worked && s.isPT ? ((entry.coachHrs * (s.rate || 0)) + ((entry.execHrs - mgrHrs) * execRate) + (mgrHrs * bmRate)) : 0;
+                const trnHrs = worked ? (entry.trainingHrs || 0) : 0;
+                const isTrainingDay = trnHrs > 0;
+                // Training days are paid purely at the flat training rate (the
+                // coach/exec values on those rows are a display-only split of
+                // the 10.5h training day); other days at coach rate + exec/BM
+                // rate.
+                const dayPay = !worked
+                  ? 0
+                  : isTrainingDay
+                    ? trnHrs * trainingRate
+                    : s.isPT
+                      ? (entry.coachHrs * (s.rate || 0)) + ((entry.execHrs - mgrHrs) * execRate) + (mgrHrs * bmRate)
+                      : 0;
                 const isReplacement = worked && entry.scheduleBranch;
 
                 return (
@@ -237,6 +259,9 @@ function DailyBreakdownModal({
                       {isManagerDay && (
                         <span className="ml-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded" title={`Manager on Duty — exec hours paid at RM${bmRate}/hr`}>BM</span>
                       )}
+                      {isTrainingDay && (
+                        <span className="ml-1 text-[9px] font-bold text-yellow-800 bg-yellow-100 px-1.5 py-0.5 rounded" title={`Training day — paid at RM${trainingRate}/hr for ${fmtHrs(trnHrs)}`}>TRAINING</span>
+                      )}
                     </td>
                     <td className="px-4 py-1.5 text-center text-xs font-bold">
                       <span className={worked ? "text-orange-600" : "text-slate-300"}>{worked ? fmtHrs(entry.coachHrs) : "-"}</span>
@@ -250,7 +275,7 @@ function DailyBreakdownModal({
                     <td className="px-4 py-1.5 text-center text-xs font-black">
                       <span className={worked ? "text-blue-600" : "text-slate-300"}>{worked ? fmtHrs(entry.totalHrs) : "-"}</span>
                     </td>
-                    {s.isPT && (
+                    {showPay && (
                       <td className="px-4 py-1.5 text-right text-xs font-black">
                         <span className={worked ? "text-green-600" : "text-slate-300"}>{worked ? `RM ${dayPay.toFixed(2)}` : "-"}</span>
                       </td>
@@ -266,7 +291,7 @@ function DailyBreakdownModal({
                 <td className="px-4 py-3 text-center text-xs font-black text-pink-300">{s.classCount ?? 0}</td>
                 <td className="px-4 py-3 text-center text-xs font-black text-indigo-300">{fmtHrs(s.execHrs)}</td>
                 <td className="px-4 py-3 text-center text-xs font-black text-blue-300">{fmtHrs(s.totalHrs)}</td>
-                {s.isPT && <td className="px-4 py-3 text-right text-sm font-black text-green-400">RM {s.totalPay.toFixed(2)}</td>}
+                {showPay && <td className="px-4 py-3 text-right text-sm font-black text-green-400">RM {s.totalPay.toFixed(2)}</td>}
               </tr>
             </tfoot>
           </table>
@@ -414,6 +439,7 @@ export default function ManpowerCostReportPage() {
       const sPT = s.isPT;
       const eRate = data?.totals.executiveRate || 11;
       const bmRate = data?.totals.bmExecRate || eRate;
+      const trRate = data?.totals.trainingRate || 8;
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
@@ -450,17 +476,22 @@ export default function ManpowerCostReportPage() {
         const cls = worked ? (e.classCount ?? 0) : 0;
         if (sPT) {
           const mgrHrs = worked ? (e.managerExecHrs || 0) : 0;
-          const cp = worked ? e.coachHrs * (s.rate || 0) : 0;
-          const ep = worked ? (e.execHrs - mgrHrs) * eRate + mgrHrs * bmRate : 0;
-          const execRateLabel = mgrHrs > 0 ? `RM${bmRate}/${eRate}` : `RM${eRate}`;
+          const trn = worked ? (e.trainingHrs || 0) : 0;
+          // Training days: coach/exec values are a display split of the flat
+          // training day — the day is paid purely at the training rate.
+          const isTrn = trn > 0;
+          const cp = worked && !isTrn ? e.coachHrs * (s.rate || 0) : 0;
+          const ep = worked && !isTrn ? (e.execHrs - mgrHrs) * eRate + mgrHrs * bmRate : 0;
+          const dayPay = isTrn ? trn * trRate : cp + ep;
+          const execRateLabel = isTrn ? `RM${trRate}` : mgrHrs > 0 ? `RM${bmRate}/${eRate}` : `RM${eRate}`;
           return [
-            String(row.dayNum), row.day.slice(0,3), row.date + (mgrHrs > 0 ? " (BM)" : ""),
+            String(row.dayNum), row.day.slice(0,3), row.date + (mgrHrs > 0 ? " (BM)" : "") + (isTrn ? " (TRAINING)" : ""),
             worked ? fmtHrs(e.coachHrs) : "-",
             worked && cls > 0 ? String(cls) : "-",
-            worked && e.coachHrs > 0 ? `RM${s.rate}` : "-", worked && cp > 0 ? `RM ${cp.toFixed(2)}` : "-",
+            worked && e.coachHrs > 0 ? (isTrn ? `RM${trRate}` : `RM${s.rate}`) : "-", worked && cp > 0 ? `RM ${cp.toFixed(2)}` : "-",
             worked ? fmtHrs(e.execHrs) : "-", worked && e.execHrs > 0 ? execRateLabel : "-", worked && ep > 0 ? `RM ${ep.toFixed(2)}` : "-",
             worked ? fmtHrs(e.totalHrs) : "-",
-            worked ? `RM ${(cp + ep).toFixed(2)}` : "-",
+            worked ? `RM ${dayPay.toFixed(2)}` : "-",
           ];
         }
         return [
@@ -602,16 +633,23 @@ export default function ManpowerCostReportPage() {
       // Filter days to only those within the selected week
       const weekDays = s.days.filter((d) => d.date >= weekStart && d.date <= weekEnd);
       if (weekDays.length === 0) return null;
-      const coachHrs = weekDays.reduce((sum, d) => sum + d.coachHrs, 0);
-      const execHrs = weekDays.reduce((sum, d) => sum + d.execHrs, 0);
+      // Training-day coach/exec values are a display-only split of the flat
+      // training day — exclude them here so they aren't paid at coach/exec
+      // rates on top of the training rate.
+      const payDays = weekDays.filter((d) => !((d.trainingHrs || 0) > 0));
+      const coachHrs = payDays.reduce((sum, d) => sum + d.coachHrs, 0);
+      const execHrs = payDays.reduce((sum, d) => sum + d.execHrs, 0);
       const managerExecHrs = weekDays.reduce((sum, d) => sum + (d.managerExecHrs || 0), 0);
+      const trainingHrs = weekDays.reduce((sum, d) => sum + (d.trainingHrs || 0), 0);
       const classCount = weekDays.reduce((sum, d) => sum + (d.classCount || 0), 0);
-      const totalHrs = coachHrs + execHrs;
+      const totalHrs = coachHrs + execHrs + trainingHrs;
       const execRate = data?.totals.executiveRate || 11;
       const bmRate = data?.totals.bmExecRate || execRate;
+      const trainingRate = data?.totals.trainingRate || 8;
       const coachPay = s.isPT && s.rate ? coachHrs * s.rate : 0;
       const execPay = s.isPT ? (execHrs - managerExecHrs) * execRate + managerExecHrs * bmRate : 0;
-      return { ...s, days: weekDays, coachHrs, execHrs, managerExecHrs, totalHrs, classCount, coachPay, execPay, totalPay: coachPay + execPay };
+      const trainingPay = trainingHrs * trainingRate;
+      return { ...s, days: weekDays, coachHrs, execHrs, managerExecHrs, trainingHrs, totalHrs, classCount, coachPay, execPay, trainingPay, isTraining: trainingHrs > 0, totalPay: coachPay + execPay + trainingPay };
     })
     .filter((s): s is StaffEntry => {
       if (!s) return false;
@@ -648,7 +686,10 @@ export default function ManpowerCostReportPage() {
     totalClasses: filteredStaff.reduce((s, r) => s + (r.classCount || 0), 0),
     totalCoachPay: filteredStaff.filter((s) => s.isPT).reduce((s, r) => s + r.coachPay, 0),
     totalExecPay: filteredStaff.filter((s) => s.isPT).reduce((s, r) => s + r.execPay, 0),
-    totalPay: filteredStaff.filter((s) => s.isPT).reduce((s, r) => s + r.totalPay, 0),
+    totalTrainingHrs: filteredStaff.reduce((s, r) => s + (r.trainingHrs || 0), 0),
+    totalTrainingPay: filteredStaff.reduce((s, r) => s + (r.trainingPay || 0), 0),
+    // PT pay already includes any PT training pay; add FT trainees' training pay.
+    totalPay: filteredStaff.reduce((s, r) => s + (r.isPT ? r.totalPay : (r.trainingPay || 0)), 0),
   };
 
   // Team-tab roster, filtered by the name search and the PT/FT (All Staff) toggle.
@@ -861,6 +902,7 @@ export default function ManpowerCostReportPage() {
 
               const execRate = data.totals.executiveRate || 11;
               const bmRate = data.totals.bmExecRate || execRate;
+              const trainingRate = data.totals.trainingRate || 8;
               const [yr, mn] = selectedMonth.split("-").map(Number);
               const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
               const numDays = new Date(yr, mn, 0).getDate();
@@ -874,7 +916,7 @@ export default function ManpowerCostReportPage() {
               const displayDays = weekFilter
                 ? allDaysRaw.filter((d) => d.date >= weekStart && d.date <= weekEnd)
                 : allDaysRaw;
-              const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
+              const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
               s.days.forEach((d) => { workedMap[d.date] = d; });
 
               return (
@@ -1014,9 +1056,14 @@ export default function ManpowerCostReportPage() {
                             const worked = !!entry;
                             const mgrHrs = worked ? (entry.managerExecHrs || 0) : 0;
                             const isManagerDay = mgrHrs > 0;
-                            const coachPayDay = worked ? entry.coachHrs * (s.rate || 0) : 0;
-                            const execPayDay = worked ? (entry.execHrs - mgrHrs) * execRate + mgrHrs * bmRate : 0;
-                            const dayPay = coachPayDay + execPayDay;
+                            const trnHrs = worked ? (entry.trainingHrs || 0) : 0;
+                            // Training days: the coach/exec values are a display
+                            // split of the flat training day — pay is purely
+                            // trnHrs × trainingRate, never coach/exec rates.
+                            const isTrainingDay = trnHrs > 0;
+                            const coachPayDay = worked && !isTrainingDay ? entry.coachHrs * (s.rate || 0) : 0;
+                            const execPayDay = worked && !isTrainingDay ? (entry.execHrs - mgrHrs) * execRate + mgrHrs * bmRate : 0;
+                            const dayPay = isTrainingDay ? trnHrs * trainingRate : coachPayDay + execPayDay;
 
                             const isReplacement = worked && entry.scheduleBranch;
 
@@ -1040,6 +1087,9 @@ export default function ManpowerCostReportPage() {
                                   {isManagerDay && (
                                     <span className="ml-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded" title={`Manager on Duty — exec hours paid at RM${bmRate}/hr`}>BM</span>
                                   )}
+                                  {isTrainingDay && (
+                                    <span className="ml-1 text-[9px] font-bold text-yellow-800 bg-yellow-100 px-1.5 py-0.5 rounded" title={`Training day — paid at RM${trainingRate}/hr for ${fmtHrs(trnHrs)}`}>TRAINING</span>
+                                  )}
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
                                   <span className={worked ? "text-orange-600" : "text-slate-300"}>{worked ? fmtHrs(entry.coachHrs) : "-"}</span>
@@ -1048,7 +1098,7 @@ export default function ManpowerCostReportPage() {
                                   <span className={worked && (entry.classCount ?? 0) > 0 ? "text-pink-600" : "text-slate-300"}>{worked && (entry.classCount ?? 0) > 0 ? entry.classCount : "-"}</span>
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs text-slate-400">
-                                  {worked && entry.coachHrs > 0 ? `RM${s.rate}` : "-"}
+                                  {worked && entry.coachHrs > 0 ? (isTrainingDay ? `RM${trainingRate}` : `RM${s.rate}`) : "-"}
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
                                   <span className={worked && coachPayDay > 0 ? "text-orange-700" : "text-slate-300"}>{worked && coachPayDay > 0 ? `RM ${coachPayDay.toFixed(2)}` : "-"}</span>
@@ -1057,7 +1107,7 @@ export default function ManpowerCostReportPage() {
                                   <span className={worked ? "text-indigo-600" : "text-slate-300"}>{worked ? fmtHrs(entry.execHrs) : "-"}</span>
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs text-slate-400">
-                                  {worked && entry.execHrs > 0 ? (isManagerDay ? `RM${bmRate}/${execRate}` : `RM${execRate}`) : "-"}
+                                  {worked && entry.execHrs > 0 ? (isTrainingDay ? `RM${trainingRate}` : isManagerDay ? `RM${bmRate}/${execRate}` : `RM${execRate}`) : "-"}
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
                                   <span className={worked && execPayDay > 0 ? "text-indigo-700" : "text-slate-300"}>{worked && execPayDay > 0 ? `RM ${execPayDay.toFixed(2)}` : "-"}</span>
@@ -1085,6 +1135,9 @@ export default function ManpowerCostReportPage() {
                                   {row.date}
                                   {isReplacement && (
                                     <span className="ml-1 text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">@ {entry.scheduleBranch}</span>
+                                  )}
+                                  {isTrainingDay && (
+                                    <span className="ml-1 text-[9px] font-bold text-yellow-800 bg-yellow-100 px-1.5 py-0.5 rounded" title={`Training day — paid at RM${trainingRate}/hr for ${fmtHrs(trnHrs)}`}>TRAINING</span>
                                   )}
                                 </td>
                                 <td className="px-4 py-2 text-center text-xs font-bold">
@@ -1233,7 +1286,17 @@ export default function ManpowerCostReportPage() {
                                         {s.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
                                       </div>
                                       <div>
-                                        <p className="text-sm font-bold text-slate-800">{s.name}</p>
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-sm font-bold text-slate-800">{s.name}</p>
+                                          {s.isTraining && (
+                                            <span
+                                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-800 border border-yellow-300"
+                                              title={`Training day(s) paid at RM${data?.totals.trainingRate ?? 8}/hr`}
+                                            >
+                                              Training RM{data?.totals.trainingRate ?? 8}/hr
+                                            </span>
+                                          )}
+                                        </div>
                                         <p className="text-[10px] text-slate-400">{s.employeeId || "-"}</p>
                                       </div>
                                     </div>
@@ -1255,10 +1318,10 @@ export default function ManpowerCostReportPage() {
                                   {viewTab !== "ft" && (
                                     <>
                                       <td className="px-5 py-4 text-center text-sm text-slate-500">
-                                        {s.isPT && s.rate ? `RM${s.rate}` : "-"}
+                                        {s.isPT && s.rate ? `RM${s.rate}` : s.isTraining ? `RM${data?.totals.trainingRate ?? 8}` : "-"}
                                       </td>
                                       <td className="px-5 py-4 text-right text-sm font-black text-green-600">
-                                        {s.isPT ? `RM ${s.totalPay.toFixed(2)}` : "-"}
+                                        {s.isPT || s.isTraining ? `RM ${s.totalPay.toFixed(2)}` : "-"}
                                       </td>
                                     </>
                                   )}
@@ -1390,6 +1453,7 @@ export default function ManpowerCostReportPage() {
           weekEnd={weekEnd}
           execRate={data?.totals.executiveRate || 11}
           bmRate={data?.totals.bmExecRate || data?.totals.executiveRate || 11}
+          trainingRate={data?.totals.trainingRate || 8}
           onClose={() => setViewCoach(null)}
           onDownloadPdf={() => generatePDF(viewCoach)}
         />

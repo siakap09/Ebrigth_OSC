@@ -13,20 +13,28 @@ export const WEEKDAY_DAYS = ["Wednesday", "Thursday", "Friday"] as const;
 
 // Online-branch pay rule.
 //
-// Online-branch coaches are paid purely on the hours they actually coach — they
-// have no exec/admin hours, so their exec time should always be 0. The standard
-// branches instead top each working day up to a daily target with "exec" hours
-// (dailyTarget − coachHrs).
+// Coaches whose HOME branch is Online are "online coaches": they are paid
+// purely on the hours they actually coach (class slots × rate) — no exec
+// hours, no exec rate. The standard branches instead top each working day up
+// to a daily target with "exec" hours (dailyTarget − coachHrs).
+//
+// The rule follows the person, not the schedule: when an online coach covers
+// a class for another branch they still hold it online, so their replacement
+// days are also coach-hours-only.
 //
 // Two people are exempt and keep the standard coach+exec calculation:
-//   77000093 — Pooja (PT): counts both coach and exec hours.
-//   66020086 — Amin (FT): also counts exec (as FT he yields no pay anyway).
+//   77000093 — Pooja (PT): works from the office, so she's treated like a
+//              physical coach — counts and is paid both coach and exec hours.
+//   66020086 — Amin (FT): counts both coach and exec hours, but as FT he
+//              draws a salary, so no hourly pay either way.
 export const ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS = new Set(["77000093", "66020086"]);
 
 /**
- * True when this staff member is an Online-branch coach paid on coaching hours
- * only (no exec hours) — i.e. the branch is Online and they are not one of the
- * exempt employee IDs above. `branch` must already be the full name "Online".
+ * True when this staff member is an online coach paid on coaching hours only
+ * (no exec hours) — i.e. their HOME branch is Online and they are not one of
+ * the exempt employee IDs above. Pass the coach's home branch (full name
+ * "Online"), not the schedule's branch, so replacement days at other branches
+ * stay coach-only.
  */
 export function isOnlineCoachOnly(
   branch: string | null | undefined,
@@ -104,18 +112,46 @@ export function getStaffColorByIndex(name: string, staffList: string[]): string 
 }
 
 // --- TABLE CONFIGURATION ---
-export const COLUMNS = [
-  { id: "coach1", label: "Coach 1", type: "coach" as const },
-  { id: "coach2", label: "Coach 2", type: "coach" as const },
-  { id: "coach3", label: "Coach 3", type: "coach" as const },
-  { id: "coach4", label: "Coach 4", type: "coach" as const },
-  { id: "coach5", label: "Coach 5", type: "coach" as const },
-  { id: "exec1", label: "Exec 1", type: "exec" as const },
-  { id: "exec2", label: "Exec 2", type: "exec" as const },
-  { id: "exec3", label: "Exec 3", type: "exec" as const },
-  { id: "exec4", label: "Exec 4", type: "exec" as const },
-  { id: "exec5", label: "Exec 5", type: "exec" as const },
-] as const;
+export type ColumnDef = { id: string; label: string; type: "coach" | "exec" | "training" };
+
+// Training columns sit after the exec columns and before Notes/Remarks. They
+// record who is shadowing/being trained in a slot. In the schedule summary
+// tables they never count as worked hours; in the manpower cost report a
+// training assignment marks the whole day as a flat 10.5h training day paid
+// at the training rate (see app/api/manpower-cost/route.ts).
+function makeColumns(coachCount: number, execCount: number): ColumnDef[] {
+  return [
+    ...Array.from({ length: coachCount }, (_, i) => ({ id: `coach${i + 1}`, label: `Coach ${i + 1}`, type: "coach" as const })),
+    ...Array.from({ length: execCount }, (_, i) => ({ id: `exec${i + 1}`, label: `Exec ${i + 1}`, type: "exec" as const })),
+    { id: "training1", label: "Training 1", type: "training" as const },
+    { id: "training2", label: "Training 2", type: "training" as const },
+  ];
+}
+
+// The standard grid every branch renders: 5 coach + 5 exec + 2 training.
+export const COLUMNS = makeColumns(5, 5);
+
+// Online needs more class capacity on some days (and fewer exec slots), so its
+// grid is sized per day; every other branch keeps the standard COLUMNS.
+export const MAX_COACH_COLUMNS = 8;
+const ONLINE_COACH_COLUMNS_BY_DAY: Record<string, number> = {
+  Thursday: 6,
+  Friday: 8,
+  Sunday: 5,
+};
+const ONLINE_EXEC_COLUMN_COUNT = 3;
+
+export function getColumnsForDay(day: string, branchName: string): ColumnDef[] {
+  if (branchName !== "Online") return COLUMNS;
+  return makeColumns(ONLINE_COACH_COLUMNS_BY_DAY[day] ?? 5, ONLINE_EXEC_COLUMN_COUNT);
+}
+
+// Superset of every column id any branch/day can produce. Hour/class
+// CALCULATIONS iterate this (absent keys are simply skipped) so totals stay
+// correct across branches with different grids — and so data saved under a
+// column that later got removed from a grid still counts rather than silently
+// vanishing. RENDERING uses getColumnsForDay instead.
+export const ALL_COLUMNS = makeColumns(MAX_COACH_COLUMNS, 5);
 
 const DEFAULT_WEEKDAY_TIME_SLOTS = ["06.00PM - 07.15PM", "07:15PM - 08:30PM", "08.30PM - 09:45PM"] as const;
 const DEFAULT_WEEKEND_TIME_SLOTS = ["09:15 AM – 10:30 AM", "10:30 AM – 11:45 AM", "12:00 PM – 1:15 PM", "1:15 PM – 2:30 PM", "2:45 PM – 4:00 PM", "4:00 PM – 5:15 PM", "5:30 PM – 6:45 PM"] as const;

@@ -8,7 +8,7 @@ import Sidebar from "@/app/components/Sidebar";
 
 // --- IMPORT SHARED CONSTANTS ---
 import {
-  SHARED_EMPLOYEES, ALL_BRANCHES, COLUMNS,
+  SHARED_EMPLOYEES, ALL_BRANCHES, ALL_COLUMNS, getColumnsForDay,
   getTimeSlotsForDay, isAdminSlot, getStaffColorByIndex,
   getWorkingDaysForBranch, isOpeningClosingSlot,
   isManagerOnDutySlot, isOnlineCoachOnly,
@@ -125,6 +125,7 @@ export default function UpdateSchedulePage() {
   const [branchManagerData, setBranchManagerData] = useState<Record<string, string[]>>({});
   const [trainingMap, setTrainingMap] = useState<Record<string, { start?: string; end?: string }>>({});
   const [employeeIdMap, setEmployeeIdMap] = useState<Record<string, string>>({});
+  const [homeBranchMap, setHomeBranchMap] = useState<Record<string, string>>({});
   const [columnReplacementBranch, setColumnReplacementBranch] = useState<Record<string, string>>({});
   const [managerReplacementBranch, setManagerReplacementBranch] = useState<Record<string, string>>({});
   const [scheduledElsewhere, setScheduledElsewhere] = useState<Record<string, Record<string, Set<string>>>>({});
@@ -151,10 +152,12 @@ export default function UpdateSchedulePage() {
     const managers: Record<string, string[]> = {};
     const tmap: Record<string, { start?: string; end?: string }> = {};
     const idmap: Record<string, string> = {};
+    const hmap: Record<string, string> = {};
     staffList.forEach((s: any) => {
       if (!s.branch) return;
       if (!grouped[s.branch]) grouped[s.branch] = [];
       grouped[s.branch].push(s.name);
+      hmap[s.name] = s.branch;
       if (s.role && s.role.startsWith('branch_manager')) {
         if (!managers[s.branch]) managers[s.branch] = [];
         managers[s.branch].push(s.name);
@@ -170,6 +173,7 @@ export default function UpdateSchedulePage() {
     setBranchManagerData(managers);
     setTrainingMap(tmap);
     setEmployeeIdMap(idmap);
+    setHomeBranchMap(hmap);
   };
 
   useEffect(() => {
@@ -287,11 +291,11 @@ export default function UpdateSchedulePage() {
         daySlots.forEach((slot) => {
           if (!isOpeningClosingSlot(slot, selectedRecord.branch)) {
             if (colId === "MANAGER") {
-              const usedAsStaff = COLUMNS.some(c => next[`${day}-${slot}-${c.id}`] === name);
+              const usedAsStaff = ALL_COLUMNS.some(c => next[`${day}-${slot}-${c.id}`] === name);
               if (usedAsStaff) return;
             } else {
               if (next[`${day}-${slot}-MANAGER`] === name) return;
-              const usedInOtherColumn = COLUMNS.filter(c => c.id !== colId).some(c => next[`${day}-${slot}-${c.id}`] === name);
+              const usedInOtherColumn = ALL_COLUMNS.filter(c => c.id !== colId).some(c => next[`${day}-${slot}-${c.id}`] === name);
               if (usedInOtherColumn) return;
             }
             next[`${day}-${slot}-${colId}`] = name;
@@ -353,7 +357,9 @@ export default function UpdateSchedulePage() {
         let workedThatDay = false;
         getTimeSlotsForDay(day, branchForDay).forEach((slot: string) => {
           if (isOpeningClosingSlot(slot, branchForDay)) return;
-          COLUMNS.forEach((col) => {
+          ALL_COLUMNS.forEach((col) => {
+            // Training columns are informational only — never count as worked hours.
+            if (col.type === "training") return;
             if (dataToCalculate[`${day}-${slot}-${col.id}`] === emp) {
               workedThatDay = true;
               if (col.type === "coach") coachingHoursForDay += isAdminSlot(slot, branchForDay) ? 0.25 : 1.25;
@@ -361,9 +367,12 @@ export default function UpdateSchedulePage() {
           });
         });
         if (workedThatDay) {
-          // Online-branch coaches (except the exempt two) have no exec hours —
-          // they're tracked on coaching hours only.
-          const coachOnly = isOnlineCoachOnly(branchForDay, employeeIdMap[emp]);
+          // Online coaches (home branch = Online, except the exempt two) have
+          // no exec hours — coaching hours only. Keyed on the coach's HOME
+          // branch, not this schedule's branch: when an online coach covers
+          // another branch they still hold the class online, so the rule
+          // follows them there.
+          const coachOnly = isOnlineCoachOnly(homeBranchMap[emp] ?? branchForDay, employeeIdMap[emp]);
           staffStats[emp].coachHrs += coachingHoursForDay;
           if (!coachOnly) {
             staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
@@ -476,6 +485,7 @@ export default function UpdateSchedulePage() {
               {selectedDay && (() => {
                 const day = selectedDay;
                 const slots = getTimeSlotsForDay(day, selectedRecord.branch);
+                const dayColumns = getColumnsForDay(day, selectedRecord.branch);
                 const currentStaff = [...SHARED_EMPLOYEES, ...(branchStaffData[selectedRecord.branch] || [])];
                 const currentStaffLower = new Set(currentStaff.map(n => n.toLowerCase()));
                 // Include replacement staff from other branches already saved in this record
@@ -510,8 +520,8 @@ export default function UpdateSchedulePage() {
                                 <th className="p-1 border border-slate-600 w-24 bg-slate-700 border-b-2 border-b-emerald-400">
                                   <div className="flex flex-col items-center"><span>Manager</span></div>
                                 </th>
-                                {COLUMNS.map(c => (
-                                  <th key={c.id} className={`p-1 border border-slate-600 w-24 ${c.type==='exec'?'bg-slate-800':''}`}>
+                                {dayColumns.map(c => (
+                                  <th key={c.id} className={`p-1 border border-slate-600 w-24 ${c.type==='exec'?'bg-slate-800':c.type==='training'?'bg-yellow-600':''}`}>
                                     <div className="flex flex-col items-center"><span>{c.label}</span></div>
                                   </th>
                                 ))}
@@ -554,12 +564,12 @@ export default function UpdateSchedulePage() {
                                     )}
 
                                     {isOpenClose ? (
-                                      <td colSpan={COLUMNS.length + (isOpenClose ? 2 : 1)} className="p-1 border text-center">
+                                      <td colSpan={dayColumns.length + (isOpenClose ? 2 : 1)} className="p-1 border text-center">
                                         <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">All Staff — Executive ({slotIndex === 0 ? "Opening" : "Closing"})</span>
                                       </td>
                                     ) : (
                                       <>
-                                        {COLUMNS.map(col => {
+                                        {dayColumns.map(col => {
                                           const name = originalData[`${day}-${slot}-${col.id}`];
                                           const validName = name && name !== "None" ? name : "";
                                           return (
@@ -613,8 +623,8 @@ export default function UpdateSchedulePage() {
                                     <button onClick={() => clearManagerForDay(day)} className="text-[9px] text-orange-300 font-bold hover:text-white uppercase px-2 py-0.5 rounded transition-colors bg-slate-600">CLEAR</button>
                                   </div>
                                 </th>
-                                {COLUMNS.map(c => (
-                                  <th key={c.id} className={`p-1 border border-slate-900 w-24 ${c.type==='exec'?'bg-slate-700 border-b-2 border-b-blue-400':''}`}>
+                                {dayColumns.map(c => (
+                                  <th key={c.id} className={`p-1 border border-slate-900 w-24 ${c.type==='exec'?'bg-slate-700 border-b-2 border-b-blue-400':c.type==='training'?'bg-yellow-600 border-b-2 border-b-yellow-400':''}`}>
                                     <div className="flex flex-col items-center gap-0.5">
                                       <span>{c.label}</span>
                                       <select
@@ -685,12 +695,12 @@ export default function UpdateSchedulePage() {
                                     )}
 
                                     {isOpenClose ? (
-                                      <td colSpan={COLUMNS.length + 1} className="p-1 border text-center">
+                                      <td colSpan={dayColumns.length + 1} className="p-1 border text-center">
                                         <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">All Staff — Executive ({slotIndex === 0 ? "Opening" : "Closing"})</span>
                                       </td>
                                     ) : (
                                       <>
-                                        {COLUMNS.map(col => {
+                                        {dayColumns.map(col => {
                                           const rawVal = updatedSelections[`${day}-${slot}-${col.id}`] || "";
                                           const val = rawVal === "None" ? "" : rawVal;
                                           const replacementBranch = columnReplacementBranch[`${day}-${col.id}`];
@@ -699,7 +709,7 @@ export default function UpdateSchedulePage() {
                                             : activeStaffList;
                                           // Block names used in same slot across any column type (cross-type per-slot conflict)
                                           const namesInSameSlot = new Set(
-                                            COLUMNS.filter(c => c.id !== col.id)
+                                            ALL_COLUMNS.filter(c => c.id !== col.id)
                                               .map(c => updatedSelections[`${day}-${slot}-${c.id}`])
                                               .filter(Boolean)
                                           );
@@ -708,7 +718,7 @@ export default function UpdateSchedulePage() {
                                             ...(actualManagerVal ? [actualManagerVal] : []),
                                           ]);
                                           return (
-                                            <td key={col.id} className={`p-0 border h-[32px] ${col.type==='exec' ? 'bg-slate-50' : 'bg-white'}`}>
+                                            <td key={col.id} className={`p-0 border h-[32px] ${col.type==='exec' ? 'bg-slate-50' : col.type==='training' ? 'bg-yellow-50' : 'bg-white'}`}>
                                               <select value={val} onChange={(e) => handleActualNameSelect(day, slot, col.id, e.target.value)}
                                                 className={`w-full h-full p-1 outline-none font-bold text-center appearance-none block ${val && val !== "None" ? getStaffColorByIndex(val, activeStaffList) : 'bg-transparent text-slate-300'}`}>
                                                 <option value="">None</option>

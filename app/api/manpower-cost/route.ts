@@ -7,7 +7,7 @@ import {
   getTimeSlotsForDay,
   isOpeningClosingSlot,
   isAdminSlot,
-  COLUMNS,
+  ALL_COLUMNS,
   ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS,
 } from "@/lib/manpowerUtils";
 import { isEmployee, isBranchManager, isAcademy } from "@/lib/roles";
@@ -18,6 +18,14 @@ const EXECUTIVE_RATE = 11;
 // Elevated exec rate paid for branch-manager-on-duty hours. See
 // MANAGER_ON_DUTY_OVERRIDES below.
 const BM_EXEC_RATE = 13;
+
+// Flat training rate. When a person is assigned to a TRAINING column on a given
+// day, that whole day is a full training day: TRAINING_DAY_HOURS paid at this
+// rate (10.5 × 8 = RM84/day), regardless of weekday/weekend. The slots they
+// appear in are shown as coach hours and the remainder as exec hours, but the
+// split is display-only — pay is always the flat day rate.
+const TRAINING_RATE = 8;
+const TRAINING_DAY_HOURS = 10.5;
 
 // One-off "stand-in manager" overrides.
 //
@@ -47,6 +55,7 @@ interface DailyHour {
   coachHrs: number;
   execHrs: number;
   managerExecHrs?: number;
+  trainingHrs?: number;
   totalHrs: number;
   classCount: number;
 }
@@ -60,6 +69,7 @@ interface StaffHourEntry {
   coachHrs: number;
   execHrs: number;
   managerExecHrs: number;
+  trainingHrs: number;
   totalHrs: number;
   classCount: number;
   dailyBreakdown: DailyHour[];
@@ -157,15 +167,15 @@ function branchesMatch(a: string | null | undefined, b: string | null | undefine
 function calculateHoursFromSelections(
   selections: Record<string, string>,
   branch: string
-): Record<string, { coachHrs: number; execHrs: number; totalHrs: number; classCount: number; dailyBreakdown: DailyHour[] }> {
+): Record<string, { coachHrs: number; execHrs: number; trainingHrs: number; totalHrs: number; classCount: number; dailyBreakdown: DailyHour[] }> {
   const allNames = new Set<string>();
   Object.values(selections).forEach((val) => {
     if (val && val !== "" && val !== "None") allNames.add(val);
   });
 
-  const staffStats: Record<string, { coachHrs: number; execHrs: number; totalHrs: number; classCount: number; dailyBreakdown: DailyHour[] }> = {};
+  const staffStats: Record<string, { coachHrs: number; execHrs: number; trainingHrs: number; totalHrs: number; classCount: number; dailyBreakdown: DailyHour[] }> = {};
   allNames.forEach((name) => {
-    staffStats[name] = { coachHrs: 0, execHrs: 0, totalHrs: 0, classCount: 0, dailyBreakdown: [] };
+    staffStats[name] = { coachHrs: 0, execHrs: 0, trainingHrs: 0, totalHrs: 0, classCount: 0, dailyBreakdown: [] };
   });
 
   getWorkingDaysForBranch(branch).forEach((day) => {
@@ -174,40 +184,71 @@ function calculateHoursFromSelections(
 
     allNames.forEach((emp) => {
       let coachingHoursForDay = 0;
+      let trainingSlotHoursForDay = 0;
       let classesForDay = 0;
       let workedThatDay = false;
+      let inTrainingThatDay = false;
 
       getTimeSlotsForDay(day, branch).forEach((slot) => {
         if (isOpeningClosingSlot(slot, branch)) return;
-        COLUMNS.forEach((col) => {
-          if (selections[`${day}-${slot}-${col.id}`] === emp) {
-            workedThatDay = true;
-            const isAdmin = isAdminSlot(slot, branch);
-            const slotDuration = isAdmin ? 0.25 : 1.25;
-            if (col.type === "coach") {
-              coachingHoursForDay += slotDuration;
-              // A "class" is a regular (non-admin) coach slot — admin slots are
-              // short housekeeping blocks (0.25h) where no class is taught.
-              if (!isAdmin) classesForDay += 1;
-            }
+        ALL_COLUMNS.forEach((col) => {
+          if (selections[`${day}-${slot}-${col.id}`] !== emp) return;
+          workedThatDay = true;
+          const isAdmin = isAdminSlot(slot, branch);
+          const slotDuration = isAdmin ? 0.25 : 1.25;
+          // A training assignment on any slot makes the whole day a training
+          // day (a flat TRAINING_DAY_HOURS day paid at TRAINING_RATE) — see
+          // below. Training slot time only feeds the display split.
+          if (col.type === "training") {
+            inTrainingThatDay = true;
+            trainingSlotHoursForDay += slotDuration;
+            return;
+          }
+          if (col.type === "coach") {
+            coachingHoursForDay += slotDuration;
+            // A "class" is a regular (non-admin) coach slot — admin slots are
+            // short housekeeping blocks (0.25h) where no class is taught.
+            if (!isAdmin) classesForDay += 1;
           }
         });
       });
 
-      if (workedThatDay) {
-        const execHrs = Math.max(0, dailyTarget - coachingHoursForDay);
-        staffStats[emp].coachHrs += coachingHoursForDay;
-        staffStats[emp].execHrs += execHrs;
-        staffStats[emp].totalHrs = staffStats[emp].coachHrs + staffStats[emp].execHrs;
-        staffStats[emp].classCount += classesForDay;
+      if (!workedThatDay) return;
+
+      if (inTrainingThatDay) {
+        // Training day: a full TRAINING_DAY_HOURS day paid at TRAINING_RATE
+        // (10.5 × 8 = RM84). The slots worked show as coach hours and the
+        // remainder as exec hours, but this split is display-only: the day's
+        // hours go into trainingHrs (not the coach/exec pay buckets), so they
+        // are never also paid at the coach or exec rate.
+        const dayCoachHrs = coachingHoursForDay + trainingSlotHoursForDay;
+        const dayExecHrs = Math.max(0, TRAINING_DAY_HOURS - dayCoachHrs);
+        staffStats[emp].trainingHrs += TRAINING_DAY_HOURS;
+        staffStats[emp].totalHrs = staffStats[emp].coachHrs + staffStats[emp].execHrs + staffStats[emp].trainingHrs;
         staffStats[emp].dailyBreakdown.push({
           day,
-          coachHrs: coachingHoursForDay,
-          execHrs,
-          totalHrs: coachingHoursForDay + execHrs,
-          classCount: classesForDay,
+          coachHrs: dayCoachHrs,
+          execHrs: dayExecHrs,
+          trainingHrs: TRAINING_DAY_HOURS,
+          totalHrs: TRAINING_DAY_HOURS,
+          classCount: 0,
         });
+        return;
       }
+
+      const execHrs = Math.max(0, dailyTarget - coachingHoursForDay);
+      staffStats[emp].coachHrs += coachingHoursForDay;
+      staffStats[emp].execHrs += execHrs;
+      staffStats[emp].totalHrs = staffStats[emp].coachHrs + staffStats[emp].execHrs + staffStats[emp].trainingHrs;
+      staffStats[emp].classCount += classesForDay;
+      staffStats[emp].dailyBreakdown.push({
+        day,
+        coachHrs: coachingHoursForDay,
+        execHrs,
+        trainingHrs: 0,
+        totalHrs: coachingHoursForDay + execHrs,
+        classCount: classesForDay,
+      });
     });
   });
 
@@ -313,10 +354,13 @@ function isPartTimeStaff(staff: StaffRecord): boolean {
 }
 
 /**
- * True when this staff member should be treated as an Online-branch coach who
- * is paid on coaching hours only (no exec hours / no exec pay). See
- * ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS for the two people who keep the standard
- * coach+exec calculation.
+ * True when this staff member should be treated as an online coach who is paid
+ * on coaching hours only (no exec hours / no exec pay). `branch` must be the
+ * coach's HOME branch (the aggregated bucket's branch), not the schedule's:
+ * when an online coach covers a class for another branch they still hold it
+ * online, so their replacement days are also coach-hours-only. See
+ * ONLINE_EXEC_EXEMPT_EMPLOYEE_IDS for the two people (Pooja, Amin) who keep
+ * the standard coach+exec calculation.
  */
 function isOnlineCoachOnly(staff: StaffRecord | null, branch: string): boolean {
   if (norm(normalizeLocation(branch)) !== "online") return false;
@@ -452,8 +496,13 @@ export async function GET(request: Request) {
 
         if (dailyWithDates.length === 0) return;
 
-        const filteredCoachHrs = dailyWithDates.reduce((s, d) => s + d.coachHrs, 0);
-        const filteredExecHrs = dailyWithDates.reduce((s, d) => s + d.execHrs, 0);
+        // Training-day coach/exec hours are a display-only split of the flat
+        // training day — keep them out of the coach/exec buckets so they are
+        // never paid at the coach or exec rate on top of the training rate.
+        const nonTrainingDays = dailyWithDates.filter((d) => !(d.trainingHrs && d.trainingHrs > 0));
+        const filteredCoachHrs = nonTrainingDays.reduce((s, d) => s + d.coachHrs, 0);
+        const filteredExecHrs = nonTrainingDays.reduce((s, d) => s + d.execHrs, 0);
+        const filteredTrainingHrs = dailyWithDates.reduce((s, d) => s + (d.trainingHrs || 0), 0);
         const filteredClassCount = dailyWithDates.reduce((s, d) => s + (d.classCount || 0), 0);
 
         allEntries.push({
@@ -465,7 +514,8 @@ export async function GET(request: Request) {
           coachHrs: filteredCoachHrs,
           execHrs: filteredExecHrs,
           managerExecHrs: 0,
-          totalHrs: filteredCoachHrs + filteredExecHrs,
+          trainingHrs: filteredTrainingHrs,
+          totalHrs: filteredCoachHrs + filteredExecHrs + filteredTrainingHrs,
           classCount: filteredClassCount,
           dailyBreakdown: dailyWithDates,
         });
@@ -485,6 +535,7 @@ export async function GET(request: Request) {
             coachHrs: 0,
             execHrs: e.execHrs,
             managerExecHrs: e.managerExecHrs,
+            trainingHrs: 0,
             totalHrs: e.execHrs,
             classCount: 0,
             dailyBreakdown: [{
@@ -502,7 +553,7 @@ export async function GET(request: Request) {
 
     // Aggregate by BranchStaff.id so name variants ("Diena" / "IRDIENA" /
     // "NUR IRDIENA BATRISYIA BINTI ASMAWI") collapse into one row.
-    interface DailyEntry { date: string; day: string; coachHrs: number; execHrs: number; managerExecHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }
+    interface DailyEntry { date: string; day: string; coachHrs: number; execHrs: number; managerExecHrs: number; trainingHrs: number; totalHrs: number; classCount: number; scheduleBranch?: string }
 
     const aggregated: Record<string, {
       key: string;
@@ -515,10 +566,12 @@ export async function GET(request: Request) {
       coachHrs: number;
       execHrs: number;
       managerExecHrs: number;
+      trainingHrs: number;
       totalHrs: number;
       classCount: number;
       coachPay: number;
       execPay: number;
+      trainingPay: number;
       totalPay: number;
       days: DailyEntry[];
     }> = {};
@@ -553,10 +606,12 @@ export async function GET(request: Request) {
           coachHrs: 0,
           execHrs: 0,
           managerExecHrs: 0,
+          trainingHrs: 0,
           totalHrs: 0,
           classCount: 0,
           coachPay: 0,
           execPay: 0,
+          trainingPay: 0,
           totalPay: 0,
           days: [],
         };
@@ -566,6 +621,7 @@ export async function GET(request: Request) {
       bucket.coachHrs += entry.coachHrs;
       bucket.execHrs += entry.execHrs;
       bucket.managerExecHrs += entry.managerExecHrs;
+      bucket.trainingHrs += entry.trainingHrs;
       bucket.totalHrs += entry.totalHrs;
       bucket.classCount += entry.classCount;
 
@@ -581,6 +637,7 @@ export async function GET(request: Request) {
           coachHrs: d.coachHrs,
           execHrs: d.execHrs,
           managerExecHrs: d.managerExecHrs || 0,
+          trainingHrs: d.trainingHrs || 0,
           totalHrs: d.totalHrs,
           classCount: d.classCount || 0,
           scheduleBranch: isReplacement ? scheduleBranch : undefined,
@@ -618,12 +675,19 @@ export async function GET(request: Request) {
 
         // Online-branch coaches (except the exempt two) have no exec hours —
         // drop their exec time entirely so they're paid on coaching hours only.
+        // Training hours are independent of this and always kept.
         const coachOnly = isOnlineCoachOnly(staff ?? null, emp.branch);
         const execHrs = coachOnly ? 0 : emp.execHrs;
         const managerExecHrs = coachOnly ? 0 : emp.managerExecHrs;
-        const totalHrs = coachOnly ? emp.coachHrs : emp.totalHrs;
+        const trainingHrs = emp.trainingHrs;
+        const totalHrs = emp.coachHrs + execHrs + trainingHrs;
+        // Training days pass through untouched: their coach/exec values are a
+        // display split of the flat 10.5h training day, not real exec time.
         const days = coachOnly
-          ? emp.days.map((d) => ({ ...d, execHrs: 0, managerExecHrs: 0, totalHrs: d.coachHrs }))
+          ? emp.days.map((d) =>
+              (d.trainingHrs || 0) > 0
+                ? d
+                : { ...d, execHrs: 0, managerExecHrs: 0, totalHrs: d.coachHrs })
           : emp.days;
 
         const hasRate = emp.rate !== null && emp.rate > 0;
@@ -634,17 +698,24 @@ export async function GET(request: Request) {
         const execPay = isPT && hasRate
           ? regularExecHrs * EXECUTIVE_RATE + managerExecHrs * BM_EXEC_RATE
           : 0;
+        // Training is paid at the flat TRAINING_RATE for everyone who logged
+        // training hours — independent of PT/FT status or coach rate.
+        const trainingPay = trainingHrs * TRAINING_RATE;
+        const isTraining = trainingHrs > 0;
 
         return {
           ...emp,
           execHrs,
           managerExecHrs,
+          trainingHrs,
           totalHrs,
           days,
           isPT,
+          isTraining,
           coachPay,
           execPay,
-          totalPay: coachPay + execPay,
+          trainingPay,
+          totalPay: coachPay + execPay + trainingPay,
         };
       });
 
@@ -713,19 +784,25 @@ export async function GET(request: Request) {
     const ptResults = results.filter((r) => r.isPT);
     const ftResults = results.filter((r) => !r.isPT);
 
+    const totalTrainingPay = results.reduce((s, r) => s + r.trainingPay, 0);
     const totals = {
       totalStaff: results.length,
       ptCount: ptResults.length,
       ftCount: ftResults.length,
       totalCoachHrs: results.reduce((s, r) => s + r.coachHrs, 0),
       totalExecHrs: results.reduce((s, r) => s + r.execHrs, 0),
+      totalTrainingHrs: results.reduce((s, r) => s + r.trainingHrs, 0),
       totalHrs: results.reduce((s, r) => s + r.totalHrs, 0),
       totalClasses: results.reduce((s, r) => s + r.classCount, 0),
       totalCoachPay: ptResults.reduce((s, r) => s + r.coachPay, 0),
       totalExecPay: ptResults.reduce((s, r) => s + r.execPay, 0),
-      totalPay: ptResults.reduce((s, r) => s + r.totalPay, 0),
+      // Training pay applies to anyone with training hours (PT or FT), so it's
+      // summed across all results, then folded into the grand total.
+      totalTrainingPay,
+      totalPay: ptResults.reduce((s, r) => s + r.totalPay, 0) + ftResults.reduce((s, r) => s + r.trainingPay, 0),
       executiveRate: EXECUTIVE_RATE,
       bmExecRate: BM_EXEC_RATE,
+      trainingRate: TRAINING_RATE,
     };
 
     const weeksSet = new Set<string>();
