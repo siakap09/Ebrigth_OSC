@@ -8,7 +8,7 @@ import Sidebar from "@/app/components/Sidebar";
 
 // --- IMPORT SHARED CONSTANTS ---
 import {
-  SHARED_EMPLOYEES, COLUMNS, ALL_BRANCHES,
+  SHARED_EMPLOYEES, ALL_COLUMNS, getColumnsForDay, ALL_BRANCHES,
   getTimeSlotsForDay, isAdminSlot, getStaffColorByIndex,
   getWorkingDaysForBranch, isOpeningClosingSlot,
   isManagerOnDutySlot, isOnlineCoachOnly,
@@ -99,6 +99,7 @@ export default function ArchiveSchedulePage() {
   const [branchManagerData, setBranchManagerData] = useState<Record<string, string[]>>({});
   const [trainingMap, setTrainingMap] = useState<Record<string, { start?: string; end?: string }>>({});
   const [employeeIdMap, setEmployeeIdMap] = useState<Record<string, string>>({});
+  const [homeBranchMap, setHomeBranchMap] = useState<Record<string, string>>({});
 
   // --- FILTER STATES ---
   const [filterBranch, setFilterBranch] = useState<string>("");
@@ -126,10 +127,12 @@ export default function ArchiveSchedulePage() {
       const managers: Record<string, string[]> = {};
       const tmap: Record<string, { start?: string; end?: string }> = {};
       const idmap: Record<string, string> = {};
+      const hmap: Record<string, string> = {};
       staffList.forEach((s: any) => {
         if (!s.branch) return;
         if (!grouped[s.branch]) grouped[s.branch] = [];
         grouped[s.branch].push(s.name);
+        hmap[s.name] = s.branch;
         if (s.role && s.role.startsWith('branch_manager')) {
           if (!managers[s.branch]) managers[s.branch] = [];
           managers[s.branch].push(s.name);
@@ -145,6 +148,7 @@ export default function ArchiveSchedulePage() {
       setBranchManagerData(managers);
       setTrainingMap(tmap);
       setEmployeeIdMap(idmap);
+      setHomeBranchMap(hmap);
     };
     fetchSchedules();
     fetchStaff();
@@ -220,7 +224,9 @@ export default function ArchiveSchedulePage() {
 
         getTimeSlotsForDay(day, selectedRecord.branch).forEach((slot: string) => {
           if (isOpeningClosingSlot(slot, selectedRecord.branch)) return;
-          COLUMNS.forEach((col) => {
+          ALL_COLUMNS.forEach((col) => {
+            // Training columns are informational only — never count as worked hours.
+            if (col.type === "training") return;
             if (validData[`${day}-${slot}-${col.id}`] === emp) {
               workedThatDay = true;
               if (col.type === "coach") coachingHoursForDay += isAdminSlot(slot, selectedRecord.branch) ? 0.25 : 1.25;
@@ -229,9 +235,12 @@ export default function ArchiveSchedulePage() {
         });
 
         if (workedThatDay) {
-          // Online-branch coaches (except the exempt two) have no exec hours —
-          // they're tracked on coaching hours only.
-          const coachOnly = isOnlineCoachOnly(selectedRecord.branch, employeeIdMap[emp]);
+          // Online coaches (home branch = Online, except the exempt two) have
+          // no exec hours — coaching hours only. Keyed on the coach's HOME
+          // branch, not this schedule's branch: when an online coach covers
+          // another branch they still hold the class online, so the rule
+          // follows them there.
+          const coachOnly = isOnlineCoachOnly(homeBranchMap[emp] ?? selectedRecord.branch, employeeIdMap[emp]);
           staffStats[emp].coachHrs += coachingHoursForDay;
           if (!coachOnly) {
             staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
@@ -306,6 +315,7 @@ export default function ArchiveSchedulePage() {
               {selectedDay && (() => {
                 const day = selectedDay;
                 const slots = getTimeSlotsForDay(day, selectedRecord.branch);
+                const dayColumns = getColumnsForDay(day, selectedRecord.branch);
                 const branchStaff = Array.from(new Set([...SHARED_EMPLOYEES, ...(branchStaffData[selectedRecord.branch] || [])]));
                 return (
                   <div key={day} className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
@@ -322,8 +332,8 @@ export default function ArchiveSchedulePage() {
                             <tr className="bg-slate-700 text-white uppercase tracking-widest">
                                 <th className="p-3 border-r border-slate-600 text-left w-[180px] sticky left-0 z-20 bg-slate-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]">Slot</th>
                                 <th className="p-3 border-r border-slate-600 text-center w-[180px] bg-slate-700 border-b-4 border-b-emerald-400">Manager on Duty</th>
-                                {COLUMNS.map(c => (
-                                    <th key={c.id} className={`p-3 border-r border-slate-600 text-center w-[150px] ${c.type === 'exec' ? 'bg-slate-800' : ''}`}>
+                                {dayColumns.map(c => (
+                                    <th key={c.id} className={`p-3 border-r border-slate-600 text-center w-[150px] ${c.type === 'exec' ? 'bg-slate-800' : c.type === 'training' ? 'bg-yellow-600' : ''}`}>
                                         {c.label}
                                     </th>
                                 ))}
@@ -370,15 +380,15 @@ export default function ArchiveSchedulePage() {
                                   )}
 
                                   {isOpenClose ? (
-                                    <td colSpan={COLUMNS.length + 1} className="p-3 border-b border-slate-200 text-center">
+                                    <td colSpan={dayColumns.length + 1} className="p-3 border-b border-slate-200 text-center">
                                       <span className="text-xs font-black text-blue-600 uppercase tracking-widest">All Staff — Executive ({slotIndex === 0 ? "Opening" : "Closing"})</span>
                                     </td>
                                   ) : (
                                     <>
-                                      {COLUMNS.map(col => {
+                                      {dayColumns.map(col => {
                                         const name = validData[`${day}-${slot}-${col.id}`];
                                         const displayValue = name && name !== "None" ? name : "-";
-                                        const bgColor = name && name !== "None" ? getStaffColorByIndex(name, branchStaff) : (col.type === 'exec' ? 'bg-slate-50 text-slate-300' : 'bg-white text-slate-300');
+                                        const bgColor = name && name !== "None" ? getStaffColorByIndex(name, branchStaff) : (col.type === 'exec' ? 'bg-slate-50 text-slate-300' : col.type === 'training' ? 'bg-yellow-50 text-slate-300' : 'bg-white text-slate-300');
                                         return (
                                             <td key={col.id} className={`p-3 border-r border-b border-slate-200 text-center font-bold transition-colors ${bgColor}`}>
                                                 {displayValue !== "-" ? nameWithBadge(displayValue, trainingMap[displayValue]) : displayValue}

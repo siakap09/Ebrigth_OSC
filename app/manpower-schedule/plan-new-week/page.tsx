@@ -10,7 +10,7 @@ import Sidebar from "@/app/components/Sidebar";
 // --- IMPORT SHARED CONSTANTS ---
 import {
   SHARED_EMPLOYEES, ALL_BRANCHES, DAYS, WEEKDAY_DAYS,
-  COLUMNS, BRANCH_SLOTS_CONFIG,
+  ALL_COLUMNS, getColumnsForDay, BRANCH_SLOTS_CONFIG,
   getTimeSlotsForDay, isAdminSlot, getStaffColorByIndex,
   getWorkingDaysForBranch, isOpeningClosingSlot,
   isManagerOnDutySlot, isOnlineCoachOnly,
@@ -118,6 +118,7 @@ function PlanNewWeekPage() {
   const [trainingMap, setTrainingMap] = useState<Record<string, { start?: string; end?: string }>>({});
   const [endDateMap, setEndDateMap] = useState<Record<string, string>>({});
   const [employeeIdMap, setEmployeeIdMap] = useState<Record<string, string>>({});
+  const [homeBranchMap, setHomeBranchMap] = useState<Record<string, string>>({});
   const [columnReplacementBranch, setColumnReplacementBranch] = useState<Record<string, string>>({});
   const [managerReplacementBranch, setManagerReplacementBranch] = useState<Record<string, string>>({});
   const [selectedDay, setSelectedDay] = useState<string>("");
@@ -192,10 +193,12 @@ function PlanNewWeekPage() {
     const tmap: Record<string, { start?: string; end?: string }> = {};
     const emap: Record<string, string> = {};
     const idmap: Record<string, string> = {};
+    const hmap: Record<string, string> = {};
     staffList.forEach((s: any) => {
       if (!s.branch) return;
       if (!grouped[s.branch]) grouped[s.branch] = [];
       grouped[s.branch].push(s.name);
+      hmap[s.name] = s.branch;
       if (s.role && s.role.startsWith('branch_manager')) {
         if (!managers[s.branch]) managers[s.branch] = [];
         managers[s.branch].push(s.name);
@@ -215,6 +218,7 @@ function PlanNewWeekPage() {
     setTrainingMap(tmap);
     setEndDateMap(emap);
     setEmployeeIdMap(idmap);
+    setHomeBranchMap(hmap);
   };
 
   useEffect(() => { fetchStaff(); }, []);
@@ -319,13 +323,13 @@ function PlanNewWeekPage() {
           if (!isOpeningClosingSlot(slot, selectedBranch)) {
             if (columnId === "MANAGER") {
               // Skip slot if name is already in any coach/exec column for this slot
-              const usedAsStaff = COLUMNS.some(c => next[`${day}-${slot}-${c.id}`] === name);
+              const usedAsStaff = ALL_COLUMNS.some(c => next[`${day}-${slot}-${c.id}`] === name);
               if (usedAsStaff) return;
             } else {
               // Skip slot if name is already the manager for this slot
               if (next[`${day}-${slot}-MANAGER`] === name) return;
               // Skip slot if name is already in any other coach/exec column for this slot
-              const usedInOtherColumn = COLUMNS.filter(c => c.id !== columnId).some(c => next[`${day}-${slot}-${c.id}`] === name);
+              const usedInOtherColumn = ALL_COLUMNS.filter(c => c.id !== columnId).some(c => next[`${day}-${slot}-${c.id}`] === name);
               if (usedInOtherColumn) return;
             }
             next[`${day}-${slot}-${columnId}`] = name;
@@ -360,7 +364,9 @@ function PlanNewWeekPage() {
 
         getTimeSlotsForDay(day, selectedBranch).forEach((slot) => {
           if (isOpeningClosingSlot(slot, selectedBranch)) return;
-          COLUMNS.forEach((col) => {
+          ALL_COLUMNS.forEach((col) => {
+            // Training columns are informational only — never count as worked hours.
+            if (col.type === "training") return;
             if (selections[`${day}-${slot}-${col.id}`] === emp) {
               workedThatDay = true;
               if (col.type === "coach") {
@@ -371,9 +377,12 @@ function PlanNewWeekPage() {
         });
         
         if (workedThatDay) {
-          // Online-branch coaches (except the exempt two) have no exec hours —
-          // they're tracked on coaching hours only.
-          const coachOnly = isOnlineCoachOnly(selectedBranch, employeeIdMap[emp]);
+          // Online coaches (home branch = Online, except the exempt two) have
+          // no exec hours — coaching hours only. Keyed on the coach's HOME
+          // branch, not this schedule's branch: when an online coach covers
+          // another branch they still hold the class online, so the rule
+          // follows them there.
+          const coachOnly = isOnlineCoachOnly(homeBranchMap[emp] ?? selectedBranch, employeeIdMap[emp]);
           staffStats[emp].coachHrs += coachingHoursForDay;
           if (!coachOnly) {
             staffStats[emp].execHrs += Math.max(0, dailyTarget - coachingHoursForDay);
@@ -584,6 +593,7 @@ function PlanNewWeekPage() {
                 const day = selectedDay;
                 const isEditing = !!editingDays[day] && !isLocked;
                 const daySlots = getTimeSlotsForDay(day, selectedBranch);
+                const dayColumns = getColumnsForDay(day, selectedBranch);
                 return (
                   <div key={day} className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
                     
@@ -635,8 +645,8 @@ function PlanNewWeekPage() {
                                 )}
                               </div>
                             </th>
-                            {COLUMNS.map(col => (
-                              <th key={col.id} className={`p-3 text-center border-l border-slate-600 w-[150px] ${col.type === 'exec' ? 'bg-slate-700 border-b-4 border-b-blue-400' : ''}`}>
+                            {dayColumns.map(col => (
+                              <th key={col.id} className={`p-3 text-center border-l border-slate-600 w-[150px] ${col.type === 'exec' ? 'bg-slate-700 border-b-4 border-b-blue-400' : col.type === 'training' ? 'bg-yellow-600 border-b-4 border-b-yellow-400' : ''}`}>
                                 <div className="flex flex-col items-center gap-1">
                                   <span>{col.label}</span>
                                   {!isLocked && isEditing && (
@@ -702,7 +712,7 @@ function PlanNewWeekPage() {
                                           ? Object.entries(scheduledElsewhere).find(([, dayMap]) => dayMap[day]?.has(e.toUpperCase()))?.[0]
                                           : undefined;
                                         const isConflict = !!conflictBranch;
-                                        const isAssignedAsStaff = COLUMNS.some(c => selections[`${day}-${slot}-${c.id}`] === e);
+                                        const isAssignedAsStaff = ALL_COLUMNS.some(c => selections[`${day}-${slot}-${c.id}`] === e);
                                         const isDisabled = isConflict || isAssignedAsStaff;
                                         const endingSoon = isEndingSoon(endDateMap[e]);
                                         return (
@@ -722,14 +732,14 @@ function PlanNewWeekPage() {
                               )}
 
                               {isOpenClose ? (
-                                <td colSpan={COLUMNS.length + 2} className="p-2 border-l text-center">
+                                <td colSpan={dayColumns.length + 2} className="p-2 border-l text-center">
                                   <span className="inline-flex items-center gap-2 bg-blue-600 text-white text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-widest">
                                     All Staff — Executive ({slotIndex === 0 ? "Opening" : "Closing"})
                                   </span>
                                 </td>
                               ) : (
                                 <>
-                                  {COLUMNS.map(col => {
+                                  {dayColumns.map(col => {
                                     const val = selections[`${day}-${slot}-${col.id}`] || "";
                                     const replacementBranch = columnReplacementBranch[`${day}-${col.id}`];
                                     const colStaffList = replacementBranch
@@ -737,14 +747,14 @@ function PlanNewWeekPage() {
                                       : activeStaffList;
                                     // Only block names already selected in another column for THIS SAME SLOT
                                     const namesUsedInOtherColumns = new Set([
-                                      ...COLUMNS.filter(c => c.id !== col.id)
+                                      ...ALL_COLUMNS.filter(c => c.id !== col.id)
                                         .map(c => selections[`${day}-${slot}-${c.id}`])
                                         .filter(Boolean),
                                       ...(managerVal ? [managerVal] : []),
                                     ]);
 
                                     return (
-                                      <td key={col.id} className={`p-1.5 border-l ${col.type === 'exec' ? 'bg-slate-50' : ''}`}>
+                                      <td key={col.id} className={`p-1.5 border-l ${col.type === 'exec' ? 'bg-slate-50' : col.type === 'training' ? 'bg-yellow-50' : ''}`}>
                                         <select disabled={!isEditing} value={val} onChange={(e) => handleNameSelect(day, slot, col.id, e.target.value)}
                                           className={`w-full p-2 rounded appearance-none text-center font-bold transition-all text-xs ${val ? getStaffColor(val) : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}
                                           style={{ backgroundImage: `url("${val ? SELECT_ARROW_WHITE : SELECT_ARROW_DARK}")`, backgroundPosition: "right 0.3rem center", backgroundSize: "8px", backgroundRepeat: "no-repeat" }}>
