@@ -69,7 +69,11 @@ export async function syncHikvisionEmails(): Promise<void> {
   await ensureLogTable();
   const date = todayKL();
 
-  const scans = await prisma.$queryRawUnsafe<DayScan[]>(
+  // hikvision_attendance_all lives in ebright_hrfs (HRFS_DATABASE_URL), NOT in
+  // ebright_crm (DATABASE_URL / `prisma`). Querying it through `prisma` throws
+  // "relation does not exist", so the scans MUST go through hrfsPrisma — same
+  // fix as app/api/attendance-today. (The dedupe log below stays on `prisma`.)
+  const scans = await hrfsPrisma.$queryRawUnsafe<DayScan[]>(
     `SELECT person_id,
             max(name) AS name,
             to_char(min(event_time), 'HH24:MI:SS') AS first_time,
