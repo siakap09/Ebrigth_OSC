@@ -70,7 +70,7 @@ interface MetricsResponse {
   scopedBranchId?: string | null
 }
 
-type Preset = 'today' | 'yesterday' | 'last_week' | 'this_week' | '30d'
+type Preset = 'today' | 'yesterday' | 'last_week' | 'this_week' | '30d' | 'custom'
 type Metric = 'NL' | 'CT' | 'SU' | 'ENR'
 type Scope = 'main' | 'A' | 'B' | 'C'
 
@@ -87,6 +87,7 @@ const PRESETS: Array<{ key: Preset; label: string }> = [
   { key: 'this_week', label: 'This Week (Mon)' },
   { key: 'last_week', label: 'Last Week' },
   { key: '30d',       label: 'Last 30 Days' },
+  { key: 'custom',    label: 'Custom' },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -96,6 +97,9 @@ export function DashboardClient() {
   // rates noisy and aren't actionable for BMs scanning the board on Monday
   // morning.
   const [preset, setPreset] = useState<Preset>('this_week')
+  // Custom range (YYYY-MM-DD), applied only when preset === 'custom'.
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const { selectedBranch } = useBranchContext()
   // When an admin picks a branch from the topbar, send branchId so the API
   // returns that branch's metrics + monthly trend (admin-as-branch view).
@@ -104,10 +108,25 @@ export function DashboardClient() {
   // Drill-in: which metric+scope the user clicked to see the underlying leads.
   const [drill, setDrill] = useState<{ metric: Metric; scope: Scope; scopeLabel: string } | null>(null)
 
+  // Custom range becomes "applied" only when both ends are chosen. We send the
+  // KL day boundaries (+08:00) as ISO so the window matches the preset logic
+  // regardless of the viewer's browser timezone.
+  const customApplied = preset === 'custom' && !!customFrom && !!customTo
+  const fromIso = customApplied ? new Date(`${customFrom}T00:00:00+08:00`).toISOString() : null
+  const toIso = customApplied ? new Date(`${customTo}T23:59:59.999+08:00`).toISOString() : null
+  // While "Custom" is selected but a date is still missing, fall back to the
+  // running week so the board isn't stuck showing a stale/empty range.
+  const effectivePreset: Preset = preset === 'custom' && !customApplied ? 'this_week' : preset
+
   const { data, isLoading } = useQuery<MetricsResponse>({
-    queryKey: ['crm', 'dashboard', 'leads-metrics', preset, branchId],
+    queryKey: ['crm', 'dashboard', 'leads-metrics', effectivePreset, branchId, fromIso, toIso],
     queryFn: async () => {
-      const params = new URLSearchParams({ preset })
+      const params = new URLSearchParams({ preset: effectivePreset })
+      if (customApplied && fromIso && toIso) {
+        params.set('preset', 'custom')
+        params.set('from', fromIso)
+        params.set('to', toIso)
+      }
       if (branchId) params.set('branchId', branchId)
       const res = await fetch(`/api/crm/dashboard/leads-metrics?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to load metrics')
@@ -151,6 +170,31 @@ export function DashboardClient() {
           ))}
         </div>
       </div>
+
+      {/* Custom range pickers — only when "Custom" is selected. */}
+      {preset === 'custom' && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">From</span>
+          <input
+            type="date"
+            value={customFrom}
+            max={customTo || undefined}
+            onChange={(e) => setCustomFrom(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          />
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">to</span>
+          <input
+            type="date"
+            value={customTo}
+            min={customFrom || undefined}
+            onChange={(e) => setCustomTo(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          />
+          {!customApplied && (
+            <span className="text-xs italic text-slate-400">Pick both dates to apply.</span>
+          )}
+        </div>
+      )}
 
       {isLoading ? (
         <LoadingSkeleton />
@@ -260,7 +304,9 @@ export function DashboardClient() {
           metric={drill.metric}
           scope={drill.scope}
           scopeLabel={drill.scopeLabel}
-          preset={preset}
+          preset={effectivePreset}
+          from={fromIso}
+          to={toIso}
           branchId={branchId}
           onClose={() => setDrill(null)}
         />
@@ -550,6 +596,8 @@ function LeadListModal({
   scope,
   scopeLabel,
   preset,
+  from,
+  to,
   branchId,
   onClose,
 }: {
@@ -557,13 +605,19 @@ function LeadListModal({
   scope: Scope
   scopeLabel: string
   preset: Preset
+  from?: string | null
+  to?: string | null
   branchId: string | null
   onClose: () => void
 }) {
   const { data, isLoading, isError } = useQuery<LeadListResponse>({
-    queryKey: ['crm', 'dashboard', 'leads-list', metric, scope, preset, branchId],
+    queryKey: ['crm', 'dashboard', 'leads-list', metric, scope, preset, from, to, branchId],
     queryFn: async () => {
       const params = new URLSearchParams({ metric, scope, preset })
+      if (preset === 'custom' && from && to) {
+        params.set('from', from)
+        params.set('to', to)
+      }
       if (branchId) params.set('branchId', branchId)
       const res = await fetch(`/api/crm/dashboard/leads-metrics/list?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to load leads')
