@@ -1644,6 +1644,8 @@ function OpportunityDetailModal({
       stageHistory?: HistoryEntry[]
       contact?: {
         id: string
+        /** Parent's free-text remarks from the registration/Wix form. */
+        remarks?: string | null
         notes?: Array<{
           id: string
           body: string
@@ -1657,6 +1659,7 @@ function OpportunityDetailModal({
     isLoading: boolean
   }
   const notes = full?.contact?.notes ?? []
+  const formRemarks = (full?.contact?.remarks ?? '').trim()
   // Stage remarks history — every prior stage move with a non-empty note.
   // Newest-first so the most recent context is at the top of the section.
   const stageRemarks = (full?.stageHistory ?? [])
@@ -2161,6 +2164,19 @@ function OpportunityDetailModal({
                   </span>
                 ))}
               </div>
+            </section>
+          )}
+
+          {/* Parent's form remarks — the free-text the parent typed on the
+              registration/Wix form, stored on the contact. Read-only. */}
+          {formRemarks && (
+            <section>
+              <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <PenLine className="h-3 w-3" /> Remarks from form
+              </h3>
+              <p className="whitespace-pre-wrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-slate-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-slate-100">
+                {formRemarks}
+              </p>
             </section>
           )}
 

@@ -431,6 +431,10 @@ model crm_contact {
   // Stored verbatim — display as written, no normalisation. Null = lead didn't
   // come from a tracked campaign; UI renders "-" in that case.
   campaignName      String?
+  // Free-text remarks the parent typed on the Wix / trial registration form.
+  // Stored directly on the contact (one per sibling) so the lead-detail card
+  // can show it without a separate note row. Null when none was entered.
+  remarks           String?
   childName1        String?
   childAge1         String?
   childName2        String?
