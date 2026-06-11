@@ -101,8 +101,23 @@ export function AttendanceRoster({
             <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
               <tbody>
                 {orderedInvitations.map((inv, idx) => {
-                  const student = students.find(s => s.id === inv.studentId);
-                  if (!student) return null;
+                  const looked = students.find(s => s.id === inv.studentId);
+                  // Orphaned invitation (student removed from Heidi after invite):
+                  // show a placeholder row instead of dropping it, so the roster
+                  // count matches the visible rows and it stays actionable.
+                  const student: Student = looked ?? {
+                    id: inv.studentId,
+                    name: `#${inv.studentId} (not in records)`,
+                    branch: inv.branch,
+                    grade: inv.targetGrade ?? 0,
+                    ageCategory: "Junior",
+                    credit: 0,
+                    faHistory: {},
+                    parentName: "",
+                    parentPhone: "",
+                    enrolmentDate: "",
+                    active: false,
+                  };
                   return (
                     <SortableInvitationRow
                       key={inv.id}
