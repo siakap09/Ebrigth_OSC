@@ -84,7 +84,43 @@ export function SessionInvitesPanel({
             <tbody>
               {invitations.map(inv => {
                 const student = getStudent(inv.studentId);
-                if (!student) return null;
+                // Orphaned invitation: the student record was removed from
+                // studentrecords after the invite was created. Show it (with a
+                // remove button) instead of silently hiding it — otherwise the
+                // "invites used" count won't match the visible rows and a BM
+                // has no way to clear the stale invite.
+                if (!student) {
+                  return (
+                    <tr key={inv.id} className="bg-amber-50/40">
+                      <td>
+                        <div className="font-medium text-danger">Unknown student</div>
+                        <div className="text-xs text-ink-400">#{inv.studentId} · not in records</div>
+                      </td>
+                      <td>
+                        <span className="font-mono text-sm">{inv.targetGrade ? `G${inv.targetGrade}` : "—"}</span>
+                      </td>
+                      <td><span className="text-xs text-ink-400">—</span></td>
+                      <td><span className="text-xs text-ink-400">—</span></td>
+                      <td><span className="text-xs text-ink-400">—</span></td>
+                      <td>
+                        <InvitationStatusSelector
+                          value={inv.status}
+                          onChange={(s) => onStatusChange(inv.id, s)}
+                          disabled={!canInvite && inv.status !== "confirmed" && inv.status !== "invited"}
+                        />
+                      </td>
+                      <td>
+                        <button
+                          onClick={() => onRemove(inv)}
+                          className="fa-btn-ghost p-1.5 text-ink-400 hover:text-danger"
+                          title="Remove stale invite"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                }
                 const backlog = hasBacklog(student);
                 return (
                   <tr key={inv.id}>
