@@ -457,6 +457,15 @@ export async function GET(req: NextRequest) {
         : branches.length === 1
           ? branches[0].id
           : null,
+      // For non-elevated users with MORE THAN ONE branch (regional managers,
+      // multi-branch BMs), surface the full branch list so the dashboard can
+      // render the Trial Class Schedule with its own branch picker — the
+      // single scopedBranchId path can't cover a whole region. Null for
+      // elevated (they use `branches`) and single-branch users.
+      scopedBranches:
+        elevated || branches.length <= 1
+          ? null
+          : orderedBranches.map((b) => ({ branchId: b.branchId, branchName: b.branchName })),
     })
   } catch (e) {
     console.error('[GET leads-metrics]', e)

@@ -41,9 +41,14 @@ export async function GET(req: NextRequest) {
   //   - else (elevated, no override) returns empty grid — the trial widget is
   //     a branch-level tool, not a tenant-wide rollup.
   const requestedBranchId = sp.get('branchId')
+  // A non-elevated caller (branch manager / regional manager) may only query
+  // a branch they're linked to — the RM trial-schedule picker sends each of
+  // their region's branches, so this both enables that and closes the hole
+  // where any signed-in user could read another branch's grid via ?branchId.
+  const canSeeBranch = (id: string) => access.elevated || access.branchIds.includes(id)
   const branchIds: string[] | null =
     requestedBranchId
-      ? [requestedBranchId]
+      ? (canSeeBranch(requestedBranchId) ? [requestedBranchId] : [])
       : access.elevated
         ? null              // No branch chosen → no data
         : access.branchIds

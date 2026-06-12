@@ -68,6 +68,10 @@ interface MetricsResponse {
   /** Branch ID when scoped — drives the trial-schedule widget when the BM
    *  has no explicit topbar selection (single-branch users don't get one). */
   scopedBranchId?: string | null
+  /** Non-elevated multi-branch users (regional managers / multi-branch BMs):
+   *  their full branch list, used to render the Trial Schedule branch picker
+   *  across the whole region. Null for elevated + single-branch users. */
+  scopedBranches?: Array<{ branchId: string; branchName: string }> | null
 }
 
 type Preset = 'today' | 'yesterday' | 'last_week' | 'this_week' | '30d' | 'custom'
@@ -271,22 +275,40 @@ export function DashboardClient() {
               - readOnly for super admin: cells render as plain numbers and
                 the drill-in modal is suppressed. Agency admin keeps drill-in. */}
           {(() => {
-            const branchScopedId = data.elevated === false
-              ? (branchId ?? data.scopedBranchId ?? null)
-              : null
-            const showWidget =
-              (data.elevated === false && !!branchScopedId)
-              || (data.elevated !== false && data.branches.length > 0)
-            if (!showWidget) return null
-            return (
-              <TrialSchedule
-                branchId={branchScopedId}
-                branches={data.elevated !== false
-                  ? data.branches.map((b) => ({ id: b.branchId, name: b.branchName }))
-                  : undefined}
-                readOnly={data.elevated !== false && (data.isSuperAdmin ?? false)}
-              />
-            )
+            // Elevated admins: branch picker over all branches (super admin
+            // gets the read-only variant).
+            if (data.elevated !== false) {
+              if (data.branches.length === 0) return null
+              return (
+                <TrialSchedule
+                  branchId={branchId}
+                  branches={data.branches.map((b) => ({ id: b.branchId, name: b.branchName }))}
+                  readOnly={data.isSuperAdmin ?? false}
+                />
+              )
+            }
+
+            // Non-elevated (branch / regional manager) — fully interactive:
+            //  1. Explicit topbar branch selection → that single branch.
+            //  2. Multiple branches, no selection (regional manager / multi-
+            //     branch BM) → the widget's own picker across their branches.
+            //  3. Single branch → that branch.
+            const scoped = data.scopedBranches ?? []
+            if (branchId) {
+              return <TrialSchedule branchId={branchId} readOnly={false} />
+            }
+            if (scoped.length > 1) {
+              return (
+                <TrialSchedule
+                  branchId={null}
+                  branches={scoped.map((b) => ({ id: b.branchId, name: b.branchName }))}
+                  readOnly={false}
+                />
+              )
+            }
+            const single = data.scopedBranchId ?? scoped[0]?.branchId ?? null
+            if (!single) return null
+            return <TrialSchedule branchId={single} readOnly={false} />
           })()}
 
           {/* Elevated-only continued: branch bar chart + per-branch table. */}
