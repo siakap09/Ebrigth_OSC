@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { RefreshCw, MapPinned } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
@@ -213,8 +214,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export function RegionDashboard() {
+  // The superadmin branch-switcher deep-links here as /crm/region?region=B so
+  // picking a region from the top-left dropdown lands pre-filtered. Falls back
+  // to "all" for the sidebar link / regional managers (whose own region is
+  // resolved server-side regardless of this initial value).
+  const searchParams = useSearchParams()
+  const regionParam = (searchParams.get('region') ?? '').toUpperCase()
+  const initialRegion: 'all' | Region =
+    regionParam === 'A' || regionParam === 'B' || regionParam === 'C' ? regionParam : 'all'
+
   const [preset, setPreset] = useState<Preset>('this_week')
-  const [region, setRegion] = useState<'all' | Region>('all')
+  const [region, setRegion] = useState<'all' | Region>(initialRegion)
   const [branchId, setBranchId] = useState<string>('all')
 
   const { data, isLoading, isFetching, refetch } = useQuery({

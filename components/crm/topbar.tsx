@@ -282,6 +282,29 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
             </button>
           )}
 
+          {/* Regions — admins only. Deep-links into the Day Distribution
+              (Region) view pre-filtered to the chosen region. Branches are
+              grouped A/B/C in lib/crm/dashboard-metrics; this is the quick
+              jump the super admin asked for in the top-left dropdown. */}
+          {isAdmin && (
+            <div className="border-t border-slate-100 dark:border-slate-700">
+              <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Regions
+              </div>
+              <div className="flex flex-wrap gap-1.5 px-3 pb-2">
+                {(['A', 'B', 'C'] as const).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => { router.push(`/crm/region?region=${r}`); setOpen(false); setQuery('') }}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/40"
+                  >
+                    Region {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 border-t border-slate-100 dark:border-slate-700">
             {isAdmin ? 'All Accounts' : 'Accessible Branches'}
           </div>
