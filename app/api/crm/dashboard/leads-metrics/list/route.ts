@@ -140,8 +140,31 @@ export async function GET(req: NextRequest) {
         const name = branchNameById.get(o.branchId) ?? ''
         return toRow(o.contact, name, BRANCH_CODES[name] ?? '')
       })
+    } else if (metric === 'CT') {
+      // CT = leads with a Trial Class booked in range, counted by CLASS DATE
+      // (matches the headline card + the Trial Class Schedule widget), deduped
+      // per contact.
+      const appts = await prisma.crm_appointment.findMany({
+        where: {
+          tenantId,
+          title: 'Trial Class',
+          branchId: { in: branchIds },
+          startAt: { gte: from, lte: to },
+          contact: { deletedAt: null },
+        },
+        select: { branchId: true, startAt: true, contactId: true, contact: { select: CONTACT_SELECT } },
+        orderBy: { startAt: 'desc' },
+      })
+      const seen = new Set<string>()
+      for (const a of appts) {
+        if (seen.has(a.contactId)) continue
+        seen.add(a.contactId)
+        const name = branchNameById.get(a.branchId) ?? ''
+        rows.push(toRow(a.contact, name, BRANCH_CODES[name] ?? ''))
+        if (rows.length > MAX_ROWS) break
+      }
     } else {
-      // CT / SU / ENR = opportunities that ENTERED the stage in range (by
+      // SU / ENR = opportunities that ENTERED the stage in range (by
       // stage_history), deduped per opportunity — matches the card.
       const stages = await prisma.crm_stage.findMany({ where: { tenantId }, select: { id: true, name: true, shortCode: true } })
       const re = STAGE_PATTERN[metric]

@@ -74,7 +74,7 @@ interface MetricsResponse {
   scopedBranches?: Array<{ branchId: string; branchName: string }> | null
 }
 
-type Preset = 'today' | 'yesterday' | 'last_week' | 'this_week' | '30d' | 'custom'
+type Preset = 'today' | 'yesterday' | 'last_week' | 'this_week' | 'next_week' | '30d' | 'custom'
 type Metric = 'NL' | 'CT' | 'SU' | 'ENR'
 type Scope = 'main' | 'A' | 'B' | 'C'
 
@@ -89,6 +89,7 @@ const PRESETS: Array<{ key: Preset; label: string }> = [
   { key: 'today',     label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
   { key: 'this_week', label: 'This Week (Mon)' },
+  { key: 'next_week', label: 'Next Week' },
   { key: 'last_week', label: 'Last Week' },
   { key: '30d',       label: 'Last 30 Days' },
   { key: 'custom',    label: 'Custom' },

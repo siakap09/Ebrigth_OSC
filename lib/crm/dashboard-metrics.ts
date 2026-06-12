@@ -60,9 +60,9 @@ export const BRANCH_CODES: Record<string, string> = {
   '18 Ebright (Taman Sri Gombak)':         'TSG',
   '19 Ebright (Kota Warisan)':             'KW',
   '20 Ebright (Kajang TTDI Grove)':        'KTG',
-  '21 Ebright (Dataran Puchong Utama)':    'DPU',
+  '21 Ebright (Tropicana Sungai Buloh)':   'TSB',
   '22 Ebright (Puncak Jalil)':             'PJL',
-  '23 Ebright (Tropicana Sungai Buloh)':   'TSB',
+  '23 Ebright (Dataran Puchong Utama)':    'DPU',
 }
 
 export const REGIONS: Record<'A' | 'B' | 'C', string[]> = {
@@ -74,7 +74,7 @@ export const REGIONS: Record<'A' | 'B' | 'C', string[]> = {
     '10 Ebright (Denai Alam)',
     '15 Ebright (Eco Grandeur)',
     '02 Ebright (Subang Taipan)',
-    '23 Ebright (Tropicana Sungai Buloh)',
+    '21 Ebright (Tropicana Sungai Buloh)',
   ],
   B: [
     '12 Ebright (Danau Kota)',
@@ -84,7 +84,7 @@ export const REGIONS: Record<'A' | 'B' | 'C', string[]> = {
     '14 Ebright (Bandar Tun Hussein Onn)',
     '20 Ebright (Kajang TTDI Grove)',
     '18 Ebright (Taman Sri Gombak)',
-    '21 Ebright (Dataran Puchong Utama)',
+    '23 Ebright (Dataran Puchong Utama)',
   ],
   C: [
     '06 Ebright (Putrajaya)',
@@ -155,17 +155,33 @@ export function parseDateRange(sp: URLSearchParams): { from: Date; to: Date } {
       const toMs   = today.getTime() - daysSinceMon * 24 * 3600 * 1000 - 1
       return { from: new Date(fromMs), to: new Date(toMs) }
     }
+    case 'next_week': {
+      // Full calendar week AFTER the current one (Mon 00:00 → Sun 23:59 KL).
+      // Lets the dashboard show CT for trials booked next week (CT is counted
+      // by trial-class date), mirroring the Trial Class Schedule widget.
+      const wall = new Date(today.getTime() + KL_OFFSET_MS)
+      const dow = wall.getUTCDay()
+      const daysSinceMon = dow === 0 ? 6 : dow - 1
+      const nextMonMs = today.getTime() + (7 - daysSinceMon) * 24 * 3600 * 1000
+      return { from: new Date(nextMonMs), to: new Date(nextMonMs + 7 * 24 * 3600 * 1000 - 1) }
+    }
     case '30d': {
       const from = new Date(today.getTime() - 29 * 24 * 3600 * 1000)
       return { from, to: endOfToday }
     }
     case 'this_week':
     default: {
+      // Full calendar week (Mon 00:00 → Sun 23:59 KL). The end runs to Sunday
+      // rather than "today" so CT — counted by trial-class date — includes
+      // trials booked for later this week, matching the Trial Class Schedule
+      // widget. NL / SU / ENR have no future-dated rows, so widening the end
+      // doesn't change their counts; only the date-range label extends.
       const wall = new Date(today.getTime() + KL_OFFSET_MS)
       const dow = wall.getUTCDay()
       const daysBack = dow === 0 ? 6 : dow - 1
       const from = new Date(today.getTime() - daysBack * 24 * 3600 * 1000)
-      return { from, to: endOfToday }
+      const to = new Date(from.getTime() + 7 * 24 * 3600 * 1000 - 1)
+      return { from, to }
     }
   }
 }

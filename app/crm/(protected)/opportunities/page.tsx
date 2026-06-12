@@ -50,9 +50,9 @@ export default async function OpportunitiesPage() {
     '18 Ebright (Taman Sri Gombak)',
     '19 Ebright (Kota Warisan)',
     '20 Ebright (Kajang TTDI Grove)',
-    '21 Ebright (Dataran Puchong Utama)',
+    '21 Ebright (Tropicana Sungai Buloh)',
     '22 Ebright (Puncak Jalil)',
-    '23 Ebright (Tropicana Sungai Buloh)',
+    '23 Ebright (Dataran Puchong Utama)',
     'Ebright Marketing',
   ]
 

@@ -181,8 +181,10 @@ export async function GET(req: NextRequest) {
       if (info.category === 'SU')  stageIdsByCategory.SU.push(id)
       if (info.category === 'ENR') stageIdsByCategory.ENR.push(id)
     }
+    // SU / ENR are counted by stage-history entry date (when the lead was
+    // dragged into the stage). CT is NOT — see the trial-appointment block
+    // below; it's counted by the lead's TRIAL CLASS DATE instead.
     const targetStageIds = [
-      ...stageIdsByCategory.CT,
       ...stageIdsByCategory.SU,
       ...stageIdsByCategory.ENR,
     ]
@@ -203,6 +205,23 @@ export async function GET(req: NextRequest) {
               opportunity: { select: { branchId: true } },
             },
           })
+
+    // CT — counted by TRIAL CLASS DATE, not the drag date. Confirming a lead
+    // for trial books a Trial Class appointment with the class date/time; we
+    // count it in whichever range its class falls in, matching the Trial Class
+    // Schedule widget (same crm_appointment source + startAt window). So
+    // selecting "This Week" shows the trials happening this week regardless of
+    // when the card was dragged into CT; "Next Week" shows next week's, etc.
+    // Deduped per contact so a reschedule inside the range isn't double-counted.
+    const trialAppointments = await prisma.crm_appointment.findMany({
+      where: {
+        tenantId,
+        title: 'Trial Class',
+        branchId: { in: branches.map((b) => b.id) },
+        startAt: { gte: from, lte: to },
+      },
+      select: { branchId: true, contactId: true },
+    })
 
     // Initialise per-branch metrics
     const branchMetrics = new Map<string, BranchMetrics>()
@@ -233,12 +252,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // CT / SU / ENR — each opportunity is counted once per category per
-    // range, regardless of how many transitions it makes back and forth.
-    // We dedupe via Set keyed by `${branchId}|${oppId}` per category so a
-    // CT → RSD → CT round-trip in the same day doesn't double-count.
-    const seenByBranchCat: Record<'CT' | 'SU' | 'ENR', Map<string, Set<string>>> = {
-      CT:  new Map(),
+    // SU / ENR — each opportunity is counted once per category per range,
+    // regardless of how many transitions it makes back and forth. We dedupe
+    // via a Set per branch so a SU → RSD → SU round-trip in the same day
+    // doesn't double-count.
+    const seenByBranchCat: Record<'SU' | 'ENR', Map<string, Set<string>>> = {
       SU:  new Map(),
       ENR: new Map(),
     }
@@ -247,12 +265,19 @@ export async function GET(req: NextRequest) {
       if (!branchId) continue
       const info = stageInfo.get(h.toStageId)
       const cat = info?.category
-      if (cat !== 'CT' && cat !== 'SU' && cat !== 'ENR') continue
+      if (cat !== 'SU' && cat !== 'ENR') continue
       let perBranch = seenByBranchCat[cat].get(branchId)
       if (!perBranch) { perBranch = new Set(); seenByBranchCat[cat].set(branchId, perBranch) }
       perBranch.add(h.opportunityId)
     }
-    for (const [branchId, ids] of seenByBranchCat.CT.entries()) {
+    // CT — distinct contacts with a Trial Class booked in the range, per branch.
+    const ctByBranch = new Map<string, Set<string>>()
+    for (const a of trialAppointments) {
+      let set = ctByBranch.get(a.branchId)
+      if (!set) { set = new Set(); ctByBranch.set(a.branchId, set) }
+      set.add(a.contactId)
+    }
+    for (const [branchId, ids] of ctByBranch.entries()) {
       const m = branchMetrics.get(branchId); if (m) m.CT = ids.size
     }
     for (const [branchId, ids] of seenByBranchCat.SU.entries()) {
@@ -290,18 +315,45 @@ export async function GET(req: NextRequest) {
     const regionA = aggregate(REGIONS.A)
     const regionB = aggregate(REGIONS.B)
     const regionC = aggregate(REGIONS.C)
-    const main: BranchMetrics = {
-      branchId: '',
-      branchName: '',
-      code: '',
-      region: null,
-      NL:  regionA.NL + regionB.NL + regionC.NL,
-      CT:  regionA.CT + regionB.CT + regionC.CT,
-      SU:  regionA.SU + regionB.SU + regionC.SU,
-      ENR: regionA.ENR + regionB.ENR + regionC.ENR,
-      BUF: regionA.BUF + regionB.BUF + regionC.BUF,
-      conversionRate: 0, confirmedRate: 0, showUpRate: 0, enrolmentRate: 0,
+
+    // Sum every branch currently in scope, irrespective of region membership.
+    function aggregateAll(): BranchMetrics {
+      const list = Array.from(branchMetrics.values())
+      const NL  = list.reduce((s, x) => s + x.NL, 0)
+      const CT  = list.reduce((s, x) => s + x.CT, 0)
+      const SU  = list.reduce((s, x) => s + x.SU, 0)
+      const ENR = list.reduce((s, x) => s + x.ENR, 0)
+      const BUF = list.reduce((s, x) => s + x.BUF, 0)
+      return {
+        branchId: '', branchName: '', code: '', region: null,
+        NL, CT, SU, ENR, BUF, ...computeRates({ NL, CT, SU, ENR }),
+      }
     }
+
+    // Headline "Main" block:
+    //   - Elevated (all-branches view): sum of regions A+B+C. This is exactly
+    //     why a branch outside the canonical regions — e.g. "Ebright Marketing"
+    //     (the catch-all for unresolved leads) — does NOT inflate the
+    //     super-admin dashboard; those leads only count once they're
+    //     transferred to a real, regioned branch.
+    //   - Non-elevated / view-as-branch: sum of the branches actually in scope.
+    //     The old region-sum returned 0 for a scoped branch with no region
+    //     (Marketing showed 0 leads on its own dashboard even though it had
+    //     them) — summing the scoped branches fixes that.
+    const main: BranchMetrics = elevated
+      ? {
+          branchId: '',
+          branchName: '',
+          code: '',
+          region: null,
+          NL:  regionA.NL + regionB.NL + regionC.NL,
+          CT:  regionA.CT + regionB.CT + regionC.CT,
+          SU:  regionA.SU + regionB.SU + regionC.SU,
+          ENR: regionA.ENR + regionB.ENR + regionC.ENR,
+          BUF: regionA.BUF + regionB.BUF + regionC.BUF,
+          conversionRate: 0, confirmedRate: 0, showUpRate: 0, enrolmentRate: 0,
+        }
+      : aggregateAll()
     Object.assign(main, computeRates(main))
 
     // Sort branches numerically by the "NN …" name prefix so the dashboard
@@ -338,7 +390,8 @@ export async function GET(req: NextRequest) {
         select: { branchId: true, stageId: true, createdAt: true },
       })
 
-      // Stage-history entries (CT / SU / ENR) over the same 6-month window.
+      // Stage-history entries (SU / ENR) over the same 6-month window. CT is
+      // sourced from trial appointments below (by class date).
       const trendEntries =
         targetStageIds.length === 0
           ? []
@@ -356,6 +409,17 @@ export async function GET(req: NextRequest) {
                 opportunity: { select: { branchId: true } },
               },
             })
+
+      // CT — trial appointments over the 6-month window, bucketed by class date.
+      const trendTrialAppointments = await prisma.crm_appointment.findMany({
+        where: {
+          tenantId,
+          title: 'Trial Class',
+          branchId: { in: branches.map((b) => b.id) },
+          startAt: { gte: sixMonthsBack, lte: to },
+        },
+        select: { contactId: true, startAt: true },
+      })
 
       const monthMap = new Map<string, { NL: number; CT: number; SU: number; ENR: number; BUF: number }>()
       // Pre-seed every month so the chart shows zeros instead of gaps.
@@ -378,27 +442,46 @@ export async function GET(req: NextRequest) {
         if (info.category === 'BUF') bucket.BUF += 1
       }
 
-      // CT / SU / ENR — bucket by stage_history.changedAt month, dedup per
-      // (month, category, opportunityId) so a lead bouncing CT → RSD → CT
+      // SU / ENR — bucket by stage_history.changedAt month, dedup per
+      // (month, category, opportunityId) so a lead bouncing SU → RSD → SU
       // inside one month doesn't count twice.
-      const seenInMonth: Record<'CT' | 'SU' | 'ENR', Map<string, Set<string>>> = {
-        CT: new Map(), SU: new Map(), ENR: new Map(),
+      const seenInMonth: Record<'SU' | 'ENR', Map<string, Set<string>>> = {
+        SU: new Map(), ENR: new Map(),
       }
       for (const h of trendEntries) {
         const cat = stageInfo.get(h.toStageId)?.category
-        if (cat !== 'CT' && cat !== 'SU' && cat !== 'ENR') continue
+        if (cat !== 'SU' && cat !== 'ENR') continue
         const key = monthKey(new Date(h.changedAt))
         if (!monthMap.has(key)) continue
         let set = seenInMonth[cat].get(key)
         if (!set) { set = new Set(); seenInMonth[cat].set(key, set) }
         set.add(h.opportunityId)
       }
-      for (const cat of ['CT', 'SU', 'ENR'] as const) {
+      for (const cat of ['SU', 'ENR'] as const) {
         for (const [monthKey_, ids] of seenInMonth[cat].entries()) {
           const bucket = monthMap.get(monthKey_)
           if (!bucket) continue
           bucket[cat] = ids.size
         }
+      }
+
+      // CT — bucket trial appointments by their class-date KL month, dedup per
+      // (month, contactId). Appointment startAt is stored naive-KL-as-UTC, so
+      // its raw UTC month already IS the KL month — no +8h shift (that would
+      // bump a late-evening trial into the next month).
+      const apptMonthKey = (d: Date) =>
+        `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+      const ctSeenInMonth = new Map<string, Set<string>>()
+      for (const a of trendTrialAppointments) {
+        const key = apptMonthKey(new Date(a.startAt))
+        if (!monthMap.has(key)) continue
+        let set = ctSeenInMonth.get(key)
+        if (!set) { set = new Set(); ctSeenInMonth.set(key, set) }
+        set.add(a.contactId)
+      }
+      for (const [monthKey_, ids] of ctSeenInMonth.entries()) {
+        const bucket = monthMap.get(monthKey_)
+        if (bucket) bucket.CT = ids.size
       }
 
       byMonth = Array.from(monthMap.entries())
