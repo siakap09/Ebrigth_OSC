@@ -1,7 +1,7 @@
-import { headers } from 'next/headers'
+import { headers, cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Clock, Mail } from 'lucide-react'
+import { Clock, Mail, LogOut, Undo2 } from 'lucide-react'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { SignOutButton } from './sign-out-button'
@@ -29,6 +29,16 @@ export default async function AwaitingAccessPage() {
   }
 
   const email = session.user.email ?? 'your account'
+
+  // Are we here because a super admin used "Login As" to impersonate a
+  // branch-less user? If so the session above is the IMPERSONATED user, and
+  // the impersonation cookie is what pins us to this page. A plain sign-out
+  // doesn't clear that cookie, so the SSO bridge re-impersonates on the next
+  // request and we bounce straight back here — the "sign out loops" report.
+  // When impersonating we offer "Return to admin view" (clears only the
+  // impersonation cookie → back to the real admin) as the primary action.
+  const cookieStore = await cookies()
+  const isImpersonating = !!cookieStore.get('crm_preview_user')?.value
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
@@ -70,14 +80,48 @@ export default async function AwaitingAccessPage() {
             </div>
           </div>
 
+          {isImpersonating && (
+            <div className="mt-6 rounded-xl border border-amber-300/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+              You&apos;re viewing as <span className="font-semibold text-white">{email}</span> via
+              &ldquo;Login As&rdquo;, and this account isn&apos;t linked to a branch. Return to your
+              own admin view below — signing out here would log you out entirely.
+            </div>
+          )}
+
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
-            <Link
-              href="/crm/dashboard"
-              className="flex-1 py-3 px-4 bg-linear-to-r from-blue-500 to-cyan-400 text-white font-semibold rounded-xl text-center hover:from-blue-600 hover:to-cyan-500 transition-all"
-            >
-              Try again
-            </Link>
-            <SignOutButton />
+            {isImpersonating ? (
+              <>
+                {/* GET route: clears only the impersonation cookie, then 302s
+                    back to the dashboard as the real (admin) session. */}
+                <a
+                  href="/api/crm/preview/resume"
+                  className="flex-1 py-3 px-4 bg-linear-to-r from-blue-500 to-cyan-400 text-white font-semibold rounded-xl text-center hover:from-blue-600 hover:to-cyan-500 transition-all flex items-center justify-center gap-2"
+                >
+                  <Undo2 className="w-4 h-4" />
+                  Return to admin view
+                </a>
+                {/* Full sign-out: clears impersonation + auth cookies → /login.
+                    Avoids the previous loop where a plain sign-out left the
+                    impersonation cookie set and bounced back here. */}
+                <a
+                  href="/api/crm/preview/exit"
+                  className="flex-1 py-3 px-4 bg-white/10 border border-white/20 text-white font-semibold rounded-xl text-center hover:bg-white/20 transition-all flex items-center justify-center gap-2"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sign out
+                </a>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/crm/dashboard"
+                  className="flex-1 py-3 px-4 bg-linear-to-r from-blue-500 to-cyan-400 text-white font-semibold rounded-xl text-center hover:from-blue-600 hover:to-cyan-500 transition-all"
+                >
+                  Try again
+                </Link>
+                <SignOutButton />
+              </>
+            )}
           </div>
 
           <div className="mt-8 text-center">
