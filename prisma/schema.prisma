@@ -334,9 +334,57 @@ model crm_branch {
   messageTemplates crm_message_template[]
   transfersFrom    crm_lead_transfer[]  @relation("TransferFrom")
   transfersTo      crm_lead_transfer[]  @relation("TransferTo")
+  whatsappLeads    crm_whatsapp_lead[]
 
   @@index([tenantId])
   @@map("crm_branch")
+}
+
+/// Inbound WhatsApp interactions that a branch must process.
+///
+/// Each row mirrors one interaction from `ebrightleads_db.ws_leads` (anonymous
+/// "1 message = 1 potential lead" counts auto-inserted by the Meta WhatsApp
+/// pipeline) OR a manual entry added by a super admin. The CRM tracks the
+/// resolution state HERE rather than in ws_leads (which is owned by the
+/// external auto-system), keyed by `wsLeadId`. COMPLETED/DELETED rows act as
+/// tombstones so a re-sync never resurrects a cleared interaction.
+///
+/// Lifecycle: PENDING → (branch fills the WhatsApp form) COMPLETED, linking the
+/// `crm_contact` it created; or → (super admin) DELETED for "just asking"
+/// interactions. Only these two transitions clear a branch's red badge.
+model crm_whatsapp_lead {
+  id          String    @id @default(uuid())
+  tenantId    String
+  branchId    String
+  /// ws_leads.ws_lead_id for auto rows, or "manual_<uuid>" for super-admin adds.
+  wsLeadId    String
+  /// 'auto' (synced from ws_leads) | 'manual' (super-admin added).
+  source      String    @default("auto")
+  /// 'PENDING' | 'COMPLETED' | 'DELETED'.
+  status      String    @default("PENDING")
+  // Snapshot of the ws_leads row at sync time (ws_leads may change/disappear).
+  rawBranch   String?
+  locationKey String?
+  fullName    String?
+  phone       String?
+  campaignName String?
+  submittedAt DateTime?
+  // Set when a branch completes the WhatsApp form.
+  contactId        String?
+  completedByUserId String?
+  completedAt       DateTime?
+  // Set when a super admin deletes the interaction.
+  deletedByUserId String?
+  deletedAt       DateTime?
+  deleteReason    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  branch      crm_branch @relation(fields: [branchId], references: [id])
+
+  @@unique([tenantId, wsLeadId], name: "uq_crm_whatsapp_lead_wsid")
+  @@index([tenantId, branchId, status])
+  @@map("crm_whatsapp_lead")
 }
 
 enum CrmUserRole {

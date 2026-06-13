@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { KanbanBoard } from '@/components/crm/opportunities/kanban-board'
+import { WhatsappLeadsButton } from '@/components/crm/opportunities/whatsapp-leads-button'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
 
 export const dynamic = 'force-dynamic'
@@ -151,6 +152,8 @@ export default async function OpportunitiesPage() {
         <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
           Opportunities
         </h1>
+        {/* Compulsory: branch managers must clear every inbound WhatsApp lead. */}
+        <WhatsappLeadsButton />
       </div>
 
       <div className="flex-1 overflow-hidden">

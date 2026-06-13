@@ -150,7 +150,11 @@ export async function GET(req: NextRequest) {
           title: 'Trial Class',
           branchId: { in: branchIds },
           startAt: { gte: from, lte: to },
-          contact: { deletedAt: null },
+          // Mirror the headline CT count: only trials whose contact still has a
+          // live (non-deleted) opportunity. Deleting a lead soft-deletes the
+          // opportunity but leaves the contact, so contact.deletedAt alone would
+          // keep showing deleted test leads here.
+          contact: { deletedAt: null, opportunities: { some: { deletedAt: null } } },
         },
         select: { branchId: true, startAt: true, contactId: true, contact: { select: CONTACT_SELECT } },
         orderBy: { startAt: 'desc' },

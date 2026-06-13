@@ -197,7 +197,9 @@ export async function GET(req: NextRequest) {
               tenantId,
               changedAt: { gte: from, lte: to },
               toStageId: { in: targetStageIds },
-              opportunity: { branchId: { in: branches.map((b) => b.id) } },
+              // Exclude soft-deleted (e.g. deleted test) leads so the headline
+              // count matches the drill-in list, which also filters deletedAt.
+              opportunity: { branchId: { in: branches.map((b) => b.id) }, deletedAt: null },
             },
             select: {
               opportunityId: true,
@@ -219,6 +221,12 @@ export async function GET(req: NextRequest) {
         title: 'Trial Class',
         branchId: { in: branches.map((b) => b.id) },
         startAt: { gte: from, lte: to },
+        // Only count trials whose contact still has a LIVE lead. Deleting a lead
+        // on the kanban soft-deletes the opportunity (not the contact), so a
+        // deleted test lead's contact lingers — keying on contact.deletedAt
+        // alone wouldn't drop it. Requiring a non-deleted opportunity excludes
+        // deleted test leads and keeps CT in lockstep with the drill-in list.
+        contact: { deletedAt: null, opportunities: { some: { deletedAt: null } } },
       },
       select: { branchId: true, contactId: true },
     })
@@ -400,7 +408,7 @@ export async function GET(req: NextRequest) {
                 tenantId,
                 changedAt: { gte: sixMonthsBack, lte: to },
                 toStageId: { in: targetStageIds },
-                opportunity: { branchId: { in: branches.map((b) => b.id) } },
+                opportunity: { branchId: { in: branches.map((b) => b.id) }, deletedAt: null },
               },
               select: {
                 opportunityId: true,
@@ -417,6 +425,7 @@ export async function GET(req: NextRequest) {
           title: 'Trial Class',
           branchId: { in: branches.map((b) => b.id) },
           startAt: { gte: sixMonthsBack, lte: to },
+          contact: { deletedAt: null, opportunities: { some: { deletedAt: null } } },
         },
         select: { contactId: true, startAt: true },
       })
