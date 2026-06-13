@@ -18,6 +18,7 @@ import { prisma } from '@/lib/crm/db'
 import { logAudit } from '@/lib/crm/audit'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
 import { normalizePhone } from '@/lib/crm/utils'
+import { enqueueAutomation } from '@/lib/crm/queue'
 
 const Schema = z.object({
   id: z.string().min(1),
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       })
 
-      await tx.crm_opportunity.create({
+      const opportunity = await tx.crm_opportunity.create({
         data: {
           tenantId: access.tenantId,
           branchId: wsl.branchId,
@@ -111,6 +112,20 @@ export async function POST(req: NextRequest) {
           stageId: newLeadStage.id,
           value: 0,
           lastStageChangeAt: new Date(),
+        },
+      })
+
+      // Initial stage history (mirrors createOpportunity) so the lead has a
+      // proper New Lead entry in its timeline.
+      await tx.crm_stage_history.create({
+        data: {
+          tenantId: access.tenantId,
+          opportunityId: opportunity.id,
+          fromStageId: null,
+          toStageId: newLeadStage.id,
+          changedByUserId: session.user.id,
+          note: 'Created from WhatsApp lead',
+          changedAt: new Date(),
         },
       })
 
@@ -126,6 +141,34 @@ export async function POST(req: NextRequest) {
 
       return { contactId: contact.id }
     })
+
+    // Fire automations: WHATSAPP_LEAD (WhatsApp-specific workflows) AND
+    // NEW_LEAD (general new-lead workflows) — a converted WhatsApp lead is both.
+    // Enqueue each enabled, in-scope automation by its real id (the proven
+    // fan-out pattern used by the public form-submit route). Fire-and-forget;
+    // a missing Redis just no-ops via the queue's timeout guard.
+    try {
+      const automations = await prisma.crm_automation.findMany({
+        where: {
+          tenantId: access.tenantId,
+          enabled: true,
+          triggerType: { in: ['WHATSAPP_LEAD', 'NEW_LEAD'] },
+          OR: [{ branchId: null }, { branchId: wsl.branchId }],
+        },
+        select: { id: true, triggerType: true },
+      })
+      for (const auto of automations) {
+        void enqueueAutomation({
+          automationId: auto.id,
+          contactId: result.contactId,
+          tenantId: access.tenantId,
+          triggeredBy: auto.triggerType,
+          triggerPayload: { whatsappLeadId: wsl.id, branchId: wsl.branchId },
+        })
+      }
+    } catch (err) {
+      console.error('[whatsapp-leads/complete] automation dispatch failed:', err)
+    }
 
     void logAudit({
       tenantId: access.tenantId,

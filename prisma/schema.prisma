@@ -781,6 +781,10 @@ enum AutomationTriggerType {
   CONTACT_REPLIED
   NO_REPLY_AFTER
   LEAD_TRANSFERRED
+  // Fires when a branch converts an inbound WhatsApp interaction (from the
+  // Opportunities WhatsApp inbox) into a real lead. Contact-centric, so every
+  // action node works the same as NEW_LEAD — but scoped to WhatsApp leads only.
+  WHATSAPP_LEAD
 }
 
 enum AutomationRunStatus {

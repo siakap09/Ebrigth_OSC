@@ -38,6 +38,7 @@ export const TRIGGER_TYPES = [
   'CONTACT_REPLIED',
   'NO_REPLY_AFTER',
   'LEAD_TRANSFERRED',
+  'WHATSAPP_LEAD',
 ] as const
 
 export type TriggerType = (typeof TRIGGER_TYPES)[number]
@@ -104,6 +105,7 @@ export const TRIGGER_TYPE_LABELS: Record<TriggerType, string> = {
   CONTACT_REPLIED: 'Contact Replied',
   NO_REPLY_AFTER: 'No Reply After',
   LEAD_TRANSFERRED: 'Lead Transferred',
+  WHATSAPP_LEAD: 'WhatsApp Lead',
 }
 
 // ─── Action type labels ───────────────────────────────────────────────────────

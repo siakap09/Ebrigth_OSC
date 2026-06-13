@@ -129,13 +129,13 @@ export function WhatsappLeadsButton() {
         onClick={() => setOpen((o) => !o)}
         title="WhatsApp leads — clear all pending"
         className={cn(
-          'relative flex h-10 w-10 items-center justify-center rounded-lg border transition-colors',
+          'relative flex h-12 w-12 items-center justify-center rounded-xl border transition-colors',
           count > 0
             ? 'border-emerald-300 bg-emerald-50 text-emerald-600 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
             : 'border-slate-200 bg-white text-emerald-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800',
         )}
       >
-        <WhatsAppIcon className="h-6 w-6" />
+        <WhatsAppIcon className="h-8 w-8" />
         {count > 0 && (
           <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold leading-none text-white shadow ring-2 ring-white dark:ring-slate-900">
             {count > 99 ? '99+' : count}

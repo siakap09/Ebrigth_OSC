@@ -1,10 +1,13 @@
 /**
- * Create the crm_whatsapp_lead table on the live CRM DB.
+ * WhatsApp leads — live CRM DB migration.
  *
- * Additive-only — adds one new table + indexes + FK; touches nothing existing,
- * so it's safe to run against production. Idempotent (IF NOT EXISTS). Mirrors
- * the `crm_whatsapp_lead` model in prisma/schema.prisma exactly; run it together
- * with a deploy that ships the matching Prisma client (`npx prisma generate`).
+ * Additive-only, idempotent. Two parts, both safe to re-run:
+ *   1. crm_whatsapp_lead table + indexes + FK (the WhatsApp inbox).
+ *   2. WHATSAPP_LEAD value on the AutomationTriggerType enum (so the
+ *      Automations visual builder can use the WhatsApp Lead trigger).
+ *
+ * Run together with a deploy shipping the matching Prisma client
+ * (`npx prisma generate`).
  *
  *   npx tsx scripts/create-whatsapp-lead-table.ts            # dry-run (prints SQL)
  *   npx tsx scripts/create-whatsapp-lead-table.ts --apply    # execute
@@ -12,6 +15,10 @@
 import { prisma } from '@/lib/crm/db'
 
 const APPLY = process.argv.includes('--apply')
+
+// ALTER TYPE ... ADD VALUE cannot run inside a transaction, so it's executed as
+// its own statement (separate from the table DDL block).
+const ENUM_SQL = `ALTER TYPE "AutomationTriggerType" ADD VALUE IF NOT EXISTS 'WHATSAPP_LEAD';`
 
 const SQL = `
 CREATE TABLE IF NOT EXISTS "crm_whatsapp_lead" (
@@ -55,11 +62,14 @@ async function main() {
   if (!APPLY) {
     console.log('Dry-run. SQL that would be executed:\n')
     console.log(SQL)
-    console.log('Re-run with --apply to execute.')
+    console.log(ENUM_SQL)
+    console.log('\nRe-run with --apply to execute.')
     return
   }
   await prisma.$executeRawUnsafe(SQL)
   console.log('✓ crm_whatsapp_lead table created (or already present).')
+  await prisma.$executeRawUnsafe(ENUM_SQL)
+  console.log("✓ AutomationTriggerType now includes 'WHATSAPP_LEAD'.")
 }
 
 main().catch((e) => { console.error(e); process.exit(1) }).finally(() => prisma.$disconnect())
