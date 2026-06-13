@@ -4,10 +4,11 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // Prisma 6 still requires `url` in the schema (Prisma 7 will move this to
-  // prisma.config.ts entirely). PrismaClient instances also pass an explicit
-  // `datasourceUrl` override at runtime — that path is what Prisma 7 expects,
-  // so the upgrade later is just deleting this line.
+  // Prisma 6 still REQUIRES `url` here — `prisma validate` errors without it,
+  // even though prisma.config.ts also defines datasource.url. The newer Prisma
+  // VS Code extension (Prisma 7-aware) flags this line as deprecated, but that
+  // warning is ahead of the installed CLI (6.19); removing it breaks the build.
+  // Prisma 7 will move this to prisma.config.ts entirely — drop this line then.
   url      = env("DATABASE_URL")
 }
 
