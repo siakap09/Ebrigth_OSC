@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { canSeeKey } from "@/lib/dashboard-access";
 import { useMyPermissions } from "@/lib/use-my-permissions";
@@ -23,11 +24,29 @@ const navigationItems = [
   { key: "academy",            name: "Academy",             href: "/academy",                       icon: "🎓" },
   { key: "hrms.attendance",    name: "Attendance",          href: "/attendance",                    icon: "📅" },
   { key: "hrms.account",       name: "Account Management",  href: "/account-management",            icon: "🔐" },
+  { key: "annual-showcase",   name: "Annual Showcase",     href: "/annual-showcase",               icon: "🎪" },
 ];
 
 export default function Sidebar({ sidebarOpen, onToggle, onCollapse }: SidebarProps) {
   const handleToggle = onToggle ?? onCollapse ?? (() => {});
   const { role, overrides } = useMyPermissions();
+
+  // Same gate as DashboardHome: hide the Annual Showcase link entirely unless
+  // the user has at least one assigned unit. Defaults to hidden (fail closed).
+  const [showcaseVisible, setShowcaseVisible] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/annual-showcase/my-access")
+      .then(r => (r.ok ? r.json() : { units: [] }))
+      .then((data: { units: string[] | "ALL" }) => {
+        setShowcaseVisible(data.units === "ALL" || (Array.isArray(data.units) && data.units.length > 0));
+      })
+      .catch(() => {});
+  }, []);
+
+  const visibleNavigationItems = navigationItems.filter(
+    (item) => item.key !== "annual-showcase" || showcaseVisible,
+  );
 
   const handleNavClick = () => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -70,7 +89,7 @@ export default function Sidebar({ sidebarOpen, onToggle, onCollapse }: SidebarPr
         `}
       >
         <nav className="p-6 pt-16 space-y-2 flex-1 overflow-y-auto">
-          {navigationItems.map((item) => {
+          {visibleNavigationItems.map((item) => {
             const locked = !canSeeKey(role, item.key, overrides);
             if (locked) {
               return (
