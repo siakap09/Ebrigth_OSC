@@ -1,9 +1,11 @@
 import "server-only";
-import { google } from "googleapis";
+import { drive as driveClient, auth as googleAuth } from "@googleapis/drive";
 import { Readable } from "stream";
 
 /**
  * Upload proof photos to Google Drive via a service account.
+ * Uses the lightweight per-API package (@googleapis/drive) instead of the
+ * heavy `googleapis` meta-package, which can OOM the Next.js build.
  * Env:
  *   GOOGLE_SERVICE_ACCOUNT_JSON — base64-encoded service-account JSON
  *   GOOGLE_DRIVE_FOLDER_ID      — target Drive folder id
@@ -21,14 +23,14 @@ function getDrive() {
     );
   }
   const credentials = JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
-  const auth = new google.auth.GoogleAuth({
+  const authObj = new googleAuth.GoogleAuth({
     credentials: {
       client_email: credentials.client_email,
       private_key: credentials.private_key,
     },
     scopes: ["https://www.googleapis.com/auth/drive"],
   });
-  return { drive: google.drive({ version: "v3", auth }), folderId: folderId.trim() };
+  return { drive: driveClient({ version: "v3", auth: authObj }), folderId: folderId.trim() };
 }
 
 /** Upload a base64 JPEG, make it link-viewable, return the shareable link. */
