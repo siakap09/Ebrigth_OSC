@@ -561,6 +561,8 @@ export async function GET(request: Request) {
             trainingHrs: 0,
             totalHrs: e.execHrs,
             classCount: 0,
+            starCoachClasses: 0,
+            starCoachHrs: 0,
             dailyBreakdown: [{
               day: e.day,
               date: e.date,
