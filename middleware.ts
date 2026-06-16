@@ -36,6 +36,7 @@ const ROLE_RULES: Array<{ prefix: string; allowed: readonly Role[] }> = [
   { prefix: "/hr-dashboard",                  allowed: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR, ROLES.HOD] },
   { prefix: "/onboarding",                    allowed: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR, ROLES.HOD] },
   { prefix: "/offboarding",                   allowed: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.HR, ROLES.HOD] },
+  { prefix: "/annual-showcase",               allowed: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACADEMY, ROLES.HOD] },
 ];
 
 // FT/PT users see the same home/HRMS chrome as everyone else, with the

@@ -30,6 +30,14 @@ model User {
   // lib/dashboard-access.ts. Shape: { "hrms.attendance": "DENIED", "crm": "ALLOWED" }
   // Null/empty = follow the role default for every key.
   dashboardOverrides   Json?
+
+  showcaseTasksAssigned       ShowcaseTask[]         @relation("ShowcaseTaskAssignee")
+  showcaseTasksCreated        ShowcaseTask[]         @relation("ShowcaseTaskCreator")
+  showcaseBudgetApproved      ShowcaseBudgetItem[]   @relation("ShowcaseBudgetApprover")
+  showcaseAnnouncements           ShowcaseAnnouncement[]       @relation("ShowcaseAnnouncementAuthor")
+  showcasePostMortems             ShowcasePostMortem[]         @relation("ShowcasePostMortemAuthor")
+  showcaseOutreachLogs            ShowcaseSponsorOutreach[]    @relation("OutreachLogger")
+  showcasePostMortemResponses     ShowcasePostMortemResponse[] @relation("PostMortemResponder")
 }
 
 // Tracks when a user's active sessions should be invalidated. Written by
@@ -1218,4 +1226,436 @@ model BurnlistEntry {
   @@unique([weekId, studentRecordId])
   @@index([weekId])
   @@map("burnlist_entry")
+}
+
+// ============================================================
+// ANNUAL SHOWCASE MODULE — showcase_* tables
+// ============================================================
+
+enum ShowcaseEditionStatus {
+  DRAFT
+  REGISTRATION_OPEN
+  TEST_RUN
+  EVENT_ACTIVE
+  POST_EVENT
+  ARCHIVED
+}
+
+enum ShowcaseTaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+enum ShowcaseTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ShowcaseBudgetType {
+  REVENUE
+  EXPENSE
+}
+
+enum ShowcaseBudgetItemStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+}
+
+enum ShowcaseSponsorStatus {
+  PROSPECT
+  CONTACTED
+  NEGOTIATING
+  CONFIRMED
+  DECLINED
+  LEAD
+  MEETING
+  MOU_SIGNED
+  FULFILLED
+}
+
+model ShowcaseEdition {
+  id                   String                @id @default(cuid())
+  name                 String
+  theme                String
+  status               ShowcaseEditionStatus @default(DRAFT)
+  startDate            DateTime?
+  endDate              DateTime?
+  venueName            String?
+  venueAddress         String?
+  participantTarget    Int                   @default(0)
+  profitabilityTarget  Float                 @default(0)
+  registrationDeadline DateTime?
+  testRunDate          DateTime?
+  currency             String                @default("MYR")
+  isActive             Boolean               @default(false)
+  departmentLeads      Json?
+  goodieBagChecklist      Json?
+  logisticsData           Json?
+  sponsorPackages         Json?
+  photographerGuidelines  Json?
+  pressCoverage           Json?
+  photoDistribution       Json?
+  scoringCriteria         Json?
+  stageChecklist          Json?
+  youthpreneurLayout      Json?
+  waitlistEnabled         Boolean               @default(false)
+  waitlistCount           Int                   @default(0)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+
+  members       ShowcaseMember[]
+  participants  ShowcaseParticipant[]
+  categories    ShowcaseCategory[]
+  feeWaves      ShowcaseFeeWave[]
+  tasks         ShowcaseTask[]
+  budgetItems   ShowcaseBudgetItem[]
+  sponsors      ShowcaseSponsor[]
+  announcements       ShowcaseAnnouncement[]
+  postMortems         ShowcasePostMortem[]
+  manpower            ShowcaseManpower[]
+  mediaPosts          ShowcaseMediaPost[]
+  postMortemResponses ShowcasePostMortemResponse[]
+  cueSheetBlocks      ShowcaseCueSheetBlock[]
+  scores              ShowcaseScore[]
+  youthpreneurBooths  ShowcaseYouthpreneurBooth[]
+  waitlist            ShowcaseWaitlist[]
+
+  @@map("showcase_edition")
+}
+
+model ShowcaseMember {
+  id           String   @id @default(cuid())
+  editionId    String
+  edition      ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  email        String
+  name         String?
+  allowedUnits String[] @default([])
+  invitedAt    DateTime @default(now())
+
+  @@unique([editionId, email])
+  @@index([editionId])
+  @@map("showcase_member")
+}
+
+model ShowcaseCategory {
+  id          String   @id @default(cuid())
+  editionId   String
+  name        String
+  description String?
+  maxTeamSize Int      @default(4)
+  createdAt   DateTime @default(now())
+
+  edition      ShowcaseEdition      @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  participants ShowcaseParticipant[]
+
+  @@map("showcase_category")
+}
+
+model ShowcaseFeeWave {
+  id        String   @id @default(cuid())
+  editionId String
+  name      String
+  amount    Float
+  deadline  DateTime
+  createdAt DateTime @default(now())
+
+  edition      ShowcaseEdition      @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  participants ShowcaseParticipant[]
+
+  @@map("showcase_fee_wave")
+}
+
+model ShowcaseParticipant {
+  id            String    @id @default(cuid())
+  editionId     String
+  categoryId    String?
+  feeWaveId     String?
+  fullName      String
+  email         String?
+  phone         String?
+  teamName      String?
+  paymentStatus String    @default("UNPAID")
+  dateOfBirth   DateTime?
+  isEbrighter   Boolean   @default(false)
+  parentName    String?
+  parentEmail   String?
+  parentPhone   String?
+  orderNo       Int?
+  paymentLog    Json?
+  registeredAt  DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  edition  ShowcaseEdition   @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  category ShowcaseCategory? @relation(fields: [categoryId], references: [id])
+  feeWave  ShowcaseFeeWave?  @relation(fields: [feeWaveId], references: [id])
+  scores   ShowcaseScore[]
+
+  @@index([editionId])
+  @@map("showcase_participant")
+}
+
+model ShowcaseTask {
+  id          String               @id @default(cuid())
+  editionId   String
+  unit        String
+  title       String
+  description String?
+  status      ShowcaseTaskStatus   @default(TODO)
+  priority    ShowcaseTaskPriority @default(MEDIUM)
+  assigneeId  Int?
+  createdById Int?
+  dueDate     DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  edition   ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  assignee  User?           @relation("ShowcaseTaskAssignee", fields: [assigneeId], references: [id])
+  createdBy User?           @relation("ShowcaseTaskCreator", fields: [createdById], references: [id])
+
+  @@index([editionId, unit])
+  @@map("showcase_task")
+}
+
+model ShowcaseBudgetItem {
+  id           String                  @id @default(cuid())
+  editionId    String
+  unit         String
+  type         ShowcaseBudgetType
+  description  String
+  amount       Float
+  status       ShowcaseBudgetItemStatus @default(PENDING)
+  approvedById Int?
+  approvedAt   DateTime?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  edition    ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  approvedBy User?           @relation("ShowcaseBudgetApprover", fields: [approvedById], references: [id])
+
+  @@index([editionId])
+  @@map("showcase_budget_item")
+}
+
+model ShowcaseSponsor {
+  id             String                @id @default(cuid())
+  editionId      String
+  companyName    String
+  contactName    String?
+  contactEmail   String?
+  contactPhone   String?
+  packageType    String?
+  amount         Float                 @default(0)
+  pipelineStatus ShowcaseSponsorStatus @default(PROSPECT)
+  notes          String?
+  isVVIP         Boolean               @default(false)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  edition     ShowcaseEdition         @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  outreachLog ShowcaseSponsorOutreach[]
+
+  @@index([editionId])
+  @@map("showcase_sponsor")
+}
+
+model ShowcaseAnnouncement {
+  id          String   @id @default(cuid())
+  editionId   String
+  title       String
+  body        String
+  targetUnits String[] @default([])
+  authorId    Int?
+  createdAt   DateTime @default(now())
+
+  edition ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  author  User?           @relation("ShowcaseAnnouncementAuthor", fields: [authorId], references: [id])
+
+  @@index([editionId])
+  @@map("showcase_announcement")
+}
+
+model ShowcasePostMortem {
+  id          String   @id @default(cuid())
+  editionId   String
+  unit        String
+  highlights  String?
+  lowlights   String?
+  suggestions String?
+  authorId    Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  edition ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  author  User?           @relation("ShowcasePostMortemAuthor", fields: [authorId], references: [id])
+
+  @@index([editionId])
+  @@map("showcase_post_mortem")
+}
+
+model ShowcaseManpower {
+  id        String          @id @default(cuid())
+  editionId String
+  edition   ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  unit      String
+  type      String
+  name      String
+  role      String
+  phone     String?
+  email     String?
+  shift     String?
+  day       String?
+  status    String          @default("CONFIRMED")
+  notes     String?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([editionId, unit])
+  @@index([type])
+  @@map("showcase_manpower")
+}
+
+model ShowcaseSponsorOutreach {
+  id           String          @id @default(cuid())
+  sponsorId    String
+  sponsor      ShowcaseSponsor @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+  type         String
+  date         DateTime
+  outcome      String?
+  followUpDate DateTime?
+  loggedById   Int?
+  loggedBy     User?           @relation("OutreachLogger", fields: [loggedById], references: [id])
+  createdAt    DateTime        @default(now())
+
+  @@index([sponsorId])
+  @@map("showcase_sponsor_outreach")
+}
+
+model ShowcaseMediaPost {
+  id          String          @id @default(cuid())
+  editionId   String
+  edition     ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  platform    String
+  caption     String?
+  mediaType   String
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  status      String          @default("DRAFT")
+  link        String?
+  notes       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([editionId])
+  @@map("showcase_media_post")
+}
+
+model ShowcasePostMortemResponse {
+  id              String          @id @default(cuid())
+  editionId       String
+  edition         ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  unit            String
+  submittedById   Int?
+  submittedBy     User?           @relation("PostMortemResponder", fields: [submittedById], references: [id])
+  wentWell        String?
+  didNotGoWell    String?
+  improvements    String?
+  recommendations String?
+  rating          Int?
+  submittedAt     DateTime        @default(now())
+
+  @@unique([editionId, unit])
+  @@index([editionId])
+  @@map("showcase_post_mortem_response")
+}
+
+model ShowcaseCueSheetBlock {
+  id           String          @id @default(cuid())
+  editionId    String
+  edition      ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  dayNumber    Int
+  order        Int
+  title        String
+  type         String
+  startTime    String
+  durationMins Int
+  pic          String?
+  status       String          @default("UPCOMING")
+  notes        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([editionId, dayNumber])
+  @@map("showcase_cue_sheet_block")
+}
+
+model ShowcaseScore {
+  id             String              @id @default(cuid())
+  editionId      String
+  edition        ShowcaseEdition     @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  participantId  String
+  participant    ShowcaseParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  judgeName      String
+  criteriaScores Json
+  total          Float
+  locked         Boolean             @default(false)
+  submittedAt    DateTime            @default(now())
+
+  @@index([editionId])
+  @@index([participantId])
+  @@map("showcase_score")
+}
+
+model ShowcaseYouthpreneurBooth {
+  id            String          @id @default(cuid())
+  editionId     String
+  edition       ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  boothNumber   String?
+  businessName  String
+  ownerName     String
+  ownerAge      Int?
+  category      String?
+  description   String?
+  status        String          @default("PENDING")
+  boothSize     String?
+  specialNeeds  String?
+  parentName    String?
+  parentContact String?
+  products      ShowcaseYouthpreneurProduct[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([editionId])
+  @@map("showcase_youthpreneur_booth")
+}
+
+model ShowcaseYouthpreneurProduct {
+  id          String                    @id @default(cuid())
+  boothId     String
+  booth       ShowcaseYouthpreneurBooth @relation(fields: [boothId], references: [id], onDelete: Cascade)
+  name        String
+  price       Float?
+  description String?
+  createdAt   DateTime                  @default(now())
+
+  @@index([boothId])
+  @@map("showcase_youthpreneur_product")
+}
+
+model ShowcaseWaitlist {
+  id        String          @id @default(cuid())
+  editionId String
+  edition   ShowcaseEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  name      String
+  email     String
+  phone     String?
+  createdAt DateTime        @default(now())
+
+  @@index([editionId])
+  @@map("showcase_waitlist")
 }

@@ -134,6 +134,23 @@ export const DASHBOARD_TREE: DashboardNode[] = [
     href: "/pcm-system",
     icon: "🎯",
   },
+
+  {
+    key: "annual-showcase",
+    label: "Annual Showcase",
+    href: "/annual-showcase",
+    icon: "🎪",
+    children: [
+      { key: "annual-showcase.oc",           label: "Organizing Committee", href: "/annual-showcase/oc" },
+      { key: "annual-showcase.procurement",  label: "Procurement",          href: "/annual-showcase/procurement" },
+      { key: "annual-showcase.sponsorship",  label: "Sponsorship & VVIP",   href: "/annual-showcase/sponsorship" },
+      { key: "annual-showcase.media",        label: "Media & Publicity",    href: "/annual-showcase/media" },
+      { key: "annual-showcase.showcase",     label: "Showcase & Production",href: "/annual-showcase/showcase" },
+      { key: "annual-showcase.logistics",    label: "Logistics",            href: "/annual-showcase/logistics" },
+      { key: "annual-showcase.youthpreneur", label: "Youthpreneur",         href: "/annual-showcase/youthpreneur" },
+      { key: "annual-showcase.ceo",          label: "CEO Unit",             href: "/annual-showcase/ceo" },
+    ],
+  },
 ];
 
 // ─── Role allowlists ────────────────────────────────────────────────────────
@@ -204,6 +221,7 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
     "academy",
     "fa-system",                  // Academy has full FA access (matches SessionSync)
     "pcm-system",                 // PCM is academy-owned — full access
+    "annual-showcase",            // Annual Showcase is academy-managed
   ],
 
   [ROLES.INTERN]:    ["home", "hrms.attendance", "hrms.claims", "library"],
