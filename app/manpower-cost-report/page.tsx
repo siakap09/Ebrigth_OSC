@@ -51,11 +51,14 @@ interface StaffEntry {
   trainingHrs?: number;
   totalHrs: number;
   classCount: number;
+  starCoachClasses?: number;
+  starCoachHrs?: number;
   coachPay: number;
+  starCoachPay?: number;
   execPay: number;
   trainingPay?: number;
   totalPay: number;
-  days: { date: string; day: string; coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }[];
+  days: { date: string; day: string; coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; starCoachClasses?: number; starCoachHrs?: number; scheduleBranch?: string }[];
 }
 
 interface Totals {
@@ -67,6 +70,8 @@ interface Totals {
   totalHrs: number;
   totalClasses: number;
   totalCoachPay: number;
+  totalStarCoachClasses?: number;
+  totalStarCoachPay?: number;
   totalExecPay: number;
   totalTrainingHrs?: number;
   totalTrainingPay?: number;
@@ -74,6 +79,7 @@ interface Totals {
   executiveRate: number;
   bmExecRate?: number;
   trainingRate?: number;
+  starCoachRate?: number;
 }
 
 interface WeekRange {
@@ -131,6 +137,7 @@ function DailyBreakdownModal({
   execRate,
   bmRate,
   trainingRate,
+  starCoachRate,
   onClose,
   onDownloadPdf,
 }: {
@@ -142,6 +149,7 @@ function DailyBreakdownModal({
   execRate: number;
   bmRate: number;
   trainingRate: number;
+  starCoachRate: number;
   onClose: () => void;
   onDownloadPdf: () => void;
 }) {
@@ -165,7 +173,7 @@ function DailyBreakdownModal({
   const allDaysInMonth = weekFilter
     ? allDaysRaw.filter((d) => d.date >= weekStart && d.date <= weekEnd)
     : allDaysRaw;
-  const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
+  const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; starCoachClasses?: number; starCoachHrs?: number; scheduleBranch?: string }> = {};
   s.days.forEach((d) => { workedMap[d.date] = d; });
 
   const showPay = s.isPT || s.isTraining;
@@ -230,12 +238,18 @@ function DailyBreakdownModal({
                 // coach/exec values on those rows are a display-only split of
                 // the 10.5h training day); other days at coach rate + exec/BM
                 // rate.
+                const dayStarCoachClasses = worked ? (entry.starCoachClasses || 0) : 0;
+                const dayStarCoachHrs = worked ? (entry.starCoachHrs || 0) : 0;
+                const dayRegularCoachHrs = worked ? entry.coachHrs - dayStarCoachHrs : 0;
                 const dayPay = !worked
                   ? 0
                   : isTrainingDay
                     ? trnHrs * trainingRate
                     : s.isPT
-                      ? (entry.coachHrs * (s.rate || 0)) + ((entry.execHrs - mgrHrs) * execRate) + (mgrHrs * bmRate)
+                      ? (dayRegularCoachHrs * (s.rate || 0))
+                        + (dayStarCoachClasses * starCoachRate)
+                        + ((entry.execHrs - mgrHrs) * execRate)
+                        + (mgrHrs * bmRate)
                       : 0;
                 const isReplacement = worked && entry.scheduleBranch;
 
@@ -642,14 +656,19 @@ export default function ManpowerCostReportPage() {
       const managerExecHrs = weekDays.reduce((sum, d) => sum + (d.managerExecHrs || 0), 0);
       const trainingHrs = weekDays.reduce((sum, d) => sum + (d.trainingHrs || 0), 0);
       const classCount = weekDays.reduce((sum, d) => sum + (d.classCount || 0), 0);
+      const starCoachClasses = payDays.reduce((sum, d) => sum + (d.starCoachClasses || 0), 0);
+      const starCoachHrs = payDays.reduce((sum, d) => sum + (d.starCoachHrs || 0), 0);
+      const regularCoachHrs = coachHrs - starCoachHrs;
       const totalHrs = coachHrs + execHrs + trainingHrs;
       const execRate = data?.totals.executiveRate || 11;
       const bmRate = data?.totals.bmExecRate || execRate;
       const trainingRate = data?.totals.trainingRate || 8;
-      const coachPay = s.isPT && s.rate ? coachHrs * s.rate : 0;
+      const starCoachRate = data?.totals.starCoachRate || 50;
+      const coachPay = s.isPT && s.rate ? regularCoachHrs * s.rate : 0;
+      const starCoachPay = s.isPT ? starCoachClasses * starCoachRate : 0;
       const execPay = s.isPT ? (execHrs - managerExecHrs) * execRate + managerExecHrs * bmRate : 0;
       const trainingPay = trainingHrs * trainingRate;
-      return { ...s, days: weekDays, coachHrs, execHrs, managerExecHrs, trainingHrs, totalHrs, classCount, coachPay, execPay, trainingPay, isTraining: trainingHrs > 0, totalPay: coachPay + execPay + trainingPay };
+      return { ...s, days: weekDays, coachHrs, execHrs, managerExecHrs, trainingHrs, totalHrs, classCount, starCoachClasses, starCoachHrs, coachPay, starCoachPay, execPay, trainingPay, isTraining: trainingHrs > 0, totalPay: coachPay + starCoachPay + execPay + trainingPay };
     })
     .filter((s): s is StaffEntry => {
       if (!s) return false;
@@ -916,7 +935,7 @@ export default function ManpowerCostReportPage() {
               const displayDays = weekFilter
                 ? allDaysRaw.filter((d) => d.date >= weekStart && d.date <= weekEnd)
                 : allDaysRaw;
-              const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; scheduleBranch?: string }> = {};
+              const workedMap: Record<string, { coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; starCoachClasses?: number; starCoachHrs?: number; scheduleBranch?: string }> = {};
               s.days.forEach((d) => { workedMap[d.date] = d; });
 
               return (
@@ -1454,6 +1473,7 @@ export default function ManpowerCostReportPage() {
           execRate={data?.totals.executiveRate || 11}
           bmRate={data?.totals.bmExecRate || data?.totals.executiveRate || 11}
           trainingRate={data?.totals.trainingRate || 8}
+          starCoachRate={data?.totals.starCoachRate || 50}
           onClose={() => setViewCoach(null)}
           onDownloadPdf={() => generatePDF(viewCoach)}
         />

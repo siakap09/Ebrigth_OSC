@@ -7,8 +7,10 @@ import { composeEmployeeId, isValidSuffix } from "@/lib/employeeId";
 
 // Department applies only to HQ staff; Rate only to part-time coaches (paid
 // hourly). Both fields are conditionally shown based on these checks.
-const isPartTimeCoach = (role?: string | null) =>
-  (role ?? "").trim().toUpperCase().startsWith("PT - COACH");
+const isPartTimeCoach = (role?: string | null) => {
+  const r = (role ?? "").trim().toUpperCase();
+  return r === "PT COACH" || r.startsWith("PT - COACH");
+};
 
 interface RegistrationFormProps {
   onSuccess?: () => void;
