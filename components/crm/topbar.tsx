@@ -30,7 +30,7 @@ import {
 import { usePushSubscription } from '@/hooks/crm/usePushSubscription'
 import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/crm/utils'
 import { useBranchContext, type BranchInfo } from './branch-context'
 import { authClient } from '@/lib/crm/auth-client'
@@ -494,8 +494,46 @@ function HelpTooltip() {
 
 // ─── Global search ────────────────────────────────────────────────────────────
 
+interface SearchContactHit {
+  id: string
+  firstName: string
+  lastName: string | null
+  parentFullName: string | null
+  phone: string | null
+  email: string | null
+}
+
+// Quick-nav targets. Matched against label + keywords so "auto" → Automations,
+// "pipe" → Pipelines, etc. The destination page enforces its own role access.
+const SEARCH_PAGES: Array<{ label: string; href: string; kw: string }> = [
+  { label: 'Dashboard',              href: '/crm/dashboard',              kw: 'dashboard home metrics leads overview' },
+  { label: 'Opportunities',          href: '/crm/opportunities',          kw: 'opportunities kanban pipeline leads board cards' },
+  { label: 'Contacts',               href: '/crm/contacts',               kw: 'contacts leads people parents' },
+  { label: 'Tickets',                href: '/crm/tickets',                kw: 'tickets support issues helpdesk' },
+  { label: 'Automations',            href: '/crm/automations',            kw: 'automations automation workflow auto triggers' },
+  { label: 'Forms',                  href: '/crm/forms',                  kw: 'forms trial registration' },
+  { label: 'Analytics',              href: '/crm/analytics',              kw: 'analytics reports charts insights' },
+  { label: 'Notifications',          href: '/crm/notifications',          kw: 'notifications alerts' },
+  { label: 'Settings · Pipelines',   href: '/crm/settings/pipelines',     kw: 'settings pipelines stages buffer' },
+  { label: 'Settings · Team',        href: '/crm/settings/team',          kw: 'settings team users members staff' },
+  { label: 'Settings · Tags',        href: '/crm/settings/tags',          kw: 'settings tags labels' },
+  { label: 'Settings · Lead Sources', href: '/crm/settings/lead-sources', kw: 'settings lead sources channels' },
+  { label: 'Settings · Branch Access', href: '/crm/settings/branch-access', kw: 'settings branch access permissions' },
+]
+
 function GlobalSearch() {
+  const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState('')
+  const [debounced, setDebounced] = useState('')
+  const [open, setOpen] = useState(false)
+
+  // Debounce the contact lookup so we don't fire a request on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(query.trim()), 250)
+    return () => clearTimeout(t)
+  }, [query])
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -504,22 +542,116 @@ function GlobalSearch() {
         inputRef.current?.focus()
       }
       if (e.key === 'Escape') {
+        setOpen(false)
         inputRef.current?.blur()
       }
     }
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+    }
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
   }, [])
 
+  // Lead/contact search — reuses the branch-scoped /api/crm/contacts endpoint.
+  const { data, isFetching } = useQuery({
+    queryKey: ['crm', 'global-search', debounced],
+    queryFn: async (): Promise<{ data: SearchContactHit[] }> => {
+      const res = await fetch(`/api/crm/contacts?search=${encodeURIComponent(debounced)}&pageSize=6`)
+      if (!res.ok) throw new Error('Search failed')
+      return res.json()
+    },
+    enabled: debounced.length >= 2,
+    staleTime: 30_000,
+  })
+
+  const q = query.trim().toLowerCase()
+  const pageHits = q
+    ? SEARCH_PAGES.filter((p) => p.label.toLowerCase().includes(q) || p.kw.includes(q)).slice(0, 5)
+    : []
+  const contacts = debounced.length >= 2 ? data?.data ?? [] : []
+  const showDropdown = open && q.length > 0
+
+  function go(href: string) {
+    setOpen(false)
+    setQuery('')
+    inputRef.current?.blur()
+    router.push(href)
+  }
+
+  function contactName(c: SearchContactHit): string {
+    if (c.parentFullName) return c.parentFullName
+    return `${c.firstName} ${c.lastName ?? ''}`.trim() || 'Unnamed lead'
+  }
+
   return (
-    <div className="relative hidden sm:block">
+    <div ref={containerRef} className="relative hidden sm:block">
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
       <input
         ref={inputRef}
         type="search"
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
         placeholder="Search… (press /)"
         className="h-9 w-56 lg:w-72 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 pl-9 pr-3 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
       />
+
+      {showDropdown && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+          {/* Quick page navigation */}
+          {pageHits.length > 0 && (
+            <div className="py-1">
+              <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Pages</div>
+              {pageHits.map((p) => (
+                <button
+                  key={p.href}
+                  onClick={() => go(p.href)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <span className="text-slate-800 dark:text-slate-100">{p.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Leads / contacts */}
+          <div className={cn('py-1', pageHits.length > 0 && 'border-t border-slate-100 dark:border-slate-700')}>
+            <div className="flex items-center justify-between px-3 py-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Leads</span>
+              {isFetching && <Loader2 className="h-3 w-3 animate-spin text-slate-400" />}
+            </div>
+            {debounced.length < 2 ? (
+              <p className="px-3 py-2 text-xs text-slate-400">Type 2+ letters to search leads…</p>
+            ) : contacts.length === 0 && !isFetching ? (
+              <p className="px-3 py-2 text-xs text-slate-400">No leads match &ldquo;{query}&rdquo;.</p>
+            ) : (
+              contacts.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => go(`/crm/contacts/${c.id}`)}
+                  className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">
+                    {contactName(c).slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-slate-900 dark:text-white">{contactName(c)}</div>
+                    <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                      {[c.phone, c.email].filter(Boolean).join(' · ') || '—'}
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
