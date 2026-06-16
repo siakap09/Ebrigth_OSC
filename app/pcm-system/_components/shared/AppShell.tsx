@@ -19,6 +19,7 @@ import {
   Users,
   ListOrdered,
   ClipboardCheck,
+  Gift,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -41,6 +42,7 @@ const MKT_NAV: NavItem[] = [
   { href: "/pcm-system/shared/invitations", label: "Invitations", icon: ListOrdered },
   { href: "/pcm-system/shared/reports", label: "Reports", icon: ClipboardCheck },
   { href: "/pcm-system/shared/attendance", label: "Attendance", icon: ClipboardList },
+  { href: "/pcm-system/shared/inventory", label: "Inventory", icon: Gift },
   { href: "/pcm-system/shared/dashboard", label: "Dashboard", icon: ChartBar },
 ];
 
@@ -49,6 +51,7 @@ const BM_NAV: NavItem[] = [
   { href: "/pcm-system/shared/invitations", label: "Invitations", icon: ListOrdered },
   { href: "/pcm-system/shared/reports", label: "Reports", icon: ClipboardCheck },
   { href: "/pcm-system/shared/attendance", label: "Attendance", icon: ClipboardList },
+  { href: "/pcm-system/shared/inventory", label: "Inventory", icon: Gift },
   { href: "/pcm-system/shared/dashboard", label: "Dashboard", icon: ChartBar },
 ];
 
@@ -60,6 +63,7 @@ const BM_NAV_FOR_ADMIN: NavItem[] = [
   { href: "/pcm-system/shared/invitations", label: "Invitations", icon: ListOrdered },
   { href: "/pcm-system/shared/reports", label: "Reports", icon: ClipboardCheck },
   { href: "/pcm-system/shared/attendance", label: "Attendance", icon: ClipboardList },
+  { href: "/pcm-system/shared/inventory", label: "Inventory", icon: Gift },
   { href: "/pcm-system/shared/dashboard", label: "Dashboard", icon: ChartBar },
 ];
 
