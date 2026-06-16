@@ -5,11 +5,12 @@ import { EventStatusPill } from "@fa/_components/fa/StatusPill";
 import { HoverPreview } from "@fa/_components/shared/HoverPreview";
 import { EventPreview } from "@fa/_components/fa/EventPreview";
 
-export function ArchiveRow({ event, sessionCount, invitationCount, confirmedCount, quotaTotal, isLast }: {
+export function ArchiveRow({ event, sessionCount, invitationCount, confirmedCount, attendedCount, quotaTotal, isLast }: {
   event: FAEvent;
   sessionCount: number;
   invitationCount: number;
   confirmedCount: number;
+  attendedCount: number;
   quotaTotal: number;
   isLast: boolean;
 }) {
@@ -48,6 +49,7 @@ export function ArchiveRow({ event, sessionCount, invitationCount, confirmedCoun
         <span className="fa-mono text-[11px] text-ink-400">{sessionCount} sessions</span>
         <span className="fa-mono text-[11px] text-ink-400">{invitationCount} invited</span>
         <span className="fa-mono text-[11px] text-emerald-600">{confirmedCount} confirmed</span>
+        <span className="fa-mono text-[11px] text-violet-600">{attendedCount} attended</span>
       </div>
     </Link>
     </HoverPreview>

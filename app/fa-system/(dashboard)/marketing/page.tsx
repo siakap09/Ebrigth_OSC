@@ -77,6 +77,9 @@ export default function MarketingEventsPage() {
   // Confirmed = parent confirmed attendance (attended students were confirmed too).
   const confirmedCount = (id: string) =>
     invitations.filter(i => i.eventId === id && (i.status === "confirmed" || i.status === "attended")).length;
+  // Attended = students who actually showed up (marked attended on the day).
+  const attendedCount = (id: string) =>
+    invitations.filter(i => i.eventId === id && i.status === "attended").length;
   const quotaTotal = (id: string) => {
     const sessionIds = new Set(sessions.filter(s => s.eventId === id).map(s => s.id));
     return quotas.filter(q => sessionIds.has(q.sessionId)).reduce((sum, q) => sum + q.quota, 0);
@@ -256,6 +259,7 @@ export default function MarketingEventsPage() {
                 sessionCount={sessionCount(event.id)}
                 invitationCount={invitationCount(event.id)}
                 confirmedCount={confirmedCount(event.id)}
+                attendedCount={attendedCount(event.id)}
                 quotaTotal={quotaTotal(event.id)}
                 isLast={i === archive.length - 1}
               />
