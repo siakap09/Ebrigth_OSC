@@ -190,6 +190,13 @@ export const ROLE_ACCESS: Record<Role, readonly string[] | "*"> = {
     "sms",
   ],
 
+  // Regional managers are a CRM-only role: they reach the portal solely to get
+  // into the CRM (regional dashboard). Home shell + the CRM tile, nothing else.
+  [ROLES.REGIONAL_MANAGER]: [
+    "home",
+    "crm",
+  ],
+
   [ROLES.EXECUTIVE]: [
     "home",
     "hrms.attendance",

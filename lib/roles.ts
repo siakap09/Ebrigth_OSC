@@ -17,6 +17,11 @@ export const ROLES = {
   SUPER_ADMIN:    "SUPER_ADMIN",
   ADMIN:          "ADMIN",
   BRANCH_MANAGER: "BRANCH_MANAGER",
+  // CRM regional managers. Authenticate via the HRFS portal but their access
+  // is CRM-only — recognised here so middleware doesn't bounce them at /login;
+  // they're not in any HR-admin ROLE_RULES, so HR pages stay blocked and the
+  // CRM (/crm/*) is reachable (no rule matches → allowed).
+  REGIONAL_MANAGER: "REGIONAL_MANAGER",
   HOD:            "HOD",
   HR:             "HR",
   EXECUTIVE:      "EXECUTIVE",
@@ -37,6 +42,7 @@ export const ROLE_VALUES = [
   ROLES.SUPER_ADMIN,
   ROLES.ADMIN,
   ROLES.BRANCH_MANAGER,
+  ROLES.REGIONAL_MANAGER,
   ROLES.HOD,
   ROLES.HR,
   ROLES.EXECUTIVE,
@@ -65,6 +71,9 @@ export function normalizeRole(raw: unknown): Role | null {
     BRANCH_MANAGER: ROLES.BRANCH_MANAGER,
     BRANCHMANAGER:  ROLES.BRANCH_MANAGER,
     BM:             ROLES.BRANCH_MANAGER,
+    REGIONAL_MANAGER: ROLES.REGIONAL_MANAGER,
+    REGIONALMANAGER:  ROLES.REGIONAL_MANAGER,
+    RM:               ROLES.REGIONAL_MANAGER,
     HOD:            ROLES.HOD,
     HR:             ROLES.HR,
     EXECUTIVE:      ROLES.EXECUTIVE,
