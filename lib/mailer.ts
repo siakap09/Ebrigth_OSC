@@ -1,4 +1,4 @@
-import nodemailer, { type SendMailOptions } from 'nodemailer';
+import nodemailer, { type SendMailOptions, type SentMessageInfo } from 'nodemailer';
 
 // Gmail throttles when the same account performs many fresh logins in a short
 // window ("454-4.7.0 Too many login attempts"). Pooling reuses a single
@@ -63,7 +63,7 @@ function fmtRemaining(ms: number): string {
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 }
 
-async function safeSend(msg: SendMailOptions): Promise<void> {
+async function safeSend(msg: SendMailOptions): Promise<SentMessageInfo> {
   const now = Date.now();
   if (now < cooldownUntil) {
     const remaining = cooldownUntil - now;
@@ -75,8 +75,9 @@ async function safeSend(msg: SendMailOptions): Promise<void> {
   }
 
   try {
-    await transporter.sendMail(msg);
+    const info = await transporter.sendMail(msg);
     cooldownLogged = false; // success — reset for next cooldown event
+    return info;
   } catch (err) {
     if (isRateLimitOrAuthError(err)) {
       cooldownUntil = Date.now() + COOLDOWN_MS;
@@ -98,6 +99,16 @@ transporter.verify().then(
     }
   },
 );
+
+/**
+ * Generic SMTP send — used by the CRM email layer (lib/crm/email.ts) so all
+ * CRM mail (ticket digest, ticket-event notifications, automation Send-Email)
+ * goes through this same authenticated, pooled, cooldown-protected transport.
+ * Throws on failure (and trips the shared cooldown on auth/rate-limit errors).
+ */
+export async function sendMail(msg: SendMailOptions): Promise<SentMessageInfo> {
+  return safeSend(msg);
+}
 
 export async function sendClockInEmail(to: string, name: string, time: string): Promise<void> {
   await safeSend({
