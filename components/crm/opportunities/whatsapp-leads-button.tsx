@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Trash2, X } from 'lucide-react'
+import { Plus, Trash2, X, Search } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
 import { useBranchContext } from '@/components/crm/branch-context'
 import {
@@ -55,6 +55,16 @@ export function WhatsappLeadsButton() {
   const items = data?.items ?? []
   const count = data?.count ?? 0
   const canManage = data?.canManage ?? false
+
+  // Super-admin can filter the list by ws_lead_id to locate a specific
+  // interaction a branch reported. The badge still reflects the true pending
+  // count, not the filtered view.
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const visibleItems =
+    canManage && q
+      ? items.filter((i) => i.wsLeadId.toLowerCase().includes(q))
+      : items
 
   const complete = useCompleteWhatsappLead()
   const addLead = useAddWhatsappLead()
@@ -115,7 +125,7 @@ export function WhatsappLeadsButton() {
   }
 
   function onDelete(item: WhatsappLeadItem) {
-    if (!confirm(`Delete this WhatsApp lead${item.campaignName ? ` (${item.campaignName})` : ''}? The branch is no longer required to process it.`)) return
+    if (!confirm(`Delete WhatsApp lead ${item.wsLeadId} (${item.branchName})? The branch is no longer required to process it.`)) return
     deleteLead.mutate({ id: item.id })
   }
 
@@ -168,14 +178,37 @@ export function WhatsappLeadsButton() {
             </div>
           </div>
 
+          {/* Super-admin: search by ws_lead_id (the code a branch sends to ask
+              for a deletion). Branch managers don't need it. */}
+          {canManage && (
+            <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by WhatsApp lead ID…"
+                  className="w-full rounded-md border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-xs font-mono dark:border-slate-700 dark:bg-slate-800"
+                />
+                {search && (
+                  <button type="button" onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="max-h-96 overflow-y-auto">
             {isLoading ? (
               <p className="px-4 py-8 text-center text-sm text-slate-400">Loading…</p>
             ) : items.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-slate-400">No pending WhatsApp leads. 🎉</p>
+            ) : visibleItems.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-slate-400">No lead matches “{search}”.</p>
             ) : (
               <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                {items.map((item) => (
+                {visibleItems.map((item) => (
                   <li key={item.id} className="flex items-start gap-2 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/60">
                     <button type="button" onClick={() => openForm(item)} className="min-w-0 flex-1 text-left">
                       <div className="flex items-center gap-2">
@@ -187,7 +220,13 @@ export function WhatsappLeadsButton() {
                         )}
                       </div>
                       <p className="truncate text-xs text-slate-500 dark:text-slate-400">{item.branchName}</p>
-                      {item.campaignName && (
+                      {/* ID is what a branch quotes to a super admin for deletion,
+                          so branch managers see the ws_lead_id (never the campaign).
+                          Super admins see the campaign too. */}
+                      <p className="truncate font-mono text-[11px] text-slate-500 dark:text-slate-400" title={item.wsLeadId}>
+                        {item.wsLeadId}
+                      </p>
+                      {canManage && item.campaignName && (
                         <p className="truncate text-xs text-slate-400" title={item.campaignName}>{item.campaignName}</p>
                       )}
                       <p className="mt-0.5 text-[11px] text-slate-400">{fmtDate(item.submittedAt)}</p>
