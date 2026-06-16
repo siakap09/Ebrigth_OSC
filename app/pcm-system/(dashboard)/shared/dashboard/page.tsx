@@ -153,13 +153,20 @@ export default function DashboardPage() {
     }
   }
   const outcomeStats = useMemo(() => {
-    const invited = outcomeInvs.length;
-    const attended = outcomeInvs.filter(i => i.status === "attended").length;
+    // Payment is now independent of attendance (a student can pay without
+    // attending), so the primary split is Paid vs Unpaid; attendance is shown
+    // as a sub-count under each.
+    const isAtt = (i: typeof outcomeInvs[number]) => i.status === "attended";
+    const paidList   = outcomeInvs.filter(i => i.paid);
+    const unpaidList = outcomeInvs.filter(i => !i.paid);
     return {
-      paid: outcomeInvs.filter(i => i.status === "attended" && i.paid).length,
-      attendedUnpaid: outcomeInvs.filter(i => i.status === "attended" && !i.paid).length,
-      notAttended: invited - attended,
-      invited,
+      invited: outcomeInvs.length,
+      paid: paidList.length,
+      unpaid: unpaidList.length,
+      paidAttended:      paidList.filter(isAtt).length,
+      paidNotAttended:   paidList.filter(i => !isAtt(i)).length,
+      unpaidAttended:    unpaidList.filter(isAtt).length,
+      unpaidNotAttended: unpaidList.filter(i => !isAtt(i)).length,
     };
   }, [outcomeInvs]);
 
@@ -397,14 +404,16 @@ export default function DashboardPage() {
         )}
       </Modal>
 
-      {/* Payment breakdown — three buckets in one row with a stacked bar
-          above. Academy wanted at-a-glance answer to "of everyone we
-          invited, how many showed up and paid vs. came but haven't paid
-          vs. didn't come at all". */}
+      {/* Payment breakdown — Paid vs Unpaid (payment is independent of
+          attendance now), with an attended / not-attended sub-count under
+          each so academy still sees who showed up. */}
       <PaymentBreakdown
         paid={outcomeStats.paid}
-        attendedUnpaid={outcomeStats.attendedUnpaid}
-        notAttended={outcomeStats.notAttended}
+        unpaid={outcomeStats.unpaid}
+        paidAttended={outcomeStats.paidAttended}
+        paidNotAttended={outcomeStats.paidNotAttended}
+        unpaidAttended={outcomeStats.unpaidAttended}
+        unpaidNotAttended={outcomeStats.unpaidNotAttended}
         totalInvited={outcomeStats.invited}
         scope={outcomeScope}
         onScopeChange={setOutcomeScope}
@@ -614,27 +623,28 @@ function TypeSplitCard({
 }
 
 /**
- * Three-bucket payment breakdown. Shows a stacked horizontal bar (Paid
- * green / Attended-Unpaid amber / Not Attended rose) plus three cards
- * underneath with the same colour palette so the eye picks out the
- * mapping immediately.
+ * Payment breakdown — Paid vs Unpaid (payment is independent of attendance
+ * now). A two-segment stacked bar (Paid green / Unpaid rose) plus two cards,
+ * each carrying an attended / not-attended sub-count so attendance stays
+ * visible without tying it to payment.
  */
 function PaymentBreakdown({
-  paid, attendedUnpaid, notAttended, totalInvited, scope, onScopeChange,
+  paid, unpaid, paidAttended, paidNotAttended, unpaidAttended, unpaidNotAttended,
+  totalInvited, scope, onScopeChange,
 }: {
   paid: number;
-  attendedUnpaid: number;
-  notAttended: number;
+  unpaid: number;
+  paidAttended: number;
+  paidNotAttended: number;
+  unpaidAttended: number;
+  unpaidNotAttended: number;
   totalInvited: number;
   scope: "overall" | "renewal";
   onScopeChange: (s: "overall" | "renewal") => void;
 }) {
-  // Pct each bucket contributes to total invited — used both for bar
-  // widths and for the small "X% of invited" sub-text on each card.
   const pct = (n: number) => (totalInvited > 0 ? Math.round((n / totalInvited) * 100) : 0);
-  const paidPct       = pct(paid);
-  const unpaidPct     = pct(attendedUnpaid);
-  const notAttendedPct= pct(notAttended);
+  const paidPct   = pct(paid);
+  const unpaidPct = pct(unpaid);
 
   return (
     <div className="rounded-2xl bg-white border border-ivory-300 shadow-sm p-4 mb-4">
@@ -666,7 +676,7 @@ function PaymentBreakdown({
       <div
         className="w-full h-4 rounded-full overflow-hidden flex bg-ivory-100 border border-ivory-300 mb-3"
         role="img"
-        aria-label={`Paid ${paid}, attended unpaid ${attendedUnpaid}, not attended ${notAttended}`}
+        aria-label={`Paid ${paid}, unpaid ${unpaid}`}
       >
         {paid > 0 && (
           <div
@@ -675,50 +685,36 @@ function PaymentBreakdown({
             title={`Paid: ${paid} (${paidPct}%)`}
           />
         )}
-        {attendedUnpaid > 0 && (
-          <div
-            className="h-full bg-amber-400"
-            style={{ width: `${unpaidPct}%` }}
-            title={`Attended unpaid: ${attendedUnpaid} (${unpaidPct}%)`}
-          />
-        )}
-        {notAttended > 0 && (
+        {unpaid > 0 && (
           <div
             className="h-full bg-rose-400"
-            style={{ width: `${notAttendedPct}%` }}
-            title={`Not attended: ${notAttended} (${notAttendedPct}%)`}
+            style={{ width: `${unpaidPct}%` }}
+            title={`Unpaid: ${unpaid} (${unpaidPct}%)`}
           />
         )}
       </div>
 
-      {/* Three cards */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Two cards — payment split, attendance shown as a sub-count on each */}
+      <div className="grid grid-cols-2 gap-3">
         <BucketCard
-          label="Attended & Paid"
+          label="Paid"
           value={paid}
           pct={paidPct}
           accentBg="bg-emerald-50"
           accentBorder="border-emerald-200"
           accentText="text-emerald-700"
           accentDot="bg-emerald-500"
+          sub={`${paidAttended} attended · ${paidNotAttended} not attended`}
         />
         <BucketCard
-          label="Attended · Unpaid"
-          value={attendedUnpaid}
+          label="Unpaid"
+          value={unpaid}
           pct={unpaidPct}
-          accentBg="bg-amber-50"
-          accentBorder="border-amber-200"
-          accentText="text-amber-700"
-          accentDot="bg-amber-400"
-        />
-        <BucketCard
-          label="Not Attended"
-          value={notAttended}
-          pct={notAttendedPct}
           accentBg="bg-rose-50"
           accentBorder="border-rose-200"
           accentText="text-rose-700"
           accentDot="bg-rose-400"
+          sub={`${unpaidAttended} attended · ${unpaidNotAttended} not attended`}
         />
       </div>
     </div>
@@ -726,10 +722,11 @@ function PaymentBreakdown({
 }
 
 function BucketCard({
-  label, value, pct, accentBg, accentBorder, accentText, accentDot,
+  label, value, pct, accentBg, accentBorder, accentText, accentDot, sub,
 }: {
   label: string; value: number; pct: number;
   accentBg: string; accentBorder: string; accentText: string; accentDot: string;
+  sub?: string;
 }) {
   return (
     <div className={`rounded-xl ${accentBg} ${accentBorder} border p-3`}>
@@ -744,6 +741,7 @@ function BucketCard({
       </div>
       <div className="text-3xl font-black text-ink-900 leading-none">{value}</div>
       <div className="text-[11px] text-ink-500 mt-1">{pct}% of invited</div>
+      {sub && <div className="text-[11px] text-ink-500 mt-0.5">└ {sub}</div>}
     </div>
   );
 }
@@ -780,9 +778,8 @@ function OutcomeStudentLists({ invitations }: { invitations: import("@pcm/_types
     return m;
   }, [sessions]);
 
-  const paid           = invitations.filter(i => i.status === "attended" && i.paid);
-  const attendedUnpaid = invitations.filter(i => i.status === "attended" && !i.paid);
-  const notAttended    = invitations.filter(i => i.status !== "attended");
+  const paid   = invitations.filter(i => i.paid);
+  const unpaid = invitations.filter(i => !i.paid);
 
   function rowOf(inv: import("@pcm/_types").Invitation) {
     const student = studentsById.get(inv.studentId);
@@ -793,28 +790,22 @@ function OutcomeStudentLists({ invitations }: { invitations: import("@pcm/_types
       grade: inv.targetGrade || student?.grade || "?",
       eventName: eventNameById.get(inv.eventId) ?? "—",
       sessionLabel: sessionLabel.get(inv.sessionId) ?? "—",
+      attended: inv.status === "attended",
     };
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
       <OutcomeBucket
-        title="Attended & Paid"
+        title="Paid"
         rows={paid.map(rowOf)}
         accentBg="bg-emerald-50"
         accentBorder="border-emerald-200"
         accentText="text-emerald-700"
       />
       <OutcomeBucket
-        title="Attended · Unpaid"
-        rows={attendedUnpaid.map(rowOf)}
-        accentBg="bg-amber-50"
-        accentBorder="border-amber-200"
-        accentText="text-amber-700"
-      />
-      <OutcomeBucket
-        title="Not Attended"
-        rows={notAttended.map(rowOf)}
+        title="Unpaid"
+        rows={unpaid.map(rowOf)}
         accentBg="bg-rose-50"
         accentBorder="border-rose-200"
         accentText="text-rose-700"
@@ -827,7 +818,7 @@ function OutcomeBucket({
   title, rows, accentBg, accentBorder, accentText,
 }: {
   title: string;
-  rows: Array<{ key: string; name: string; branch: string; grade: number | string; eventName: string; sessionLabel: string }>;
+  rows: Array<{ key: string; name: string; branch: string; grade: number | string; eventName: string; sessionLabel: string; attended: boolean }>;
   accentBg: string; accentBorder: string; accentText: string;
 }) {
   return (
@@ -856,8 +847,18 @@ function OutcomeBucket({
                   {r.branch} · G{r.grade}
                 </span>
               </div>
-              <div className="text-[10px] text-ink-500 mt-0.5 truncate">
-                {r.eventName} · {r.sessionLabel}
+              <div className="flex items-center justify-between gap-2 mt-0.5">
+                <span className="text-[10px] text-ink-500 truncate">
+                  {r.eventName} · {r.sessionLabel}
+                </span>
+                <span
+                  className={`fa-mono text-[9px] uppercase font-bold flex-shrink-0 px-1.5 py-0.5 rounded ${
+                    r.attended ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600"
+                  }`}
+                  style={{ letterSpacing: "0.06em" }}
+                >
+                  {r.attended ? "Attended" : "Not attended"}
+                </span>
               </div>
             </div>
           ))

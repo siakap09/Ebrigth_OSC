@@ -80,6 +80,14 @@ interface FAStore {
   createEvent: (ev: Omit<FAEvent, "id" | "createdAt">) => Promise<FAEvent>;
   updateEvent: (id: string, patch: Partial<FAEvent>) => Promise<void>;
   deleteEvent: (id: string) => Promise<void>;
+  duplicateEvent: (sourceId: string, args: {
+    name: string;
+    startDate: string;
+    endDate: string;
+    invitationOpenDate: string;
+    invitationCloseDate: string;
+    notes?: string;
+  }) => Promise<FAEvent>;
 
   // ------- Session CRUD -------
   createSession: (s: Omit<Session, "id">) => Promise<Session>;
@@ -317,6 +325,20 @@ export const useFAStore = create<FAStore>()(
         const newEvent = r.data;
         set((s) => ({ events: [...s.events, newEvent] }));
         return newEvent;
+      },
+
+      duplicateEvent: async (sourceId, args) => {
+        const r = await apiJson<{ event: FAEvent }>(
+          `/api/fa/events/${encodeURIComponent(sourceId)}/duplicate`,
+          { method: "POST", body: JSON.stringify(args) },
+        );
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error ?? `HTTP ${r.status}`;
+          throw new Error(`Duplicate failed: ${detail}`);
+        }
+        // Server cloned sessions + quotas — re-fetch the bundle to stay in sync.
+        await get().loadEvents();
+        return r.data.event;
       },
 
       updateEvent: async (id, patch) => {

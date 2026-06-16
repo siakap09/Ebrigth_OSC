@@ -268,6 +268,89 @@ export async function createEventRow(
   return rowToEvent(rows[0]);
 }
 
+/**
+ * Clone an event: copies the source's session layout + per-branch quotas into
+ * a new DRAFT event with the supplied name/dates. Sessions are day-relative so
+ * no date-shift math is needed; quotas are rewired to the new session ids.
+ * Invitations and multi-grade overrides are NOT copied — the clone starts empty.
+ */
+export async function duplicateEventRow(
+  sourceEventId: string,
+  overrides: {
+    name: string;
+    startDate: string;          // ISO
+    endDate: string;            // ISO
+    invitationOpenDate: string;
+    invitationCloseDate: string;
+    createdBy: string;
+    notes?: string;
+  },
+): Promise<FAEvent | null> {
+  const srcRes = await pool.query<EventRow>(
+    `SELECT id, name, month, year, venue, start_date, end_date, number_of_days,
+            invitation_open_date, invitation_close_date, status, created_by, created_at, notes
+       FROM fa_events WHERE id = $1 AND tenant_id = $2`,
+    [sourceEventId, TENANT],
+  );
+  if (!srcRes.rows[0]) return null;
+  const src = rowToEvent(srcRes.rows[0]);
+  const startD = new Date(overrides.startDate);
+
+  const newEvent = await createEventRow({
+    name: overrides.name,
+    month: startD.getMonth() + 1,
+    year: startD.getFullYear(),
+    venue: src.venue,
+    startDate: overrides.startDate,
+    endDate: overrides.endDate,
+    numberOfDays: src.numberOfDays,
+    invitationOpenDate: overrides.invitationOpenDate,
+    invitationCloseDate: overrides.invitationCloseDate,
+    status: "draft",
+    createdBy: overrides.createdBy,
+    notes: overrides.notes ?? src.notes,
+  });
+
+  // Copy sessions, remembering old → new id so quotas can be rewired.
+  const sessionRowsRes = await pool.query<SessionRow>(
+    `SELECT id, event_id, day_number, session_number, start_time, end_time, label
+       FROM fa_sessions WHERE event_id = $1 AND tenant_id = $2`,
+    [sourceEventId, TENANT],
+  );
+  const idMap = new Map<string, string>();
+  for (const r of sessionRowsRes.rows) {
+    const ins = await pool.query<SessionRow>(
+      `INSERT INTO fa_sessions
+         (tenant_id, event_id, day_number, session_number, start_time, end_time, label)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING id, event_id, day_number, session_number, start_time, end_time, label`,
+      [TENANT, newEvent.id, r.day_number, r.session_number, r.start_time, r.end_time, r.label],
+    );
+    idMap.set(r.id, ins.rows[0].id);
+  }
+
+  // Copy quotas, swapping session_id via the map.
+  if (sessionRowsRes.rows.length > 0) {
+    const quotaRowsRes = await pool.query<QuotaRow>(
+      `SELECT id, session_id, branch, quota
+         FROM fa_session_quotas WHERE session_id = ANY($1::text[]) AND tenant_id = $2`,
+      [sessionRowsRes.rows.map(r => r.id), TENANT],
+    );
+    for (const q of quotaRowsRes.rows) {
+      const newSessionId = idMap.get(q.session_id);
+      if (!newSessionId) continue;
+      await pool.query(
+        `INSERT INTO fa_session_quotas (tenant_id, session_id, branch, quota)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (session_id, branch) DO NOTHING`,
+        [TENANT, newSessionId, q.branch, q.quota],
+      );
+    }
+  }
+
+  return newEvent;
+}
+
 export async function updateEventRow(
   id: string,
   patch: Partial<FAEvent>
