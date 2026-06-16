@@ -72,14 +72,18 @@ export async function syncHikvisionEmails(): Promise<void> {
 
   // Every scan today (KL day), each tagged is_first = the person's earliest
   // scan of the day. first → clock-in; all later scans → clock-out.
+  // NOTE: event_time is `timestamp WITHOUT time zone` and is already stored in
+  // KL local wall-clock by the scanner integration. So we must NOT apply
+  // `AT TIME ZONE` — that would shift it 8h. Plain to_char / ::date give the
+  // correct KL time and KL date directly.
   const scans = await hrfsPrisma.$queryRawUnsafe<ScanRow[]>(
     `SELECT person_id,
             name,
             event_time AS scan_time,
-            to_char(event_time AT TIME ZONE 'Asia/Kuala_Lumpur', 'HH24:MI:SS') AS hhmm,
+            to_char(event_time, 'HH24:MI:SS') AS hhmm,
             (event_time = min(event_time) OVER (PARTITION BY person_id)) AS is_first
        FROM public.hikvision_attendance_all
-      WHERE (event_time AT TIME ZONE 'Asia/Kuala_Lumpur')::date = $1::date
+      WHERE event_time::date = $1::date
         AND person_id IS NOT NULL AND person_id <> '' AND person_id <> '0'
       ORDER BY person_id, event_time`,
     date,

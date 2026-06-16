@@ -762,6 +762,13 @@ export async function updateInvitationRow(
   if (patch.paid !== undefined) {
     fields.push(`paid = $${i++}`);
     values.push(patch.paid);
+    // Stamp WHEN it was paid (needed for the renewal-gift 3-day rule); clear it
+    // when marked unpaid.
+    if (patch.paid) {
+      fields.push(`paid_at = now()`);
+    } else {
+      fields.push(`paid_at = NULL`);
+    }
   }
   if (patch.videoSentToParent !== undefined) {
     fields.push(`video_sent_to_parent = $${i++}`);
