@@ -390,7 +390,7 @@ function PlanNewWeekPage() {
               trainingSlotHoursForDay += slotDuration;
               return;
             }
-            if (col.type === "coach") coachingHoursForDay += slotDuration;
+            if (col.type === "coach" || col.type === "star_coach") coachingHoursForDay += slotDuration;
           });
         });
 
@@ -690,7 +690,7 @@ function PlanNewWeekPage() {
                               </div>
                             </th>
                             {dayColumns.map(col => (
-                              <th key={col.id} className={`p-3 text-center border-l border-slate-600 w-[150px] ${col.type === 'exec' ? 'bg-slate-700 border-b-4 border-b-blue-400' : col.type === 'training' ? 'bg-yellow-600 border-b-4 border-b-yellow-400' : ''}`}>
+                              <th key={col.id} className={`p-3 text-center border-l border-slate-600 w-[150px] ${col.type === 'exec' ? 'bg-slate-700 border-b-4 border-b-blue-400' : col.type === 'training' ? 'bg-yellow-600 border-b-4 border-b-yellow-400' : col.type === 'star_coach' ? 'bg-purple-700 border-b-4 border-b-purple-400' : ''}`}>
                                 <div className="flex flex-col items-center gap-1">
                                   <span>{col.label}</span>
                                   {!isLocked && isEditing && (
@@ -800,7 +800,7 @@ function PlanNewWeekPage() {
                                     ]);
 
                                     return (
-                                      <td key={col.id} className={`p-1.5 border-l ${col.type === 'exec' ? 'bg-slate-50' : col.type === 'training' ? 'bg-yellow-50' : ''}`}>
+                                      <td key={col.id} className={`p-1.5 border-l ${col.type === 'exec' ? 'bg-slate-50' : col.type === 'training' ? 'bg-yellow-50' : col.type === 'star_coach' ? 'bg-purple-50' : ''}`}>
                                         <select disabled={!isEditing} value={val} onChange={(e) => handleNameSelect(day, slot, col.id, e.target.value)}
                                           className={`w-full p-2 rounded appearance-none text-center font-bold transition-all text-xs ${val ? getStaffColor(val) : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}
                                           style={{ backgroundImage: `url("${val ? SELECT_ARROW_WHITE : SELECT_ARROW_DARK}")`, backgroundPosition: "right 0.3rem center", backgroundSize: "8px", backgroundRepeat: "no-repeat" }}>

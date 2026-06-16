@@ -263,7 +263,11 @@ export function WhatsappLeadsButton() {
           {formItem && (
             <p className="-mt-2 text-xs text-slate-500 dark:text-slate-400">
               {formItem.branchName}
-              {formItem.campaignName ? ` · ${formItem.campaignName}` : ''}
+              {' · '}
+              {/* Branch managers see the ws_lead_id; only super admins see the campaign. */}
+              {canManage && formItem.campaignName ? formItem.campaignName : (
+                <span className="font-mono">{formItem.wsLeadId}</span>
+              )}
             </p>
           )}
           <div className="space-y-3 py-1">
