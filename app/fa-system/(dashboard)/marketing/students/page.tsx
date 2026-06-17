@@ -33,10 +33,16 @@ export default function StudentListPage() {
   // total here to match the dashboard's "Total students" count, including
   // Inactive rows. The checkbox is kept so it can be narrowed if needed.
   const [activeOnly, setActiveOnly] = useState(false);
+  // Archived students live in a separate table and carry archived:true.
+  //   current  → live roster only (default)
+  //   archived → only archived students (the "separate part")
+  //   all      → both, archived rows badged inline
+  const [scope, setScope] = useState<"current" | "archived" | "all">("current");
 
   // Build derived counts BEFORE the early-return guards so hook order is stable.
   const filtered = useMemo(() => {
     return allStudents
+      .filter(s => scope === "all" ? true : scope === "archived" ? s.archived : !s.archived)
       .filter(s => !activeOnly || s.active)
       .filter(s => branchFilter === "all" || s.branch === branchFilter)
       .filter(s => gradeFilter === "all" || s.grade === gradeFilter)
@@ -59,7 +65,10 @@ export default function StudentListPage() {
         b.grade - a.grade ||
         a.name.localeCompare(b.name)
       );
-  }, [allStudents, activeOnly, branchFilter, gradeFilter, progressFilter, search]);
+  }, [allStudents, scope, activeOnly, branchFilter, gradeFilter, progressFilter, search]);
+
+  const liveStudents = useMemo(() => allStudents.filter(s => !s.archived), [allStudents]);
+  const archivedCount = useMemo(() => allStudents.filter(s => s.archived).length, [allStudents]);
 
   const branchNameByCode = useMemo(
     () => Object.fromEntries(BRANCHES.map(b => [b.code, b.name])) as Record<string, string>,
@@ -71,7 +80,7 @@ export default function StudentListPage() {
   function handleDownload() {
     const header = [
       "Student ID", "Name", "Branch code", "Branch name",
-      "Grade", "Chapter", "Active",
+      "Grade", "Chapter", "Active", "Archived",
       "FA total expected", "FA done", "FA outstanding",
       "Per-grade FA (G1..G<grade>)",
       "Guardian name", "Guardian phone", "Enrolment date",
@@ -89,6 +98,7 @@ export default function StudentListPage() {
         s.grade,
         s.credit,
         s.active ? "yes" : "no",
+        s.archived ? "yes" : "no",
         expected,
         done,
         expected - done,
@@ -121,7 +131,7 @@ export default function StudentListPage() {
             <div className="fa-mono text-[11px] text-ink-400 mt-1.5 flex items-center gap-2">
               <span>
                 {studentsFetchedAt
-                  ? <>Synced {formatRelativeTime(studentsFetchedAt)} · {allStudents.length} students from studentrecords</>
+                  ? <>Synced {formatRelativeTime(studentsFetchedAt)} · {liveStudents.length} students from studentrecords{archivedCount > 0 && <> · {archivedCount} archived</>}</>
                   : <>Loading from studentrecords…</>}
               </span>
             </div>
@@ -152,7 +162,7 @@ export default function StudentListPage() {
       </div>
 
       {/* Registration cross-check tool — collapsed by default. */}
-      <RegistrationCrossCheck students={allStudents} />
+      <RegistrationCrossCheck students={liveStudents} />
 
       {/* Filters */}
       <div className="fa-card p-4 mb-4 fa-enter fa-delay-1">
@@ -206,6 +216,18 @@ export default function StudentListPage() {
               <option value="all">All</option>
               <option value="backlog">Has backlog</option>
               <option value="uptodate">Up to date</option>
+            </select>
+          </div>
+          <div className="w-44">
+            <label className="fa-label">Records</label>
+            <select
+              value={scope}
+              onChange={e => setScope(e.target.value as "current" | "archived" | "all")}
+              className="fa-input"
+            >
+              <option value="current">Current students</option>
+              <option value="archived">Archived only{archivedCount > 0 ? ` (${archivedCount})` : ""}</option>
+              <option value="all">All incl. archived</option>
             </select>
           </div>
           <label className="flex items-center gap-2 text-sm text-ink-700 cursor-pointer pb-2">
@@ -271,7 +293,11 @@ export default function StudentListPage() {
                     <td>
                       <div className="font-medium text-ink-900">
                         {s.name}
-                        {!s.active && (
+                        {s.archived ? (
+                          <span className="ml-2 fa-mono text-[10px] uppercase text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                            archived
+                          </span>
+                        ) : !s.active && (
                           <span className="ml-2 fa-mono text-[10px] uppercase text-ink-400 bg-ivory-200 px-1.5 py-0.5 rounded">
                             inactive
                           </span>

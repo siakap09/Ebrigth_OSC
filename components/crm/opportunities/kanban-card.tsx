@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { GripVertical, User, Calendar } from 'lucide-react'
-import { cn, formatMYR, formatDate, formatDateTime } from '@/lib/crm/utils'
+import { cn, formatMYR, formatDate, formatDateTime, formatPhoneDisplay } from '@/lib/crm/utils'
 import { getAgeCategory, ageCategoryClasses } from '@/lib/crm/age-category'
 import type { OpportunityCard } from '@/server/queries/opportunities'
 import { formatDistanceToNow } from 'date-fns'
@@ -439,7 +439,7 @@ export function KanbanCard({
                 <span className="truncate" title={contact.email}>{contact.email}</span>
               )}
               {showField('phone') && contact.phone && (
-                <span className="truncate" title={contact.phone}>{contact.phone}</span>
+                <span className="truncate" title={contact.phone}>{formatPhoneDisplay(contact.phone)}</span>
               )}
               {showField('campaign') && (contact as unknown as { campaignName?: string | null }).campaignName && (
                 <span className="truncate" title={(contact as unknown as { campaignName?: string | null }).campaignName ?? ''}>

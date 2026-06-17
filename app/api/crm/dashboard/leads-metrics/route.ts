@@ -229,18 +229,26 @@ export async function GET(req: NextRequest) {
     // selecting "This Week" shows the trials happening this week regardless of
     // when the card was dragged into CT; "Next Week" shows next week's, etc.
     // Deduped per contact so a reschedule inside the range isn't double-counted.
+    // crm_appointment.startAt is stored naive-KL-as-UTC, but `from`/`to` are
+    // real-UTC (KL-offset) — comparing them directly drops late-/Sunday-KL
+    // trials. Shift the window forward by the KL offset so it aligns with the
+    // naive storage (a Sun-23:00-KL trial now counts in that week, not the next).
+    const apptFrom = new Date(from.getTime() + KL_OFFSET_MS)
+    const apptTo = new Date(to.getTime() + KL_OFFSET_MS)
     const trialAppointments = await prisma.crm_appointment.findMany({
       where: {
         tenantId,
         title: 'Trial Class',
         branchId: { in: branches.map((b) => b.id) },
-        startAt: { gte: from, lte: to },
-        // Only count trials whose contact still has a LIVE lead. Deleting a lead
-        // on the kanban soft-deletes the opportunity (not the contact), so a
-        // deleted test lead's contact lingers — keying on contact.deletedAt
-        // alone wouldn't drop it. Requiring a non-deleted opportunity excludes
-        // deleted test leads and keeps CT in lockstep with the drill-in list.
-        contact: { deletedAt: null, opportunities: { some: { deletedAt: null } } },
+        startAt: { gte: apptFrom, lte: apptTo },
+        // CT = leads whose CURRENT stage is "Confirmed for Trial" with a trial
+        // this period. Keying on the live opportunity's stage (not just the
+        // appointment) means a lead moved to Reschedule / Show-Up / etc. stops
+        // counting as CT — and a deleted-test lead (no live opp) is excluded.
+        contact: {
+          deletedAt: null,
+          opportunities: { some: { deletedAt: null, stageId: { in: stageIdsByCategory.CT } } },
+        },
       },
       select: { branchId: true, contactId: true },
     })

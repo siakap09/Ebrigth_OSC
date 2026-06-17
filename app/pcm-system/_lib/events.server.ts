@@ -778,6 +778,23 @@ export async function updateInvitationRow(
     fields.push(`video_link = $${i++}`);
     values.push(patch.videoLink);
   }
+
+  // Reschedule = the slot moves (sessionId/eventId in the patch) WITHOUT an
+  // explicit status change. When that happens, a prior attendance verdict
+  // (Present/Absent) must NOT travel to the new date — the student should
+  // arrive fresh as "Awaiting" so the coach can mark them again on the new
+  // day. We only reset rows that actually carry an attendance verdict
+  // (attended/no_show); invited/confirmed/declined are left as-is so we never
+  // accidentally promote an un-confirmed student. The CASE reads the row's
+  // OLD status (Postgres evaluates all SET expressions against pre-update
+  // values), so this is safe even alongside the session_id/event_id changes.
+  const isReschedule = patch.sessionId !== undefined && patch.status === undefined;
+  if (isReschedule) {
+    fields.push(`status = CASE WHEN status IN ('attended','no_show') THEN 'confirmed' ELSE status END`);
+    fields.push(`attendance_marked_at = CASE WHEN status IN ('attended','no_show') THEN NULL ELSE attendance_marked_at END`);
+    fields.push(`attendance_marked_by = CASE WHEN status IN ('attended','no_show') THEN NULL ELSE attendance_marked_by END`);
+  }
+
   if (fields.length === 0) return null;
   fields.push(`updated_at = now()`);
   values.push(id, TENANT);

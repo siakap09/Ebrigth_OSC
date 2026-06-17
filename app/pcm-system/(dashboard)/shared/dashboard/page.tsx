@@ -23,7 +23,7 @@ interface RenewalRow {
   package: string | null;
   amount: number;
 }
-import { BRANCHES, BranchCode } from "@pcm/_types";
+import { BRANCHES, BranchCode, allowedBranchCodes } from "@pcm/_types";
 import {
   format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
   startOfYear, endOfYear, isWithinInterval,
@@ -49,6 +49,8 @@ export default function DashboardPage() {
 
   const effectiveBranch: BranchCode | "all" =
     user?.role === "BM" ? (user.branch ?? "all") : branchFilter;
+  // Hard region boundary: null = all branches (MKT); RM = only their region.
+  const allowedBranches = useMemo(() => allowedBranchCodes(user), [user]);
 
   // Active date range
   const range = useMemo(() => {
@@ -78,10 +80,11 @@ export default function DashboardPage() {
   const filteredInvs = useMemo(() => {
     return invitations.filter(i => {
       if (!sessionIdsInRange.has(i.sessionId)) return false;
+      if (allowedBranches && !allowedBranches.includes(i.branch)) return false; // region boundary
       if (effectiveBranch !== "all" && i.branch !== effectiveBranch) return false;
       return true;
     });
-  }, [invitations, sessionIdsInRange, effectiveBranch]);
+  }, [invitations, sessionIdsInRange, effectiveBranch, allowedBranches]);
 
   const stats = useMemo(() => {
     const invited      = filteredInvs.length;
@@ -145,7 +148,16 @@ export default function DashboardPage() {
     }
     try {
       const res = await fetch(`/api/pcm/renewal-details?${p.toString()}`, { cache: "no-store" });
-      setRenewalData(res.ok ? await res.json() : { rows: [], total: 0, packs: 0 });
+      const data = res.ok ? await res.json() : { rows: [], total: 0, packs: 0 };
+      if (allowedBranches) {
+        // RM: keep only their region's rows and recompute totals.
+        const rows = (data.rows ?? []).filter((r: { branch: string }) => allowedBranches.includes(r.branch));
+        const total = rows.reduce((s: number, r: { amount: number }) => s + (r.amount || 0), 0);
+        const packs = new Set(rows.map((r: { docNo: string }) => r.docNo)).size;
+        setRenewalData({ rows, total, packs });
+      } else {
+        setRenewalData(data);
+      }
     } catch {
       setRenewalData({ rows: [], total: 0, packs: 0 });
     } finally {
@@ -308,8 +320,8 @@ export default function DashboardPage() {
                 value={branchFilter}
                 onChange={e => setBranchFilter(e.target.value as BranchCode | "all")}
               >
-                <option value="all">All branches</option>
-                {BRANCHES.map(b => (
+                <option value="all">{allowedBranches ? "All my region" : "All branches"}</option>
+                {BRANCHES.filter(b => !allowedBranches || allowedBranches.includes(b.code)).map(b => (
                   <option key={b.code} value={b.code}>{b.code} — {b.name}</option>
                 ))}
               </select>

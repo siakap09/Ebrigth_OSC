@@ -28,6 +28,39 @@ export const BRANCHES = [
 
 export type BranchCode = typeof BRANCHES[number]["code"];
 
+// ----------------------------------------------------------------------------
+// Regions (Regional Manager scoping)
+// ----------------------------------------------------------------------------
+export type BranchRegion = "A" | "B" | "C";
+
+/** Region → branch codes, per the ops "branch by region" sheet (10 Jun 2026).
+ *  A few codes (AC, SBY, DSH, SLY, DP, SNT, SBN) aren't in BRANCHES yet — kept
+ *  here so region scoping already works once those branches are added. */
+export const BRANCHES_BY_REGION: Record<BranchRegion, string[]> = {
+  A: ["AC", "DA", "EGR", "KLG", "RBY", "SA", "SHA", "ST", "SBY"],
+  B: ["AMP", "BTHO", "DK", "DSH", "KTG", "KD", "SLY", "SP", "TSG"],
+  C: ["BBB", "BSP", "CJY", "DP", "KW", "PJY", "SNT", "SBN", "ONL"],
+};
+
+/** Regional Manager accounts → the region they manage (matched by email). */
+export const RM_REGION_BY_EMAIL: Record<string, BranchRegion> = {
+  "irfanhairie02@gmail.com": "A",
+  "kirtikha19@gmail.com": "B",
+  "jothi2703@gmail.com": "C",
+};
+
+export function regionForEmail(email: string | null | undefined): BranchRegion | null {
+  if (!email) return null;
+  return RM_REGION_BY_EMAIL[email.trim().toLowerCase()] ?? null;
+}
+
+/** NextAuth role strings that mean "Regional Manager". */
+export function isRegionalManagerRole(role: string | null | undefined): boolean {
+  if (!role) return false;
+  const r = role.toUpperCase().replace(/\s+/g, "_");
+  return r === "REGIONAL_MANAGER" || r === "REGIONALMANAGER" || r === "RM";
+}
+
 /** NextAuth roles that count as "back-office" — they default to the FA
  *  Marketing view but can switch into any Branch Manager view through the
  *  /fa-system/login picker. Add a new role here when an HQ-side
@@ -115,15 +148,28 @@ export function matchBranchByName(raw: string | null | undefined): BranchCode | 
 // ----------------------------------------------------------------------------
 // Users & Auth
 // ----------------------------------------------------------------------------
-export type Role = "MKT" | "BM";
+export type Role = "MKT" | "BM" | "RM";
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: Role;
-  /** For BM users — the branch they manage. Null for MKT. */
+  /** For BM users — the branch they manage. Null otherwise. */
   branch: BranchCode | null;
+  /** For RM users — the region they manage. Null otherwise. */
+  region?: BranchRegion | null;
+}
+
+/** Branch codes a user may see/act on. `null` = all branches (MKT/back-office).
+ *  BM → just their branch. RM → every branch in their region. */
+export function allowedBranchCodes(
+  user: Pick<User, "role" | "branch" | "region"> | null | undefined,
+): string[] | null {
+  if (!user) return [];
+  if (user.role === "BM") return user.branch ? [user.branch] : [];
+  if (user.role === "RM") return user.region ? BRANCHES_BY_REGION[user.region] : [];
+  return null; // MKT / back-office → all branches
 }
 
 // ----------------------------------------------------------------------------
@@ -198,6 +244,11 @@ export interface Student {
   parentPhone: string;
   enrolmentDate: string;        // ISO date
   active: boolean;
+  /** True when this row comes from the `archived_students` table rather than
+   *  the live `studentrecords` table. Archived students still appear in the
+   *  list and can be invited to FA events — they just carry an "Archived"
+   *  badge and live in their own section of the invite picker. */
+  archived: boolean;
 }
 
 /** Eligibility rule: a student is eligible for FA when they have at least
@@ -231,6 +282,9 @@ export interface StudentLoadReport {
   /** True if the `ade_group` join succeeded. When false, age-category labels
    *  are still derived from grade as a fallback. */
   ageGroupJoinAvailable: boolean;
+  /** How many rows were loaded from the separate `archived_students` table
+   *  (counted toward `loaded` too). Lets the UI show an archived tally. */
+  archivedLoaded?: number;
 }
 
 /** Check if student has a backlog — any completed grade below current where FA was not done. */

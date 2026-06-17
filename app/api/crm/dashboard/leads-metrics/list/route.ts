@@ -23,6 +23,7 @@ import {
   BRANCH_CODES,
   REGIONS,
   STAGE_PATTERN,
+  KL_OFFSET_MS,
   parseDateRange,
 } from '@/lib/crm/dashboard-metrics'
 
@@ -153,20 +154,29 @@ export async function GET(req: NextRequest) {
         return toRow(o.contact, name, BRANCH_CODES[name] ?? '')
       })
     } else if (metric === 'CT') {
-      // CT = leads with a Trial Class booked in range, counted by CLASS DATE
-      // (matches the headline card + the Trial Class Schedule widget), deduped
-      // per contact.
+      // CT = leads CURRENTLY in "Confirmed for Trial" with a trial this period.
+      // Mirror the headline card exactly: naive-KL bounds (startAt is stored
+      // naive-KL-as-UTC) + only contacts whose live opportunity is at the CT
+      // stage (so reschedule/show-up/deleted leads don't appear).
+      const ctStages = await prisma.crm_stage.findMany({
+        where: { tenantId },
+        select: { id: true, name: true, shortCode: true },
+      })
+      const ctStageIds = ctStages
+        .filter((s) => s.shortCode !== 'SG' && STAGE_PATTERN.CT.test(s.name))
+        .map((s) => s.id)
+      const apptFrom = new Date(from.getTime() + KL_OFFSET_MS)
+      const apptTo = new Date(to.getTime() + KL_OFFSET_MS)
       const appts = await prisma.crm_appointment.findMany({
         where: {
           tenantId,
           title: 'Trial Class',
           branchId: { in: branchIds },
-          startAt: { gte: from, lte: to },
-          // Mirror the headline CT count: only trials whose contact still has a
-          // live (non-deleted) opportunity. Deleting a lead soft-deletes the
-          // opportunity but leaves the contact, so contact.deletedAt alone would
-          // keep showing deleted test leads here.
-          contact: { deletedAt: null, opportunities: { some: { deletedAt: null } } },
+          startAt: { gte: apptFrom, lte: apptTo },
+          contact: {
+            deletedAt: null,
+            opportunities: { some: { deletedAt: null, stageId: { in: ctStageIds } } },
+          },
         },
         select: { branchId: true, startAt: true, contactId: true, contact: { select: CONTACT_SELECT } },
         orderBy: { startAt: 'desc' },

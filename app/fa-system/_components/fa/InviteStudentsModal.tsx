@@ -50,7 +50,8 @@ export function InviteStudentsModal({
   // Pick map keyed by `${studentId}:${grade}` so multi-grade students can have
   // multiple picks at once. Stored grade is the actual target grade.
   const [picks, setPicks] = useState<Map<string, { studentId: string; grade: number }>>(new Map());
-  const [filterMode, setFilterMode] = useState<"eligible" | "all">("eligible");
+  const [filterMode, setFilterMode] = useState<"eligible" | "all" | "archived">("eligible");
+  const archivedCount = useMemo(() => students.filter(s => s.archived).length, [students]);
   const [gradeFilter, setGradeFilter] = useState<number | "all">("all");
 
   const inviteCap = quota * 3;
@@ -85,7 +86,14 @@ export function InviteStudentsModal({
 
   const visibleStudents = useMemo(() => {
     let list = students;
-    if (filterMode === "eligible") list = list.filter(s => isStudentEligible(s));
+    // Archived students are kept in their own tab. The eligible/all tabs show
+    // only the live roster; the archived tab shows only archived students.
+    if (filterMode === "archived") {
+      list = list.filter(s => s.archived);
+    } else {
+      list = list.filter(s => !s.archived);
+      if (filterMode === "eligible") list = list.filter(s => isStudentEligible(s));
+    }
     if (gradeFilter !== "all") list = list.filter(s => s.grade === gradeFilter);
     if (search) {
       const q = search.toLowerCase();
@@ -191,6 +199,14 @@ export function InviteStudentsModal({
           >
             All active
           </button>
+          <button
+            onClick={() => setFilterMode("archived")}
+            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              filterMode === "archived" ? "bg-white text-ink-900 shadow-sm" : "text-ink-500"
+            }`}
+          >
+            Archived{archivedCount > 0 ? ` (${archivedCount})` : ""}
+          </button>
         </div>
 
         <div className="text-sm text-ink-500">
@@ -273,7 +289,9 @@ export function InviteStudentsModal({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-ink-900">{student.name}</span>
                       <span className="font-mono text-xs text-ink-400">G{student.grade}·C{student.credit}</span>
-                      {!student.active && (
+                      {student.archived ? (
+                        <StatusPill tone="warning" showDot={false}>Archived</StatusPill>
+                      ) : !student.active && (
                         <StatusPill tone="danger" showDot={false}>Inactive</StatusPill>
                       )}
                       {eligible && !lockReason && !hasPriorBookingInEvent && (

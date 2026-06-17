@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { AppShell } from "@pcm/_components/shared/AppShell";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
-import { BRANCHES, BranchCode } from "@pcm/_types";
+import { BRANCHES, BranchCode, allowedBranchCodes } from "@pcm/_types";
 import { Gift, Search, ExternalLink, Check, Upload } from "lucide-react";
 
 interface InvItem {
@@ -52,6 +52,14 @@ export default function InventoryPage() {
   const user = useCurrentUser();
   const isAcademy = user?.role === "MKT";
   const isBM = user?.role === "BM";
+  const isRM = user?.role === "RM";
+  // Region boundary (null = all branches). RM sees only their region.
+  const allowed = allowedBranchCodes(user);
+  // RM has full control in their region: can both distribute (academy side) and
+  // mark given + upload proof (branch side). Sees the branch column + filter.
+  const showAllBranches = isAcademy || isRM;
+  const canEditDistributed = isAcademy || isRM;
+  const canEditGiven = isBM || isRM;
 
   const [items, setItems] = useState<InvItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,10 +128,11 @@ export default function InventoryPage() {
   const visible = useMemo(() => {
     const q = search.toLowerCase();
     return items.filter(it =>
+      (!allowed || allowed.includes(it.branch)) && // region boundary
       (eventFilter === "all" || it.eventId === eventFilter) &&
       (!q || it.studentName.toLowerCase().includes(q) || it.branch.toLowerCase().includes(q))
     );
-  }, [items, search, eventFilter]);
+  }, [items, search, eventFilter, allowed]);
 
   const given = visible.filter(i => i.giftGiven).length;
 
@@ -134,7 +143,7 @@ export default function InventoryPage() {
       <div className="flex items-end justify-between gap-6 mb-1">
         <div>
           <div className="fa-mono text-[10px] uppercase text-violet-600 mb-2" style={{ letterSpacing: "0.12em" }}>
-            PCM {isBM ? `· ${branchName(String(effectiveBranch))}` : "Academy"}
+            PCM {isBM ? `· ${branchName(String(effectiveBranch))}` : isRM ? `· Region ${user.region}` : "Academy"}
           </div>
           <h1 className="fa-display-italic text-6xl text-ink-900 flex items-center gap-3">
             <Gift className="w-10 h-10 text-violet-500" /> Renewal Gifts
@@ -159,14 +168,14 @@ export default function InventoryPage() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        {isAcademy && (
+        {showAllBranches && (
           <select
             className="fa-input w-48"
             value={branchFilter}
             onChange={e => setBranchFilter(e.target.value as BranchCode | "all")}
           >
-            <option value="all">All branches</option>
-            {BRANCHES.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+            <option value="all">{allowed ? "All my region" : "All branches"}</option>
+            {BRANCHES.filter(b => !allowed || allowed.includes(b.code)).map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
           </select>
         )}
         <select
@@ -188,7 +197,7 @@ export default function InventoryPage() {
             <thead className="sticky top-0 bg-ivory-100 text-ink-500 text-[11px] uppercase tracking-wider">
               <tr>
                 <th className="text-left px-3 py-2">Student</th>
-                {isAcademy && <th className="text-left px-3 py-2">Branch</th>}
+                {showAllBranches && <th className="text-left px-3 py-2">Branch</th>}
                 <th className="text-left px-3 py-2">Coach</th>
                 <th className="text-left px-3 py-2">Event / session</th>
                 <th className="text-left px-3 py-2">Paid</th>
@@ -208,7 +217,7 @@ export default function InventoryPage() {
                     <div className="font-medium text-ink-900">{it.studentName}</div>
                     <div className="text-[11px] text-ink-400">#{it.studentId}{it.grade ? ` · G${it.grade}` : ""}</div>
                   </td>
-                  {isAcademy && <td className="px-3 py-2 font-mono text-xs text-ink-600">{it.branch}</td>}
+                  {showAllBranches && <td className="px-3 py-2 font-mono text-xs text-ink-600">{it.branch}</td>}
                   <td className="px-3 py-2 text-ink-700">{it.coachName || <span className="text-ink-300">—</span>}</td>
                   <td className="px-3 py-2">
                     <div className="text-ink-700 truncate max-w-[200px]">{it.eventName}</div>
@@ -222,9 +231,9 @@ export default function InventoryPage() {
                       type="checkbox"
                       className="w-4 h-4 accent-violet-600 disabled:opacity-50"
                       checked={it.academyDistributed}
-                      disabled={!isAcademy}
+                      disabled={!canEditDistributed}
                       onChange={e => patch(it.invitationId, { academyDistributed: e.target.checked })}
-                      title={isAcademy ? "Tick when handed to the branch" : "Set by academy"}
+                      title={canEditDistributed ? "Tick when handed to the branch" : "Set by academy"}
                     />
                   </td>
 
@@ -234,9 +243,9 @@ export default function InventoryPage() {
                       type="checkbox"
                       className="w-4 h-4 accent-emerald-600 disabled:opacity-50"
                       checked={it.giftGiven}
-                      disabled={!isBM}
+                      disabled={!canEditGiven}
                       onChange={e => patch(it.invitationId, { giftGiven: e.target.checked })}
-                      title={isBM ? "Tick when given to the student" : "Set by branch"}
+                      title={canEditGiven ? "Tick when given to the student" : "Set by branch"}
                     />
                   </td>
 
@@ -253,7 +262,7 @@ export default function InventoryPage() {
                           <ExternalLink className="w-3 h-3" /> View
                         </a>
                       )}
-                      {isBM ? (
+                      {canEditGiven ? (
                         <label className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border cursor-pointer ${
                           uploadingId === it.invitationId
                             ? "opacity-60 cursor-wait border-ivory-300 text-ink-400"
