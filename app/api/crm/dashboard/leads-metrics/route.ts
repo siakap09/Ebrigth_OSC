@@ -520,13 +520,18 @@ export async function GET(req: NextRequest) {
       ...zero(),
     }
 
-    // Branch picker for the dashboard: ONLY SUPER_ADMIN and the Ebright
-    // Marketing account get it — NOT branch/regional managers, and NOT agency
-    // admins. Excludes the internal OD + HR branches. Null for everyone else.
+    // Branch picker for the dashboard — ONLY SUPER_ADMIN and the Ebright
+    // Marketing account (NOT branch/regional managers, NOT agency admins):
+    //   - SUPER_ADMIN  → every branch.
+    //   - Marketing    → special case: every branch EXCEPT internal OD + HR.
+    // Null for everyone else.
+    const isSuper = access?.isSuperAdmin ?? false
     let selectableBranches: Array<{ branchId: string; branchName: string }> | null = null
-    if ((access?.isSuperAdmin ?? false) || isMarketing) {
+    if (isSuper || isMarketing) {
       const all = await prisma.crm_branch.findMany({
-        where: { tenantId, name: { notIn: ['00 Ebright (OD)', 'Ebright HR'] } },
+        where: isSuper
+          ? { tenantId }
+          : { tenantId, name: { notIn: ['00 Ebright (OD)', 'Ebright HR'] } },
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
       })
