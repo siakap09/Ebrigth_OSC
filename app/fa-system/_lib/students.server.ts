@@ -113,8 +113,89 @@ function rowToStudent(row: StudentRow): { student: Student } | { skip: SkipReaso
       parentPhone: row.guardian_mobile ?? "",
       enrolmentDate: toIsoDate(row.enrollment_date),
       active: (row.status ?? "").toLowerCase() === "active",
+      archived: false,
     },
   };
+}
+
+/** Shape of a row from the separate `archived_students` table. Mirrors the
+ *  columns we need from studentrecords, but the primary key is `no` (int) and
+ *  `student_id` is frequently a placeholder ("—"), so we namespace the FA id
+ *  off `no` instead. */
+interface ArchivedStudentRow {
+  no: number;
+  name: string | null;
+  status: string | null;
+  branch: string | null;
+  enrollment_date: Date | string | null;
+  grade_chapter: string | null;
+  fa_progress_json: unknown;
+  guardian_name: string | null;
+  guardian_mobile: string | null;
+  age_group: string | null;
+}
+
+/** Stable, collision-free FA id for an archived student. `studentrecords.id`
+ *  is a bigint and `archived_students.no` is a separate sequence, so we prefix
+ *  to guarantee the two namespaces never clash. Invitations store this string
+ *  verbatim (fa_invitations.student_id is free-form text). */
+export function archivedStudentId(no: number): string {
+  return `arch-${no}`;
+}
+
+function archivedRowToStudent(row: ArchivedStudentRow): { student: Student } | { skip: SkipReason } {
+  if (!row.branch) return { skip: "missing_branch" };
+  const branch = normaliseBranch(row.branch);
+  if (!branch) return { skip: "unknown_branch" };
+  if (!row.grade_chapter) return { skip: "missing_grade" };
+  const gc = parseGradeChapter(row.grade_chapter);
+  if (!gc) return { skip: "bad_grade_format" };
+
+  const ageCategory = normaliseAgeGroup(row.age_group) ?? ageCategoryFromGrade(gc.grade);
+
+  return {
+    student: {
+      id: archivedStudentId(row.no),
+      name: row.name ?? "",
+      branch,
+      grade: gc.grade,
+      ageCategory,
+      credit: gc.credit,
+      faHistory: parseFaHistory(row.fa_progress_json, gc.grade),
+      parentName: row.guardian_name ?? "",
+      parentPhone: row.guardian_mobile ?? "",
+      enrolmentDate: toIsoDate(row.enrollment_date),
+      // Archived students are not active by definition; keep the flag honest
+      // so the "Active only" filter still excludes them.
+      active: false,
+      archived: true,
+    },
+  };
+}
+
+/** Load every row from `archived_students` and map onto the Student shape.
+ *  Failures are swallowed (returns []) so a missing/renamed archive table can
+ *  never take down the main student list — archived students are additive. */
+async function fetchArchivedStudents(): Promise<Student[]> {
+  try {
+    const { rows } = await pool.query<ArchivedStudentRow>(
+      `SELECT no, name, status, branch, enrollment_date, grade_chapter,
+              fa_progress_json, guardian_name, guardian_mobile, age_group
+         FROM archived_students`
+    );
+    const out: Student[] = [];
+    for (const r of rows) {
+      const result = archivedRowToStudent(r);
+      if ("student" in result) out.push(result.student);
+    }
+    return out;
+  } catch (err) {
+    console.warn(
+      "[FA] Could not load archived_students — archived list will be empty:",
+      err instanceof Error ? err.message : err
+    );
+    return [];
+  }
 }
 
 
@@ -177,6 +258,14 @@ export async function fetchAllStudents(): Promise<{ students: Student[]; report:
       }
     }
   }
+
+  // Archived students live in their own table. They're additive — appended
+  // after the live roster, each carrying archived:true so the UI can badge
+  // them and group them into a separate section.
+  const archived = await fetchArchivedStudents();
+  students.push(...archived);
+  report.loaded += archived.length;
+  report.archivedLoaded = archived.length;
 
   const totalSkipped =
     report.skipped.missing_branch +

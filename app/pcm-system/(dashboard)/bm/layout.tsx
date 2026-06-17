@@ -13,14 +13,15 @@ export default function BMLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) {
       router.replace("/login");
-    } else if (user.role !== "BM" && user.role !== "MKT") {
+    } else if (user.role !== "BM" && user.role !== "MKT" && user.role !== "RM") {
       router.replace("/pcm-system/academy");
     }
   }, [user, router]);
 
   if (!user) return null;
-  if (user.role !== "BM" && user.role !== "MKT") return null;
-  // BMs must have a branch; MKT can browse without one.
+  // BM (own branch), RM (their region), and MKT (all) can use the BM-side views.
+  if (user.role !== "BM" && user.role !== "MKT" && user.role !== "RM") return null;
   if (user.role === "BM" && !user.branch) return null;
+  if (user.role === "RM" && !user.region) return null;
   return <>{children}</>;
 }

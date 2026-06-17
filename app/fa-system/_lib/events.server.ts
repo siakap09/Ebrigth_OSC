@@ -661,8 +661,16 @@ export async function markFaProgressForStudent(
   studentId: string,
   grade: number,
 ): Promise<void> {
+  if (grade < 1) return;
+  // Archived students live in a different table keyed by `no` (id = "arch-<no>").
+  // Route their FA-progress writeback there so the tick survives just like a
+  // live student's.
+  if (studentId.startsWith("arch-")) {
+    await markArchivedFaProgress(studentId, grade);
+    return;
+  }
   const sid = Number(studentId);
-  if (!Number.isFinite(sid) || grade < 1) return;
+  if (!Number.isFinite(sid)) return;
   const { rows } = await pool.query<{ fa_progress_json: unknown }>(
     `SELECT fa_progress_json FROM studentrecords WHERE id = $1`,
     [sid]
@@ -676,6 +684,28 @@ export async function markFaProgressForStudent(
   await pool.query(
     `UPDATE studentrecords SET fa_progress_json = $1::jsonb WHERE id = $2`,
     [JSON.stringify(arr), sid]
+  );
+}
+
+/** FA-progress writeback for an archived student (id "arch-<no>"). Mirrors
+ *  markFaProgressForStudent but targets the `archived_students` table keyed on
+ *  its `no` column. */
+async function markArchivedFaProgress(studentId: string, grade: number): Promise<void> {
+  const no = Number(studentId.slice("arch-".length));
+  if (!Number.isFinite(no) || grade < 1) return;
+  const { rows } = await pool.query<{ fa_progress_json: unknown }>(
+    `SELECT fa_progress_json FROM archived_students WHERE no = $1`,
+    [no]
+  );
+  if (!rows[0]) return;
+  const arr: boolean[] = Array.isArray(rows[0].fa_progress_json)
+    ? (rows[0].fa_progress_json as unknown[]).map(v => v === true)
+    : [];
+  while (arr.length < grade) arr.push(false);
+  arr[grade - 1] = true;
+  await pool.query(
+    `UPDATE archived_students SET fa_progress_json = $1::jsonb WHERE no = $2`,
+    [JSON.stringify(arr), no]
   );
 }
 

@@ -73,6 +73,33 @@ export const BRANCHES_BY_REGION: Record<BranchRegion, BranchCode[]> = (() => {
   return out;
 })();
 
+/** Authoritative region → branch codes per the ops sheet (10 Jun 2026), used
+ *  for Regional Manager scoping. String-typed because a few codes (AC, SBY,
+ *  DSH, SLY, DP, SNT, SBN) aren't in BRANCHES yet — kept so scoping is ready. */
+export const REGION_BRANCH_CODES: Record<BranchRegion, string[]> = {
+  A: ["AC", "DA", "EGR", "KLG", "RBY", "SA", "SHA", "ST", "SBY"],
+  B: ["AMP", "BTHO", "DK", "DSH", "KTG", "KD", "SLY", "SP", "TSG"],
+  C: ["BBB", "BSP", "CJY", "DP", "KW", "PJY", "SNT", "SBN", "ONL"],
+};
+
+/** Regional Manager accounts → the region they manage (matched by email). */
+export const RM_REGION_BY_EMAIL: Record<string, BranchRegion> = {
+  "irfanhairie02@gmail.com": "A",
+  "kirtikha19@gmail.com": "B",
+  "jothi2703@gmail.com": "C",
+};
+
+export function regionForEmail(email: string | null | undefined): BranchRegion | null {
+  if (!email) return null;
+  return RM_REGION_BY_EMAIL[email.trim().toLowerCase()] ?? null;
+}
+
+export function isRegionalManagerRole(role: string | null | undefined): boolean {
+  if (!role) return false;
+  const r = role.toUpperCase().replace(/\s+/g, "_");
+  return r === "REGIONAL_MANAGER" || r === "REGIONALMANAGER" || r === "RM";
+}
+
 /** NextAuth roles that count as "back-office" for PCM — they default to
  *  the Academy view but can switch into any Branch Manager view through
  *  the /pcm-system/login picker. PCM is academy-owned, so MARKETING is
@@ -158,15 +185,28 @@ export function matchBranchByName(raw: string | null | undefined): BranchCode | 
 // ----------------------------------------------------------------------------
 // Users & Auth
 // ----------------------------------------------------------------------------
-export type Role = "MKT" | "BM";
+export type Role = "MKT" | "BM" | "RM";
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: Role;
-  /** For BM users — the branch they manage. Null for MKT. */
+  /** For BM users — the branch they manage. Null otherwise. */
   branch: BranchCode | null;
+  /** For RM users — the region they manage. Null otherwise. */
+  region?: BranchRegion | null;
+}
+
+/** Branch codes a user may see/act on. `null` = all branches (MKT/back-office).
+ *  BM → just their branch. RM → every branch in their region. */
+export function allowedBranchCodes(
+  user: Pick<User, "role" | "branch" | "region"> | null | undefined,
+): string[] | null {
+  if (!user) return [];
+  if (user.role === "BM") return user.branch ? [user.branch] : [];
+  if (user.role === "RM") return user.region ? REGION_BRANCH_CODES[user.region] : [];
+  return null; // MKT / back-office → all branches
 }
 
 // ----------------------------------------------------------------------------
