@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
+import { hasPermission } from '@/lib/crm/permissions'
 import { createTransferNotifications } from '@/lib/crm/notifications'
 
 const MAX_TRANSFERS_PER_LEAD = 3
@@ -26,6 +27,11 @@ export async function POST(
     const access = await resolveBranchAccess(session.user.id)
     if (!access) {
       return NextResponse.json({ error: 'No CRM access' }, { status: 403 })
+    }
+
+    // Transferring a lead to another branch is lead editing — not for AGENCY_ADMIN.
+    if (!hasPermission(access.role, 'opportunities:write')) {
+      return NextResponse.json({ error: 'Your role cannot transfer leads.' }, { status: 403 })
     }
 
     const { id: opportunityId } = await params

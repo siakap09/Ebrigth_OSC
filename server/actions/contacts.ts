@@ -7,6 +7,8 @@ import { prisma } from '@/lib/crm/db'
 import { scopedPrisma } from '@/lib/crm/tenancy'
 import { logAudit } from '@/lib/crm/audit'
 import { normalizePhone } from '@/lib/crm/utils'
+import { resolveBranchAccess } from '@/lib/crm/branch-access'
+import { hasPermission, type CrmRole } from '@/lib/crm/permissions'
 import {
   CreateContactSchema,
   UpdateContactSchema,
@@ -14,27 +16,24 @@ import {
   type UpdateContactInput,
 } from '@/lib/crm/validations/contact'
 
-// ─── Helper: resolve tenantId for the current session user ───────────────────
+// ─── Helper: resolve tenantId + role for the current session user ─────────────
 
-async function getSessionAndTenant(): Promise<{ userId: string; userEmail: string; tenantId: string }> {
+async function getSessionAndTenant(): Promise<{ userId: string; userEmail: string; tenantId: string; role: CrmRole }> {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user?.id) {
     throw new Error('Unauthorized')
   }
 
-  const userBranch = await prisma.crm_user_branch.findFirst({
-    where: { userId: session.user.id },
-    select: { tenantId: true },
-  })
-
-  if (!userBranch) {
+  const access = await resolveBranchAccess(session.user.id)
+  if (!access) {
     throw new Error('User has no branch assignment')
   }
 
   return {
     userId: session.user.id,
     userEmail: session.user.email ?? '',
-    tenantId: userBranch.tenantId,
+    tenantId: access.tenantId,
+    role: access.role,
   }
 }
 
@@ -45,7 +44,10 @@ export async function createContact(
   data: CreateContactInput,
 ): Promise<{ success: true; contactId: string } | { success: false; error: string }> {
   try {
-    const { userId, userEmail, tenantId } = await getSessionAndTenant()
+    const { userId, userEmail, tenantId, role } = await getSessionAndTenant()
+    if (!hasPermission(role, 'contacts:write')) {
+      return { success: false, error: 'Your role cannot create leads.' }
+    }
     const scope = scopedPrisma(tenantId)
 
     // Validate
@@ -130,7 +132,10 @@ export async function updateContact(
   userId: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const { userEmail, tenantId } = await getSessionAndTenant()
+    const { userEmail, tenantId, role } = await getSessionAndTenant()
+    if (!hasPermission(role, 'contacts:write')) {
+      return { success: false, error: 'Your role cannot edit leads.' }
+    }
     const scope = scopedPrisma(tenantId)
 
     // Validate
@@ -192,7 +197,10 @@ export async function deleteContact(
   userId: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const { userEmail, tenantId } = await getSessionAndTenant()
+    const { userEmail, tenantId, role } = await getSessionAndTenant()
+    if (!hasPermission(role, 'contacts:delete')) {
+      return { success: false, error: 'Only a super admin can delete a lead.' }
+    }
     const scope = scopedPrisma(tenantId)
 
     await prisma.crm_contact.update({

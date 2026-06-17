@@ -17,6 +17,7 @@ import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { logAudit } from '@/lib/crm/audit'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
+import { hasPermission } from '@/lib/crm/permissions'
 import { normalizePhone } from '@/lib/crm/utils'
 import { enqueueAutomation } from '@/lib/crm/queue'
 
@@ -40,6 +41,10 @@ export async function POST(req: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const access = await resolveBranchAccess(session.user.id)
     if (!access) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Converting a WhatsApp interaction creates a lead — read-only for AGENCY_ADMIN.
+    if (!hasPermission(access.role, 'opportunities:write')) {
+      return NextResponse.json({ error: 'Your role cannot create leads.' }, { status: 403 })
+    }
 
     const parsed = Schema.safeParse(await req.json())
     if (!parsed.success) {
