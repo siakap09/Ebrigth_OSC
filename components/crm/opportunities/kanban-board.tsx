@@ -212,6 +212,7 @@ function KanbanColumn({
   onAddCard,
   onCardClick,
   onToggleSelect,
+  onToggleStage,
   cardPrefs,
 }: {
   stage: KanbanStage
@@ -219,12 +220,26 @@ function KanbanColumn({
   onAddCard: (stageId: string) => void
   onCardClick?: (opp: OpportunityCard) => void
   onToggleSelect?: (id: string) => void
+  /** Select/deselect every lead in this stage. Given the full id list. */
+  onToggleStage?: (oppIds: string[]) => void
   cardPrefs: CardPrefs
 }) {
   const totalValue = stage.opportunities.reduce(
     (sum, o) => sum + Number(o.value),
     0,
   )
+
+  // Per-stage "select all" — only shown once bulk mode is active (≥1 card
+  // selected anywhere). Checked when every card in this stage is selected;
+  // indeterminate when only some are.
+  const bulkActive = selectedIds.size > 0
+  const stageOppIds = stage.opportunities.map((o) => o.id)
+  const allSelected = stageOppIds.length > 0 && stageOppIds.every((id) => selectedIds.has(id))
+  const someSelected = stageOppIds.some((id) => selectedIds.has(id))
+  const selectAllRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected
+  }, [someSelected, allSelected])
 
   // Per-stage sort by created date. 'desc' = newest first (default), 'asc' =
   // oldest first. Each column remembers its own direction.
@@ -241,6 +256,17 @@ function KanbanColumn({
     <div className="flex flex-col w-72 shrink-0 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
       {/* Column header */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-200 dark:border-slate-700">
+        {/* Select-all-in-stage — appears only in bulk mode. */}
+        {bulkActive && onToggleStage && stageOppIds.length > 0 && (
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            checked={allSelected}
+            onChange={() => onToggleStage(stageOppIds)}
+            title={allSelected ? 'Deselect all in this stage' : 'Select all in this stage'}
+            className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600"
+          />
+        )}
         <div
           className="h-2.5 w-2.5 rounded-full shrink-0"
           style={{ backgroundColor: stage.color || '#6366f1' }}
@@ -1364,6 +1390,18 @@ export function KanbanBoard({
     })
   }
 
+  // Select (or, if already all-selected, deselect) every lead in a stage —
+  // driven by the per-column header checkbox in bulk mode.
+  function toggleStageSelect(oppIds: string[]) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      const allSelected = oppIds.length > 0 && oppIds.every((id) => next.has(id))
+      if (allSelected) oppIds.forEach((id) => next.delete(id))
+      else oppIds.forEach((id) => next.add(id))
+      return next
+    })
+  }
+
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId)
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -1475,6 +1513,7 @@ export function KanbanBoard({
                   onAddCard={(stageId) => setAddCardStageId(stageId)}
                   onCardClick={setDetailCard}
                   onToggleSelect={toggleSelect}
+                  onToggleStage={toggleStageSelect}
                   cardPrefs={cardPrefs}
                 />
               ))}

@@ -133,6 +133,39 @@ export function phoneSearchDigits(search: string): string | null {
   return digits.length >= 4 ? digits : null
 }
 
+/**
+ * Format a phone number for DISPLAY only (e.g. on lead cards).
+ *
+ * Target shape for Malaysian mobiles: "+6012 - 345 6789" (no space after the
+ * country code, a spaced dash, then the libphonenumber grouping). This is a
+ * cosmetic transform — the stored value is never changed, so phone SEARCH
+ * (which reduces both query and column to bare digits via phoneSearchDigits)
+ * is unaffected whether or not the displayed value carries "+6"/spaces.
+ *
+ * Numbers that ALREADY contain whitespace are assumed to be pre-formatted in
+ * the source data and are returned verbatim. Anything unparseable is returned
+ * unchanged too.
+ */
+export function formatPhoneDisplay(phone: string | null | undefined): string {
+  if (!phone) return ''
+  // Already-spaced in the DB → leave exactly as stored.
+  if (/\s/.test(phone.trim())) return phone
+
+  try {
+    const parsed = parsePhoneNumber(phone, 'MY')
+    if (parsed && parsed.isValid()) {
+      return parsed
+        .format('INTERNATIONAL') // "+60 12-345 6789"
+        .replace(/^(\+\d+)\s/, '$1') // drop space after country code → "+6012-345 6789"
+        .replace('-', ' - ') // pad the dash → "+6012 - 345 6789"
+    }
+  } catch {
+    // Fall through to return original.
+  }
+
+  return phone
+}
+
 // ─── API key generation ───────────────────────────────────────────────────────
 
 /**
