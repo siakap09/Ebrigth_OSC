@@ -261,6 +261,9 @@ function normalizeSourceName(raw: string | null): string {
   if (lower.includes('walk')) return 'Walk-In'
   if (lower.includes('refer')) return 'Referral'
   if (lower.includes('self')) return 'Self-Generated'
+  // Roadshow is its own first-class source (was previously collapsed into
+  // "Others"), so it shows separately in every lead-source view/filter.
+  if (lower.includes('roadshow') || lower.includes('road show') || lower.includes('road-show')) return 'Roadshow'
   return 'Others'
 }
 

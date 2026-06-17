@@ -134,16 +134,19 @@ export interface WhatsappLeadItem {
   submittedAt: string | null
 }
 
-/** Pending (unresolved) WhatsApp interactions for a branch scope. */
+/** Pending (unresolved) WhatsApp interactions for a branch scope.
+ *  Optional `range` filters by submittedAt (mirrors the kanban day filter). */
 export async function listPendingWhatsappLeads(
   tenantId: string,
   branchIds: string[] | null,
+  range?: { from: Date; to: Date } | null,
 ): Promise<WhatsappLeadItem[]> {
   const rows = await prisma.crm_whatsapp_lead.findMany({
     where: {
       tenantId,
       status: 'PENDING',
       ...(branchIds ? { branchId: { in: branchIds } } : {}),
+      ...(range ? { submittedAt: { gte: range.from, lte: range.to } } : {}),
     },
     orderBy: { submittedAt: 'desc' },
     select: {

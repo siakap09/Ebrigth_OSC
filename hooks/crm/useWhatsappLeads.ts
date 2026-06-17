@@ -29,13 +29,22 @@ const KEY = ['crm', 'whatsapp-leads'] as const
  * the topbar-selected branch (null = all the caller's branches). Polls every
  * 60s for the badge; pass `sync` to pull fresh ws_leads from ebrightleads_db.
  */
-export function useWhatsappLeads(branchId: string | null, sync: boolean) {
+export function useWhatsappLeads(
+  branchId: string | null,
+  sync: boolean,
+  range?: { from: string; to: string } | null,
+) {
   return useQuery({
-    queryKey: [...KEY, branchId ?? 'all', sync],
+    queryKey: [...KEY, branchId ?? 'all', sync, range?.from ?? '', range?.to ?? ''],
     queryFn: async (): Promise<WhatsappLeadsResponse> => {
       const params = new URLSearchParams()
       if (branchId) params.set('branchId', branchId)
       if (sync) params.set('sync', '1')
+      // Mirror the kanban day filter — narrows badge + list to submittedAt range.
+      if (range) {
+        params.set('from', range.from)
+        params.set('to', range.to)
+      }
       const qs = params.toString()
       const res = await fetch(`/api/crm/whatsapp-leads${qs ? `?${qs}` : ''}`)
       if (!res.ok) throw new Error('Failed to load WhatsApp leads')

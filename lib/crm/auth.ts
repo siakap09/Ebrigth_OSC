@@ -149,14 +149,16 @@ function mapHrfsRoleToCrmRole(hrfsRole: string | null | undefined): 'SUPER_ADMIN
   switch (r) {
     case 'SUPER_ADMIN':
       return 'SUPER_ADMIN'
-    case 'AGENCY_ADMIN':
-      return 'AGENCY_ADMIN'
+    // NOTE: AGENCY_ADMIN is intentionally NOT auto-provisioned from HRFS. It is
+    // a CRM-only privilege that may be granted ONLY through the CRM team /
+    // branch-access UI by a super admin. An HRFS "AGENCY_ADMIN" therefore falls
+    // through to BRANCH_STAFF here until a super admin promotes them in-app.
     case 'REGIONAL_MANAGER':
       return 'REGIONAL_MANAGER'
     case 'BRANCH_MANAGER':
       return 'BRANCH_MANAGER'
     default:
-      // Coaches (Full_Time / Part_Time), HR, HOD, Executive, Intern, etc.
+      // Coaches (Full_Time / Part_Time), HR, HOD, Executive, Intern, AGENCY_ADMIN, etc.
       return 'BRANCH_STAFF'
   }
 }

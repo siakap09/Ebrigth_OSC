@@ -126,12 +126,23 @@ const ALL_PERMISSIONS: CrmPermission[] = [
 
 // ─── Role → permission matrix ─────────────────────────────────────────────────
 
+// Lead-editing permissions. SUPER_ADMIN keeps all of these; AGENCY_ADMIN keeps
+// none (leads are read-only for them); the delete pair is SUPER_ADMIN-only for
+// everyone (branch/regional managers can create + edit but never delete a lead).
+const LEAD_WRITE_PERMS: CrmPermission[] = ['contacts:write', 'opportunities:write']
+const LEAD_DELETE_PERMS: CrmPermission[] = ['contacts:delete', 'opportunities:delete']
+
 const ROLE_PERMISSIONS: Record<CrmRole, ReadonlyArray<CrmPermission>> = {
-  // Full platform access
+  // Full platform access — the only role that can DELETE leads.
   SUPER_ADMIN: ALL_PERMISSIONS,
 
-  // Full access within their tenant
-  AGENCY_ADMIN: ALL_PERMISSIONS,
+  // Full access to every feature across all branches EXCEPT editing leads:
+  // contacts + opportunities are read-only (no create/edit/delete). Everything
+  // else — team, branches, settings, audit, integrations, automations,
+  // pipelines, tickets, impersonation — stays fully available.
+  AGENCY_ADMIN: ALL_PERMISSIONS.filter(
+    (p) => !LEAD_WRITE_PERMS.includes(p) && !LEAD_DELETE_PERMS.includes(p),
+  ),
 
   // Manages every branch in their region — same capabilities as a branch
   // manager, just across a wider branch scope (resolved via crm_user_branch
@@ -139,11 +150,10 @@ const ROLE_PERMISSIONS: Record<CrmRole, ReadonlyArray<CrmPermission>> = {
   REGIONAL_MANAGER: [
     'contacts:read',
     'contacts:write',
-    'contacts:delete',
     'contacts:export',
     'opportunities:read',
     'opportunities:write',
-    'opportunities:delete',
+    // No contacts:delete / opportunities:delete — lead deletion is SUPER_ADMIN only.
     'automations:read',
     'messages:read',
     'messages:write',
@@ -155,11 +165,10 @@ const ROLE_PERMISSIONS: Record<CrmRole, ReadonlyArray<CrmPermission>> = {
   BRANCH_MANAGER: [
     'contacts:read',
     'contacts:write',
-    'contacts:delete',
     'contacts:export',
     'opportunities:read',
     'opportunities:write',
-    'opportunities:delete',
+    // No contacts:delete / opportunities:delete — lead deletion is SUPER_ADMIN only.
     'automations:read',
     'automations:write',
     'automations:delete',

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
@@ -72,6 +72,9 @@ interface MetricsResponse {
    *  their full branch list, used to render the Trial Schedule branch picker
    *  across the whole region. Null for elevated + single-branch users. */
   scopedBranches?: Array<{ branchId: string; branchName: string }> | null
+  /** Branches the caller may switch the dashboard to (super/agency + Marketing).
+   *  Null = no picker. Drives the dashboard branch dropdown. */
+  selectableBranches?: Array<{ branchId: string; branchName: string }> | null
 }
 
 type Preset = 'today' | 'yesterday' | 'last_week' | 'this_week' | 'next_week' | '30d' | 'custom'
@@ -106,9 +109,14 @@ export function DashboardClient() {
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const { selectedBranch } = useBranchContext()
-  // When an admin picks a branch from the topbar, send branchId so the API
-  // returns that branch's metrics + monthly trend (admin-as-branch view).
-  const branchId = selectedBranch?.id ?? null
+  // The dashboard's branch scope. Initialised from the topbar selection and
+  // re-synced when it changes, but the on-dashboard branch dropdown (super /
+  // agency / Marketing) can override it independently.
+  const [viewBranchId, setViewBranchId] = useState<string | null>(selectedBranch?.id ?? null)
+  useEffect(() => {
+    setViewBranchId(selectedBranch?.id ?? null)
+  }, [selectedBranch?.id])
+  const branchId = viewBranchId
 
   // Drill-in: which metric+scope the user clicked to see the underlying leads.
   const [drill, setDrill] = useState<{ metric: Metric; scope: Scope; scopeLabel: string } | null>(null)
@@ -158,21 +166,38 @@ export function DashboardClient() {
             {rangeLabel || 'Select a range'} · NL by created · CT / SU / ENR by stage entry
           </p>
         </div>
-        <div className="rounded-full bg-slate-100 p-1 text-sm dark:bg-slate-800">
-          {PRESETS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setPreset(p.key)}
-              className={cn(
-                'rounded-full px-3 py-1.5 transition',
-                preset === p.key
-                  ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-400'
-                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200',
-              )}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Branch picker — super/agency admins + Marketing can view any
+              branch's lead dashboard (read-only metrics). */}
+          {data?.selectableBranches && data.selectableBranches.length > 0 && (
+            <select
+              value={viewBranchId ?? ''}
+              onChange={(e) => setViewBranchId(e.target.value || null)}
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+              title="View another branch's lead dashboard"
             >
-              {p.label}
-            </button>
-          ))}
+              <option value="">{data.elevated ? 'All branches' : 'My dashboard'}</option>
+              {data.selectableBranches.map((b) => (
+                <option key={b.branchId} value={b.branchId}>{b.branchName}</option>
+              ))}
+            </select>
+          )}
+          <div className="rounded-full bg-slate-100 p-1 text-sm dark:bg-slate-800">
+            {PRESETS.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setPreset(p.key)}
+                className={cn(
+                  'rounded-full px-3 py-1.5 transition',
+                  preset === p.key
+                    ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-400'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200',
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

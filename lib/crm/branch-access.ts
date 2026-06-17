@@ -12,11 +12,22 @@ import { prisma } from '@/lib/crm/db'
  *
  * Returns `null` if the user isn't provisioned in any branch (unauthorized).
  */
+/** Privilege ranking — highest wins when a user holds multiple branch roles. */
+const ROLE_RANK: Record<string, number> = {
+  SUPER_ADMIN: 5,
+  AGENCY_ADMIN: 4,
+  REGIONAL_MANAGER: 3,
+  BRANCH_MANAGER: 2,
+  BRANCH_STAFF: 1,
+}
+
 export async function resolveBranchAccess(userId: string): Promise<{
   tenantId: string
   primaryBranchId: string
   branchIds: string[]
   elevated: boolean
+  /** Highest-privilege CRM role the user holds — use with hasPermission(). */
+  role: 'SUPER_ADMIN' | 'AGENCY_ADMIN' | 'REGIONAL_MANAGER' | 'BRANCH_MANAGER' | 'BRANCH_STAFF'
   /**
    * True only for SUPER_ADMIN role. AGENCY_ADMIN is also elevated but does
    * NOT set this flag. Used by widgets that need to gate destructive /
@@ -42,6 +53,11 @@ export async function resolveBranchAccess(userId: string): Promise<{
   const isSuperAdmin = links.some((l) => l.role === 'SUPER_ADMIN')
   const elevated = isSuperAdmin || links.some((l) => l.role === 'AGENCY_ADMIN')
   const branchIds = Array.from(new Set(links.map((l) => l.branchId)))
+  // Highest-privilege role this user holds across all their branch links.
+  const role = links
+    .map((l) => l.role)
+    .sort((a, b) => (ROLE_RANK[b] ?? 0) - (ROLE_RANK[a] ?? 0))[0] as
+    'SUPER_ADMIN' | 'AGENCY_ADMIN' | 'REGIONAL_MANAGER' | 'BRANCH_MANAGER' | 'BRANCH_STAFF'
 
-  return { tenantId, primaryBranchId, branchIds, elevated, isSuperAdmin }
+  return { tenantId, primaryBranchId, branchIds, elevated, isSuperAdmin, role }
 }

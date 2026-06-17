@@ -59,7 +59,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const items = await listPendingWhatsappLeads(ctx.tenantId, ctx.branchIds)
+    // Optional day-range filter (mirrors the kanban day filter) on submittedAt.
+    const fromParam = req.nextUrl.searchParams.get('from')
+    const toParam = req.nextUrl.searchParams.get('to')
+    const range = fromParam && toParam ? { from: new Date(fromParam), to: new Date(toParam) } : null
+
+    const items = await listPendingWhatsappLeads(ctx.tenantId, ctx.branchIds, range)
     return NextResponse.json({
       count: items.length,
       items,

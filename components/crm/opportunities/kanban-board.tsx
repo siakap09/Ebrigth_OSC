@@ -24,6 +24,7 @@ import { useKanban, useMoveOpportunity, useOpportunity, useDeleteOpportunity, op
 import { getAgeCategory, ageCategoryClasses, formatChildAge } from '@/lib/crm/age-category'
 import { Trash2 } from 'lucide-react'
 import { useBranchContext } from '../branch-context'
+import { useOppFilter } from './opp-filter-context'
 import { KanbanCard } from './kanban-card'
 import { StageChangeModal } from './stage-change-modal'
 import { OpportunityModal } from './opportunity-modal'
@@ -604,12 +605,16 @@ function BulkActionBar({
   onMoveAll,
   onDeleteAll,
   onClear,
+  canEditLeads,
+  canDeleteLeads,
 }: {
   count: number
   stages: KanbanStage[]
   onMoveAll: (toStageId: string) => void
   onDeleteAll: () => void
   onClear: () => void
+  canEditLeads: boolean
+  canDeleteLeads: boolean
 }) {
   const [targetStage, setTargetStage] = useState('')
 
@@ -622,31 +627,39 @@ function BulkActionBar({
             Force a readable white-panel/dark-text combo on the options so it
             stays legible against the indigo BulkActionBar in both light and
             dark mode. */}
-        <select
-          value={targetStage}
-          onChange={(e) => setTargetStage(e.target.value)}
-          className="rounded bg-white/20 border border-white/30 px-2 py-1 text-sm text-white focus:outline-none [&>option]:bg-white [&>option]:text-slate-900"
-        >
-          <option value="" className="bg-white text-slate-900">Move to stage...</option>
-          {stages.map((s) => (
-            <option key={s.id} value={s.id} className="bg-white text-slate-900">
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={() => targetStage && onMoveAll(targetStage)}
-          disabled={!targetStage}
-          className="rounded bg-white/20 px-3 py-1 hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          Move all
-        </button>
-        <button
-          onClick={onDeleteAll}
-          className="rounded bg-red-500/80 px-3 py-1 hover:bg-red-500 transition-colors"
-        >
-          Delete all
-        </button>
+        {/* Bulk move = lead editing (hidden for read-only AGENCY_ADMIN). */}
+        {canEditLeads && (
+          <>
+            <select
+              value={targetStage}
+              onChange={(e) => setTargetStage(e.target.value)}
+              className="rounded bg-white/20 border border-white/30 px-2 py-1 text-sm text-white focus:outline-none [&>option]:bg-white [&>option]:text-slate-900"
+            >
+              <option value="" className="bg-white text-slate-900">Move to stage...</option>
+              {stages.map((s) => (
+                <option key={s.id} value={s.id} className="bg-white text-slate-900">
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => targetStage && onMoveAll(targetStage)}
+              disabled={!targetStage}
+              className="rounded bg-white/20 px-3 py-1 hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Move all
+            </button>
+          </>
+        )}
+        {/* Delete = SUPER_ADMIN only. */}
+        {canDeleteLeads && (
+          <button
+            onClick={onDeleteAll}
+            className="rounded bg-red-500/80 px-3 py-1 hover:bg-red-500 transition-colors"
+          >
+            Delete all
+          </button>
+        )}
         <button
           onClick={onClear}
           className="rounded bg-white/20 px-3 py-1 hover:bg-white/30 transition-colors"
@@ -668,6 +681,10 @@ interface KanbanBoardProps {
   defaultBranchId?: string
   /** When false (BRANCH_MANAGER and below), the pipeline dropdown is locked. */
   canSwitchBranches?: boolean
+  /** False for AGENCY_ADMIN — leads are read-only (no create/edit/move/drag). */
+  canEditLeads?: boolean
+  /** True only for SUPER_ADMIN — lead deletion. */
+  canDeleteLeads?: boolean
 }
 
 export function KanbanBoard({
@@ -677,6 +694,8 @@ export function KanbanBoard({
   users,
   defaultBranchId,
   canSwitchBranches = true,
+  canEditLeads = true,
+  canDeleteLeads = true,
 }: KanbanBoardProps) {
   const [selectedPipelineId, setSelectedPipelineId] = useState(initialPipelineId)
   const [searchInput, setSearchInput] = useState('')
@@ -716,6 +735,15 @@ export function KanbanBoard({
   const [weekFilter, setWeekFilter] = useState<WeekFilter>('all')
   const [customFrom, setCustomFrom] = useState<string>('')
   const [customTo, setCustomTo] = useState<string>('')
+
+  // Mirror the resolved day/week range into the shared context so sibling
+  // widgets (the header WhatsApp button) filter to the same window.
+  const oppFilter = useOppFilter()
+  useEffect(() => {
+    const r = resolveRange(weekFilter, customFrom, customTo)
+    oppFilter.setRange(r ? { from: r.from.toISOString(), to: r.to.toISOString() } : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekFilter, customFrom, customTo])
   // Refinement filters (lead source / age class / tag). Empty string = "all".
   const [sourceFilter, setSourceFilter] = useState<string>('')
   const [ageFilter, setAgeFilter] = useState<string>('')
@@ -856,6 +884,12 @@ export function KanbanBoard({
       const { source, destination, draggableId } = result
       if (!destination || source.droppableId === destination.droppableId) return
 
+      // AGENCY_ADMIN has read-only leads — moving a card is an edit.
+      if (!canEditLeads) {
+        toast.error('Your role has read-only access to leads.')
+        return
+      }
+
       const fromStage = stages.find((s) => s.id === source.droppableId)
       const toStage = stages.find((s) => s.id === destination.droppableId)
       if (!fromStage || !toStage) return
@@ -953,7 +987,7 @@ export function KanbanBoard({
         })()
       }
     },
-    [stages, moveMutation, pipelines, selectedPipelineId, canSwitchBranches],
+    [stages, moveMutation, pipelines, selectedPipelineId, canSwitchBranches, canEditLeads],
   )
 
   // Stage change kicked off from the OpportunityDetailModal's picker. The
@@ -1344,14 +1378,17 @@ export function KanbanBoard({
               not the raw `data` from the API. */}
           {filteredStages.reduce((acc, s) => acc + s.opportunities.length, 0)} opportunities
         </span>
-        <button
-          type="button"
-          onClick={() => setShowNewOpportunity(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition"
-        >
-          <Plus className="h-4 w-4" />
-          New Opportunity
-        </button>
+        {/* Creating a lead is read-only for AGENCY_ADMIN. */}
+        {canEditLeads && (
+          <button
+            type="button"
+            onClick={() => setShowNewOpportunity(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition"
+          >
+            <Plus className="h-4 w-4" />
+            New Opportunity
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -1393,6 +1430,8 @@ export function KanbanBoard({
           onMoveAll={handleBulkMove}
           onDeleteAll={openBulkDelete}
           onClear={() => setSelectedIds(new Set())}
+          canEditLeads={canEditLeads}
+          canDeleteLeads={canDeleteLeads}
         />
       )}
 
@@ -1507,7 +1546,7 @@ export function KanbanBoard({
             stageName={stages.find((s) => s.id === detailCard.stageId)?.name ?? '—'}
             stageShortCode={stages.find((s) => s.id === detailCard.stageId)?.shortCode ?? ''}
             branchName={branches.find((b) => b.id === detailCard.branchId)?.name ?? null}
-            canDelete={canSwitchBranches}
+            canDelete={canDeleteLeads}
             pipelineStages={stages.map((s) => ({
               id: s.id,
               name: s.name,
