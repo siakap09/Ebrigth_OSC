@@ -55,7 +55,6 @@ const dashboards: DashboardCard[] = [
       { key: "hrms.hr-dashboard",     name: "HR Dashboard",        href: "/hr-dashboard",                  icon: "📋" },
       { key: "hrms.manpower-cost",    name: "Manpower Cost Report",href: "/manpower-cost-report",          icon: "💸" },
       { key: "hrms.staff-directory",  name: "Staff Directory",     href: "/staff-directory",               icon: "📇" },
-      { key: "hrms.burnlist",         name: "Burnlist",            href: "/burnlist",                      icon: "🔥" },
     ],
   },
   {
@@ -86,8 +85,9 @@ const dashboards: DashboardCard[] = [
     icon: "💬",
     color: "bg-indigo-500",
     items: [
-      { key: "sms.messages",  name: "Messages",  href: "#",    icon: "💌" },
-      { key: "sms.templates", name: "Templates", href: "/sms", icon: "📧" },
+      { key: "sms.messages",  name: "Messages",  href: "#",        icon: "💌" },
+      { key: "sms.templates", name: "Templates", href: "/sms",     icon: "📧" },
+      { key: "sms.burnlist",  name: "Burnlist",  href: "/burnlist", icon: "🔥" },
     ],
   },
   {

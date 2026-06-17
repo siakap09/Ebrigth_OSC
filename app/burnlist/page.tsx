@@ -338,20 +338,16 @@ function EditableText({ value, onCommit, className, placeholder }: EditableTextP
 
 function BranchCell({ code }: { code: string }) {
   const label = branchLabelFromCode(code);
+  // BRANCH_ORDER entries are "<DB code> <manager name>" — show only the
+  // shortcode portion (before the first space) per user request.
   const firstSpace = label.indexOf(" ");
   const shortcode = firstSpace === -1 ? label : label.slice(0, firstSpace);
-  const manager = firstSpace === -1 ? "" : label.slice(firstSpace + 1);
 
   return (
-    <div className="w-full flex flex-col items-center gap-1 px-1 py-1">
-      <span className="inline-flex items-center justify-center min-w-[44px] px-2.5 py-0.5 rounded-md text-[11px] font-black uppercase tracking-wider bg-gradient-to-br from-orange-500 to-red-500 text-white shadow-sm">
+    <div className="w-full flex flex-col items-center px-1 py-1">
+      <span className="inline-flex items-center justify-center min-w-[44px] px-2.5 py-1 rounded-md text-[11px] font-black uppercase tracking-wider bg-gradient-to-br from-orange-500 to-red-500 text-white shadow-sm">
         {shortcode || "—"}
       </span>
-      {manager && (
-        <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide leading-tight">
-          {manager}
-        </span>
-      )}
     </div>
   );
 }
@@ -849,7 +845,7 @@ export default function BurnlistPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-slate-50 to-red-50">
       {/* Page Header */}
-      <div className="relative bg-gradient-to-r from-white via-orange-50/40 to-white backdrop-blur-md border-b border-orange-100 px-6 py-5 shadow-lg shadow-orange-100/40 sticky top-0 z-30">
+      <div className="relative bg-gradient-to-r from-white via-orange-50/40 to-white backdrop-blur-md border-b border-orange-100 px-6 py-5 shadow-lg shadow-orange-100/40 z-30">
         {/* Decorative ambient orbs — clipped inside their own wrapper so they
             don't bleed outside the header, but the WeekPicker dropdown can
             still extend below it. */}
@@ -1001,7 +997,7 @@ export default function BurnlistPage() {
           <StatCard label="Done"               value={stats.done}      accent="from-blue-500 to-blue-700"      icon="✅" />
         </div>
 
-        <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-slate-200">
           {/* Title row */}
           <div className="relative px-6 py-8 border-b border-slate-200 text-center bg-gradient-to-br from-white via-orange-50/40 to-red-50/60 overflow-hidden">
             <div className="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br from-orange-200/40 to-red-300/30 rounded-full blur-3xl pointer-events-none" />
@@ -1018,9 +1014,9 @@ export default function BurnlistPage() {
             </p>
           </div>
 
-          <div className="overflow-x-auto">
+          <div>
             <table className="w-full text-sm border-collapse">
-              <thead className="bg-gradient-to-b from-slate-900 to-slate-800 sticky top-0 z-10 shadow-md">
+              <thead className="bg-gradient-to-b from-slate-900 to-slate-800 sticky top-0 z-30 shadow-lg shadow-slate-900/40">
                 <tr>
                   <th className="w-[140px] text-center py-4 px-3 text-white text-[11px] font-black uppercase tracking-[0.25em]">
                     <span className="inline-flex items-center gap-1.5">🏢 Branch</span>
