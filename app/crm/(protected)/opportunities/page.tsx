@@ -4,6 +4,7 @@ import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { KanbanBoard } from '@/components/crm/opportunities/kanban-board'
 import { WhatsappLeadsButton } from '@/components/crm/opportunities/whatsapp-leads-button'
+import { OppFilterProvider } from '@/components/crm/opportunities/opp-filter-context'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
 import { hasPermission } from '@/lib/crm/permissions'
 
@@ -151,12 +152,14 @@ export default async function OpportunitiesPage() {
   }
 
   return (
+    <OppFilterProvider>
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
         <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
           Opportunities
         </h1>
-        {/* Compulsory: branch managers must clear every inbound WhatsApp lead. */}
+        {/* Compulsory: branch managers must clear every inbound WhatsApp lead.
+            The button reads the kanban's day filter via OppFilterProvider. */}
         <WhatsappLeadsButton />
       </div>
 
@@ -173,5 +176,6 @@ export default async function OpportunitiesPage() {
         />
       </div>
     </div>
+    </OppFilterProvider>
   )
 }

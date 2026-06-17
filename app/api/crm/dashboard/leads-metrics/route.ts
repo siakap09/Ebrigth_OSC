@@ -79,10 +79,24 @@ export async function GET(req: NextRequest) {
     // Without this, a multi-branch BM's selection was silently dropped and the
     // block showed the COMBINED total of all their branches mislabeled with
     // branches[0].name.
+    // Marketing: a non-elevated user linked to the "Ebright Marketing" branch
+    // may view ANY branch's DASHBOARD metrics (read-only) — but not their
+    // opportunities. This lets Marketing inspect other branches' lead funnels
+    // via the dashboard branch dropdown.
+    let isMarketing = false
+    if (access && !isElevatedUser) {
+      const mk = await prisma.crm_branch.findFirst({
+        where: { tenantId, name: 'Ebright Marketing' },
+        select: { id: true },
+      })
+      isMarketing = !!mk && access.branchIds.includes(mk.id)
+    }
+    const canViewAnyBranch = isElevatedUser || isMarketing
+
     const requestedBranchId = req.nextUrl.searchParams.get('branchId')
     const accessibleBranchIds = access?.branchIds ?? []
     const viewAsBranch = requestedBranchId
-      ? (isElevatedUser || accessibleBranchIds.includes(requestedBranchId))
+      ? (canViewAnyBranch || accessibleBranchIds.includes(requestedBranchId))
         ? requestedBranchId
         : null
       : null
@@ -506,6 +520,19 @@ export async function GET(req: NextRequest) {
       ...zero(),
     }
 
+    // Branch picker for the dashboard: super/agency admins AND Marketing can
+    // switch the dashboard to any branch (read-only metrics). Excludes the
+    // internal OD + HR branches. Null for everyone else (no picker).
+    let selectableBranches: Array<{ branchId: string; branchName: string }> | null = null
+    if (canViewAnyBranch) {
+      const all = await prisma.crm_branch.findMany({
+        where: { tenantId, name: { notIn: ['00 Ebright (OD)', 'Ebright HR'] } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      })
+      selectableBranches = all.map((b) => ({ branchId: b.id, branchName: b.name }))
+    }
+
     return NextResponse.json({
       range: { from: from.toISOString(), to: to.toISOString() },
       main,
@@ -558,6 +585,9 @@ export async function GET(req: NextRequest) {
         elevated || branches.length <= 1
           ? null
           : orderedBranches.map((b) => ({ branchId: b.branchId, branchName: b.branchName })),
+      // All branches the caller may switch the dashboard to (super/agency +
+      // Marketing). Null = no picker for this user.
+      selectableBranches,
     })
   } catch (e) {
     console.error('[GET leads-metrics]', e)

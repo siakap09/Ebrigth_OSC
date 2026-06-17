@@ -24,6 +24,7 @@ import { useKanban, useMoveOpportunity, useOpportunity, useDeleteOpportunity, op
 import { getAgeCategory, ageCategoryClasses, formatChildAge } from '@/lib/crm/age-category'
 import { Trash2 } from 'lucide-react'
 import { useBranchContext } from '../branch-context'
+import { useOppFilter } from './opp-filter-context'
 import { KanbanCard } from './kanban-card'
 import { StageChangeModal } from './stage-change-modal'
 import { OpportunityModal } from './opportunity-modal'
@@ -734,6 +735,15 @@ export function KanbanBoard({
   const [weekFilter, setWeekFilter] = useState<WeekFilter>('all')
   const [customFrom, setCustomFrom] = useState<string>('')
   const [customTo, setCustomTo] = useState<string>('')
+
+  // Mirror the resolved day/week range into the shared context so sibling
+  // widgets (the header WhatsApp button) filter to the same window.
+  const oppFilter = useOppFilter()
+  useEffect(() => {
+    const r = resolveRange(weekFilter, customFrom, customTo)
+    oppFilter.setRange(r ? { from: r.from.toISOString(), to: r.to.toISOString() } : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekFilter, customFrom, customTo])
   // Refinement filters (lead source / age class / tag). Empty string = "all".
   const [sourceFilter, setSourceFilter] = useState<string>('')
   const [ageFilter, setAgeFilter] = useState<string>('')

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Plus, Trash2, X, Search } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
 import { useBranchContext } from '@/components/crm/branch-context'
+import { useOppFilter } from '@/components/crm/opportunities/opp-filter-context'
 import {
   useWhatsappLeads,
   useCompleteWhatsappLead,
@@ -49,9 +50,12 @@ export function WhatsappLeadsButton() {
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
+  // Mirror the kanban day/week filter — badge + list both follow it.
+  const { range } = useOppFilter()
+
   // Always sync=1 — ws_leads is tiny, so each poll cheaply pulls new inbound
   // interactions and bumps the badge without anyone opening the dropdown.
-  const { data, isLoading } = useWhatsappLeads(branchId, true)
+  const { data, isLoading } = useWhatsappLeads(branchId, true, range)
   const items = data?.items ?? []
   const count = data?.count ?? 0
   const canManage = data?.canManage ?? false

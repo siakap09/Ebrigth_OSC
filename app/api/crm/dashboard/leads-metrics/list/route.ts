@@ -87,10 +87,22 @@ export async function GET(req: NextRequest) {
     // multi-branch users (BM/RM linked to >1 branch); a branch outside a
     // non-elevated user's grant is ignored. Mirrors the metrics route so the
     // drill-in list scopes to the same branch the card counted.
+    // Marketing may drill into any branch's lead list (read-only), mirroring
+    // the metrics route's cross-branch allowance.
+    let isMarketing = false
+    if (access && !isElevatedUser) {
+      const mk = await prisma.crm_branch.findFirst({
+        where: { tenantId, name: 'Ebright Marketing' },
+        select: { id: true },
+      })
+      isMarketing = !!mk && access.branchIds.includes(mk.id)
+    }
+    const canViewAnyBranch = isElevatedUser || isMarketing
+
     const requestedBranchId = sp.get('branchId')
     const accessibleBranchIds = access?.branchIds ?? []
     const viewAsBranch = requestedBranchId
-      ? (isElevatedUser || accessibleBranchIds.includes(requestedBranchId))
+      ? (canViewAnyBranch || accessibleBranchIds.includes(requestedBranchId))
         ? requestedBranchId
         : null
       : null
