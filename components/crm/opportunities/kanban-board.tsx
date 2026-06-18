@@ -130,8 +130,16 @@ function useDebounce<T>(value: T, delay: number): T {
 const CARD_HEIGHT = 96 // approximate px height per card
 const CARD_GAP = 8
 
+// Progressive reveal: a column shows the first INITIAL_REVEAL cards, then loads
+// REVEAL_STEP more each time the user scrolls near the bottom, until the whole
+// (already-filtered) stage is shown. This is a render-only concern — counts,
+// drag/drop, search, and select-all all still operate on the full stage list.
+const INITIAL_REVEAL = 50
+const REVEAL_STEP = 20
+
 function VirtualColumnList({
   items,
+  resetSignature,
   stuckHoursYellow,
   stuckHoursRed,
   selectedIds,
@@ -142,6 +150,8 @@ function VirtualColumnList({
   cardPrefs,
 }: {
   items: OpportunityCard[]
+  /** Changing this (filters/sort/pipeline) resets the reveal back to the top. */
+  resetSignature: string
   stuckHoursYellow: number
   stuckHoursRed: number
   selectedIds: Set<string>
@@ -154,6 +164,20 @@ function VirtualColumnList({
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(600)
+  const [revealLimit, setRevealLimit] = useState(INITIAL_REVEAL)
+
+  // Keep latest values readable inside the (mount-once) scroll listener.
+  const revealRef = useRef(revealLimit)
+  revealRef.current = revealLimit
+  const totalRef = useRef(items.length)
+  totalRef.current = items.length
+
+  // Reset the reveal window when the filter/sort/pipeline context changes, and
+  // jump the column back to the top so the user starts from the first 50.
+  useEffect(() => {
+    setRevealLimit(INITIAL_REVEAL)
+    if (containerRef.current) containerRef.current.scrollTop = 0
+  }, [resetSignature])
 
   useEffect(() => {
     const el = containerRef.current
@@ -167,20 +191,34 @@ function VirtualColumnList({
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const onScroll = () => setScrollTop(el.scrollTop)
+    const onScroll = () => {
+      setScrollTop(el.scrollTop)
+      // Near the bottom and more cards remain → reveal the next batch.
+      if (
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 200 &&
+        revealRef.current < totalRef.current
+      ) {
+        setRevealLimit((l) => Math.min(l + REVEAL_STEP, totalRef.current))
+      }
+    }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
   }, [])
 
   const itemHeight = CARD_HEIGHT + CARD_GAP
 
+  // Only the revealed slice participates in the (already efficient) virtual
+  // windowing — so the column starts light and grows as the user scrolls.
+  const revealedItems = items.slice(0, revealLimit)
+  const hasMore = revealLimit < items.length
+
   const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - 2)
   const visibleCount = Math.ceil(containerHeight / itemHeight) + 4
-  const endIndex = Math.min(items.length, startIndex + visibleCount)
+  const endIndex = Math.min(revealedItems.length, startIndex + visibleCount)
 
-  const visibleItems = items.slice(startIndex, endIndex)
+  const visibleItems = revealedItems.slice(startIndex, endIndex)
   const topSpacer = startIndex * itemHeight
-  const bottomSpacer = (items.length - endIndex) * itemHeight
+  const bottomSpacer = (revealedItems.length - endIndex) * itemHeight
 
   return (
     <div
@@ -227,6 +265,12 @@ function VirtualColumnList({
       {bottomSpacer > 0 && (
         <div style={{ height: bottomSpacer }} aria-hidden="true" />
       )}
+      {/* Reveal hint — shown while more cards remain to be scrolled into view. */}
+      {hasMore && (
+        <div className="py-2 text-center text-[10px] font-medium text-slate-400 dark:text-slate-500">
+          Scroll for more — {items.length - revealLimit} more
+        </div>
+      )}
     </div>
   )
 }
@@ -241,6 +285,7 @@ function KanbanColumn({
   onToggleSelect,
   onToggleStage,
   cardPrefs,
+  filterKey,
 }: {
   stage: KanbanStage
   selectedIds: Set<string>
@@ -250,6 +295,9 @@ function KanbanColumn({
   /** Select/deselect every lead in this stage. Given the full id list. */
   onToggleStage?: (oppIds: string[]) => void
   cardPrefs: CardPrefs
+  /** Board-level filter signature; combined with this column's sort to reset
+   *  the progressive-reveal window when the visible set changes. */
+  filterKey: string
 }) {
   const totalValue = stage.opportunities.reduce(
     (sum, o) => sum + Number(o.value),
@@ -347,6 +395,7 @@ function KanbanColumn({
           >
             <VirtualColumnList
               items={sortedOpportunities}
+              resetSignature={`${filterKey}|${sortDir}`}
               stuckHoursYellow={stage.stuckHoursYellow}
               stuckHoursRed={stage.stuckHoursRed}
               selectedIds={selectedIds}
@@ -726,6 +775,24 @@ function BulkActionBar({
 
 // ─── Main KanbanBoard ─────────────────────────────────────────────────────────
 
+/**
+ * In-session memory for the FiltersBar selections (day/week range, lead source,
+ * age class, tag, and search). Module-scoped on purpose: it survives client-side
+ * navigation — open a lead and come back and the filters are still applied — but
+ * is wiped on a full page refresh or tab close. It does NOT track the pipeline,
+ * which is driven by the top-bar branch switcher.
+ */
+interface KanbanFilterMemory {
+  search: string
+  weekFilter: WeekFilter
+  customFrom: string
+  customTo: string
+  sourceFilter: string
+  ageFilter: string
+  tagFilter: string
+}
+const kanbanFilterMemory: Partial<KanbanFilterMemory> = {}
+
 interface KanbanBoardProps {
   initialPipelineId: string
   pipelines: Pipeline[]
@@ -751,7 +818,7 @@ export function KanbanBoard({
   canDeleteLeads = true,
 }: KanbanBoardProps) {
   const [selectedPipelineId, setSelectedPipelineId] = useState(initialPipelineId)
-  const [searchInput, setSearchInput] = useState('')
+  const [searchInput, setSearchInput] = useState(() => kanbanFilterMemory.search ?? '')
   // Card customisation — persisted per browser via localStorage.
   // Starts at the project default so first render matches SSR; the
   // localStorage value is hydrated client-side after mount.
@@ -785,9 +852,9 @@ export function KanbanBoard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextBranch?.id])
-  const [weekFilter, setWeekFilter] = useState<WeekFilter>('all')
-  const [customFrom, setCustomFrom] = useState<string>('')
-  const [customTo, setCustomTo] = useState<string>('')
+  const [weekFilter, setWeekFilter] = useState<WeekFilter>(() => kanbanFilterMemory.weekFilter ?? 'all')
+  const [customFrom, setCustomFrom] = useState<string>(() => kanbanFilterMemory.customFrom ?? '')
+  const [customTo, setCustomTo] = useState<string>(() => kanbanFilterMemory.customTo ?? '')
 
   // Mirror the resolved day/week range into the shared context so sibling
   // widgets (the header WhatsApp button) filter to the same window.
@@ -798,10 +865,24 @@ export function KanbanBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekFilter, customFrom, customTo])
   // Refinement filters (lead source / age class / tag). Empty string = "all".
-  const [sourceFilter, setSourceFilter] = useState<string>('')
-  const [ageFilter, setAgeFilter] = useState<string>('')
-  const [tagFilter, setTagFilter] = useState<string>('')
+  const [sourceFilter, setSourceFilter] = useState<string>(() => kanbanFilterMemory.sourceFilter ?? '')
+  const [ageFilter, setAgeFilter] = useState<string>(() => kanbanFilterMemory.ageFilter ?? '')
+  const [tagFilter, setTagFilter] = useState<string>(() => kanbanFilterMemory.tagFilter ?? '')
   const search = useDebounce(searchInput, 350)
+
+  // Persist the FiltersBar selections for the tab session (see kanbanFilterMemory).
+  useEffect(() => {
+    kanbanFilterMemory.search = searchInput
+    kanbanFilterMemory.weekFilter = weekFilter
+    kanbanFilterMemory.customFrom = customFrom
+    kanbanFilterMemory.customTo = customTo
+    kanbanFilterMemory.sourceFilter = sourceFilter
+    kanbanFilterMemory.ageFilter = ageFilter
+    kanbanFilterMemory.tagFilter = tagFilter
+  }, [searchInput, weekFilter, customFrom, customTo, sourceFilter, ageFilter, tagFilter])
+
+  // Filter signature for the columns' progressive-reveal reset (see KanbanColumn).
+  const filterKey = `${selectedPipelineId}|${weekFilter}|${customFrom}|${customTo}|${sourceFilter}|${ageFilter}|${tagFilter}|${search}`
 
   // Always pass undefined for branchId — the pipeline itself already scopes to one branch.
   const { data, isLoading, isError, refetch } = useKanban(
@@ -1552,6 +1633,7 @@ export function KanbanBoard({
                   onToggleSelect={toggleSelect}
                   onToggleStage={toggleStageSelect}
                   cardPrefs={cardPrefs}
+                  filterKey={filterKey}
                 />
               ))}
             </div>
