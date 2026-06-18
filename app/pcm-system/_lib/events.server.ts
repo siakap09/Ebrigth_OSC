@@ -102,7 +102,16 @@ interface EventBranchOverrideRow {
 }
 
 function isoDate(d: Date | string): string {
-  if (d instanceof Date) return d.toISOString().split("T")[0];
+  // Event start/end dates are stored as a timestamp at KL-midnight — e.g.
+  // 2026-06-16T16:00:00Z is 00:00 on 17 Jun in Kuala Lumpur (UTC+8). Reading it
+  // in UTC and chopping the time (toISOString) yields 16 Jun, shifting the whole
+  // event — and every session's weekday — back by one day. Format in KL instead
+  // so "Day N" lands on the correct calendar day. A plain "YYYY-MM-DD" value is
+  // unaffected (KL +8h keeps it on the same date).
+  const date = d instanceof Date ? d : new Date(d);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
+  }
   return String(d).split("T")[0];
 }
 

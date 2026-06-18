@@ -17,6 +17,7 @@ import {
   type CheckInStatus,
   type CheckOutStatus,
 } from "@/lib/working-hours";
+import { visitingHomeBranch, assignedBranchForDate } from "@/lib/visiting-staff";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -220,6 +221,14 @@ export default function AttendanceSummary() {
   // Late / Left Late / etc status.
   const [leaveByEmpNo, setLeaveByEmpNo] = useState<Map<string, string>>(new Map());
 
+  // ── Per-date schedule history, keyed by branchStaffId ───────────────────────
+  // For the selected date, the schedule active on that date for every employee
+  // who has dated history. Value object = use it; value null = has history but
+  // no version covers that date (→ no Late/Early); KEY ABSENT = no history at
+  // all (→ fall back to the single current workingHours). Keeps this dashboard
+  // consistent with the Attendance Report, which is also history-aware.
+  const [schedulesByDate, setSchedulesByDate] = useState<Record<string, unknown>>({});
+
   // ── Search + sort ──────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState<"name" | "checkIn" | "dept" | null>("checkIn");
@@ -299,9 +308,31 @@ export default function AttendanceSummary() {
       .catch(() => setLeaveByEmpNo(new Map()));
   }, [selectedDate]);
 
+  // ── Load the per-date resolved schedules for the selected date ──────────────
+  const fetchSchedules = useCallback(() => {
+    fetch(`/api/staff-schedule?date=${encodeURIComponent(selectedDate)}`)
+      .then(r => (r.ok ? r.json() : { schedules: {} }))
+      .then((d: { schedules?: Record<string, unknown> }) => setSchedulesByDate(d.schedules ?? {}))
+      .catch(() => setSchedulesByDate({}));
+  }, [selectedDate]);
+
+  // Resolve the schedule that applied to an employee on the selected date:
+  //   has history → that date's version (or undefined when it predates history)
+  //   no history  → the single current workingHours (unchanged behaviour)
+  const effectiveScheduleFor = useCallback(
+    (staff: { id: number; workingHours: unknown } | null | undefined): unknown => {
+      if (!staff) return undefined;
+      const v = schedulesByDate[String(staff.id)];
+      if (v !== undefined) return v ?? undefined; // key present → history-driven
+      return staff.workingHours;
+    },
+    [schedulesByDate],
+  );
+
   useEffect(() => { fetchBranchStaff(); }, [fetchBranchStaff]);
   useEffect(() => { fetchAllBranchStaff(); }, [fetchAllBranchStaff]);
   useEffect(() => { fetchLeave(); }, [fetchLeave]);
+  useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
 
   // Re-pull both staff lists every 30s so employee dashboard edits flow
   // through to the attendance page without a page reload.
@@ -310,9 +341,10 @@ export default function AttendanceSummary() {
       fetchBranchStaff();
       fetchAllBranchStaff();
       fetchLeave();
+      fetchSchedules();
     }, 30_000);
     return () => clearInterval(id);
-  }, [fetchBranchStaff, fetchAllBranchStaff, fetchLeave]);
+  }, [fetchBranchStaff, fetchAllBranchStaff, fetchLeave, fetchSchedules]);
 
   // ── Poll /api/attendance-today every 5 seconds (reads from DB, written by office sync script) ──
   const fetchScans = useCallback(async () => {
@@ -372,9 +404,10 @@ export default function AttendanceSummary() {
         const emp   = employeesRef.current.find(e => e.scannerRef === row.empNo);
         const checkInDate = new Date(`${row.date}T${row.clockInTime}`);
         const checkOutDate = row.clockOutTime ? new Date(`${row.date}T${row.clockOutTime}`) : null;
-        // Resolve this person's scheduled window for the scan's weekday, then
-        // derive Late / Left Early from it. No slot for the day → no badge.
-        const slot = slotForDate(staff?.workingHours, row.date);
+        // Resolve this person's scheduled window for the scan's weekday using
+        // the schedule that applied ON that date (history-aware), then derive
+        // Late / Left Early from it. No slot for the day → no badge.
+        const slot = slotForDate(effectiveScheduleFor(staff), row.date);
         return {
           empNo: row.empNo,
           name: staff?.name || emp?.name || row.empName || "Unknown",
@@ -401,7 +434,7 @@ export default function AttendanceSummary() {
     } catch {
       setScannerStatus("error");
     }
-  }, [selectedDate]);
+  }, [selectedDate, effectiveScheduleFor]);
 
   useEffect(() => {
     fetchScans();
@@ -505,11 +538,29 @@ export default function AttendanceSummary() {
   //   • slot = undefined   → no schedule configured at all → still expected, so
   //                          they stay visible and the "No Working Hours Set"
   //                          panel nudges admins to fill it in.
-  const expectedTodayStaff = branchStaff.filter(s => {
+  const expectedHomeStaff = branchStaff.filter(s => {
     if (!s.name) return false;
     if (!isEffectivelyActive(s)) return false;
-    return slotForDate(s.workingHours, selectedDate) !== null;
+    return slotForDate(effectiveScheduleFor(s), selectedDate) !== null;
   });
+
+  // Rotating "BM list" staff assigned to THIS location on the selected date.
+  // They're registered to their own branch (so they're not in `branchStaff`),
+  // but the rotation sheet puts them here today → they're expected here. Pulled
+  // from the all-locations list. Working hours still gate it: a rest day per
+  // their Staff Directory schedule means they're not expected even if assigned.
+  const rotationExpected = allBranchStaff.filter(s => {
+    if (!s.name || !s.employeeId) return false;
+    if (assignedBranchForDate(s.employeeId, selectedDate) !== selectedLocation) return false;
+    if (!isEffectivelyActive(s)) return false;
+    return slotForDate(effectiveScheduleFor(s), selectedDate) !== null;
+  });
+
+  // Merge home + rotation, de-duped by id (a person is never counted twice).
+  const expectedById = new Map<number, BranchStaffMember>();
+  for (const s of expectedHomeStaff) expectedById.set(s.id, s);
+  for (const s of rotationExpected) expectedById.set(s.id, s);
+  const expectedTodayStaff = Array.from(expectedById.values());
 
   const effectivelyActiveCount = expectedTodayStaff.length;
 
@@ -525,12 +576,30 @@ export default function AttendanceSummary() {
     return (h || 0) * 3600 + (m || 0) * 60 + (sec || 0);
   };
 
+  // Leave type for a scheduled person on the selected date (from LeaveTransaction
+  // via /api/leave-status). "UL" = the MIA category; any other code (AL, MC, …)
+  // is regular leave. undefined = no leave record that day.
+  const leaveTypeOf = (s: BranchStaffMember): string | undefined =>
+    s.employeeId ? leaveByEmpNo.get(s.employeeId) : undefined;
+
+  // On Leave: scheduled staff with a (non-UL) leave record that day.
+  // MIA: scheduled staff whose leave record is type "UL".
+  // Neither is gated by scan / start-time — they're off the whole day.
+  const onLeaveEmployees = expectedTodayStaff.filter(s => {
+    const t = leaveTypeOf(s);
+    return !!t && t !== "UL";
+  });
+  const miaEmployees = expectedTodayStaff.filter(s => leaveTypeOf(s) === "UL");
+
   const missingEmployees = expectedTodayStaff.filter(s => {
+    // Anyone with a leave record (any type, incl. UL) is NOT "missing" — they're
+    // accounted for in the On Leave / MIA boxes.
+    if (leaveTypeOf(s)) return false;
     // Live "today" view: not missing until their scheduled start time passes
     // (e.g. a 09:00 start only counts as missing after 09:00). Past dates are
     // always after start, so this check is skipped for them.
     if (isViewingToday) {
-      const slot = slotForDate(s.workingHours, selectedDate);
+      const slot = slotForDate(effectiveScheduleFor(s), selectedDate);
       if (slot && nowClockSeconds < clockToSeconds(slot.start)) return false;
     }
     if (s.employeeId && scannedEmpNos.has(s.employeeId)) return false; // exact-ID hit
@@ -882,7 +951,23 @@ export default function AttendanceSummary() {
                         <TooltipTrigger asChild>
                           <tr className="border-b border-gray-100 hover:bg-blue-50/40 transition-colors cursor-default">
                             <td className="px-4 py-3.5">
-                              <p className="text-sm font-semibold text-gray-900">{record.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold text-gray-900">{record.name}</p>
+                                {(() => {
+                                  // Rotating "BM list" staff are based at a branch but come to
+                                  // HQ on some days. When they show up in the HQ view, flag them
+                                  // "Visiting" so they're not mistaken for regular HQ staff.
+                                  const home = visitingHomeBranch(record.empNo);
+                                  const atHQ = record.scannerLocation === "HQ" || record.scannerLocation === null;
+                                  if (!home || !atHQ) return null;
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">
+                                      <MapPin className="w-3 h-3" />
+                                      Visiting · {home}
+                                    </span>
+                                  );
+                                })()}
+                              </div>
                               <p className="text-[11px] font-mono text-gray-400 mt-0.5">ID · {record.empNo}</p>
                             </td>
                             <td className="px-4 py-3.5 text-sm text-gray-600">
@@ -1128,6 +1213,90 @@ export default function AttendanceSummary() {
             )}
           </div>
           )}
+
+          {/* ── On Leave ── */}
+          <div className="mt-4 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 flex items-center justify-between gap-3 border-b border-gray-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-1 h-6 bg-violet-500 rounded-full shrink-0" />
+                <h2 className="text-base font-bold text-gray-900 truncate">On Leave</h2>
+              </div>
+              {onLeaveEmployees.length > 0 ? (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-50 text-violet-700 ring-1 ring-violet-200">
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span className="text-sm font-bold">{onLeaveEmployees.length}</span>
+                </div>
+              ) : <span className="text-xs text-gray-400">None</span>}
+            </div>
+            {onLeaveEmployees.length > 0 && (
+              <div className="max-h-[320px] overflow-y-auto divide-y divide-gray-100">
+                {onLeaveEmployees.map((s, i) => {
+                  const display = s.name ?? "—";
+                  const label = s.branch === "HQ" ? (s.department || s.branch) : s.branch;
+                  return (
+                    <div key={`leave-${s.id}-${i}`} className="px-4 py-2.5 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full ring-2 bg-violet-50 text-violet-600 ring-violet-100 flex items-center justify-center shrink-0 font-semibold text-xs">
+                        {display.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{display}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {s.role && <span className="text-[11px] text-gray-500 truncate">{s.role}</span>}
+                          {s.role && label && <span className="text-gray-300 text-[11px]">·</span>}
+                          {label && <span className="text-[11px] text-gray-400 truncate">{label}</span>}
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200 shrink-0">
+                        {leaveTypeOf(s)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── MIA (leave type UL) ── */}
+          <div className="mt-4 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 flex items-center justify-between gap-3 border-b border-gray-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-1 h-6 bg-amber-500 rounded-full shrink-0" />
+                <h2 className="text-base font-bold text-gray-900 truncate">MIA</h2>
+              </div>
+              {miaEmployees.length > 0 ? (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                  <UserX className="w-3.5 h-3.5" />
+                  <span className="text-sm font-bold">{miaEmployees.length}</span>
+                </div>
+              ) : <span className="text-xs text-gray-400">None</span>}
+            </div>
+            {miaEmployees.length > 0 && (
+              <div className="max-h-[320px] overflow-y-auto divide-y divide-gray-100">
+                {miaEmployees.map((s, i) => {
+                  const display = s.name ?? "—";
+                  const label = s.branch === "HQ" ? (s.department || s.branch) : s.branch;
+                  return (
+                    <div key={`mia-${s.id}-${i}`} className="px-4 py-2.5 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full ring-2 bg-amber-50 text-amber-600 ring-amber-100 flex items-center justify-center shrink-0 font-semibold text-xs">
+                        {display.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{display}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {s.role && <span className="text-[11px] text-gray-500 truncate">{s.role}</span>}
+                          {s.role && label && <span className="text-gray-300 text-[11px]">·</span>}
+                          {label && <span className="text-[11px] text-gray-400 truncate">{label}</span>}
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200 shrink-0">
+                        UL
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           </div>
           </motion.div>
 

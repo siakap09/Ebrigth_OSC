@@ -13,11 +13,13 @@ import StatCard from "./ui/StatCard";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "./ui/Tooltip";
 import {
   slotForDate,
+  scheduleForDate,
   hasSchedule,
   checkInStatus as evalCheckIn,
   checkOutStatus as evalCheckOut,
   type CheckInStatus,
   type CheckOutStatus,
+  type ScheduleVersion,
 } from "@/lib/working-hours";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -116,6 +118,12 @@ export default function AttendanceReport() {
   // Leave (AL / MC / etc) for the selected employee + month, keyed by YYYY-MM-DD.
   const [leaveByDate, setLeaveByDate] = useState<Map<string, string>>(new Map());
 
+  // Dated working-hours history for the selected employee. When present, each
+  // day is judged by the version active on that date (so changing this week's
+  // hours never re-judges past weeks). Empty → fall back to the single current
+  // workingHours for every date (unchanged behaviour for staff without history).
+  const [scheduleVersions, setScheduleVersions] = useState<ScheduleVersion[]>([]);
+
   useEffect(() => {
     fetch("/api/branch-locations")
       .then(r => r.json())
@@ -184,6 +192,16 @@ export default function AttendanceReport() {
       .catch(() => setLeaveByDate(new Map()));
   }, [selectedStaff, selectedMonth, selectedYear]);
 
+  // ── Pull this employee's dated schedule history ─────────────────────────────
+  useEffect(() => {
+    const id = selectedStaff?.id;
+    if (!id) { setScheduleVersions([]); return; }
+    fetch(`/api/staff-schedule?branchStaffId=${id}`)
+      .then(r => (r.ok ? r.json() : { versions: [] }))
+      .then((d: { versions?: ScheduleVersion[] }) => setScheduleVersions(d.versions ?? []))
+      .catch(() => setScheduleVersions([]));
+  }, [selectedStaff]);
+
   // ── Build day rows for entire month ────────────────────────────────────────
   const rows: DayRow[] = [];
   const totalDays = getDaysInMonth(selectedYear, selectedMonth);
@@ -201,15 +219,30 @@ export default function AttendanceReport() {
       }
     }
 
-    // Late / Left Early, driven by the selected employee's working-hours schedule
-    // for this weekday. Only meaningful on days they actually scanned.
-    const slot = slotForDate(selectedStaff?.workingHours, dateStr);
+    // A day only counts as "Present" when BOTH a clock-in AND a clock-out
+    // exist — this keeps Days Present in step with Total Hours (which also
+    // needs both scans). A lone scan (in without out, or vice-versa) is an
+    // incomplete day: it drops through to "No Record" on a working day, or
+    // "Rest Day" on a scheduled day off.
+    const hasBothScans = !!(log?.clockInTime && log?.clockOutTime);
+
+    // Which schedule applied on THIS date? With history, use the version active
+    // on the date; otherwise fall back to the single current workingHours.
+    // A date earlier than the first version resolves to undefined → no schedule
+    // → no Late/Early badge (this is what stops past weeks being re-judged).
+    const activeSchedule = scheduleVersions.length > 0
+      ? scheduleForDate(scheduleVersions, dateStr)
+      : selectedStaff?.workingHours;
+
+    // Late / Left Early, driven by the schedule that applied on this weekday.
+    // Only meaningful on days they actually scanned.
+    const slot = slotForDate(activeSchedule, dateStr);
     const inStatus  = log?.clockInTime ? evalCheckIn(slot, log.clockInTime) : null;
     const outStatus = evalCheckOut(slot, log?.clockOutTime ?? null);
 
-    // Off-day detection: when the employee has a schedule, a null slot means a
+    // Off-day detection: when a schedule applied that day, a null slot means a
     // rest day; otherwise fall back to the default Sun/Mon weekend.
-    const restDay = hasSchedule(selectedStaff?.workingHours)
+    const restDay = hasSchedule(activeSchedule)
       ? slot === null
       : isWeekend(dateStr);
 
@@ -220,7 +253,7 @@ export default function AttendanceReport() {
       clockIn: log?.clockInTime ?? null,
       clockOut: log?.clockOutTime ?? null,
       hoursWorked,
-      attendance: log ? "Present" : restDay ? "Rest Day" : "No Data",
+      attendance: hasBothScans ? "Present" : restDay ? "Rest Day" : "No Data",
       inStatus,
       outStatus,
       leaveType: leaveByDate.get(dateStr) ?? null,

@@ -1157,6 +1157,19 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
   );
 }
 
+/** Monday of the current week as YYYY-MM-DD (local time). Default "effective
+ *  from" since schedules change weekly/bi-weekly. */
+function mondayOfThisWeek(): string {
+  const now = new Date();
+  const day = now.getDay(); // 0 Sun … 6 Sat
+  const diff = day === 0 ? -6 : 1 - day; // step back to Monday
+  const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+  const y = mon.getFullYear();
+  const m = String(mon.getMonth() + 1).padStart(2, "0");
+  const d = String(mon.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function WorkingHoursCard({
   employmentId,
   schedule,
@@ -1169,6 +1182,7 @@ function WorkingHoursCard({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<WeekSchedule>(schedule);
   const [error, setError] = useState<string | null>(null);
+  const [effectiveFrom, setEffectiveFrom] = useState<string>(mondayOfThisWeek());
   const [saving, startSaving] = useTransition();
 
   // Reset draft when a different person is selected (or schedule changes after save)
@@ -1176,6 +1190,7 @@ function WorkingHoursCard({
     setDraft(schedule);
     setEditing(false);
     setError(null);
+    setEffectiveFrom(mondayOfThisWeek());
   }, [schedule, employmentId]);
 
   const totalHours = totalWeeklyHours(draft);
@@ -1187,7 +1202,7 @@ function WorkingHoursCard({
   const handleSave = () => {
     setError(null);
     startSaving(async () => {
-      const res = await saveWorkingHours(employmentId, draft);
+      const res = await saveWorkingHours(employmentId, draft, effectiveFrom);
       if (res.ok) {
         setEditing(false);
       } else {
@@ -1264,6 +1279,24 @@ function WorkingHoursCard({
       {error && (
         <div className="px-4 py-2 bg-rose-50 border-b border-rose-100 text-[11px] text-rose-700">
           {error}
+        </div>
+      )}
+
+      {editing && (
+        <div className="px-4 py-3 border-b border-slate-100 bg-emerald-50/40">
+          <label className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 mb-1">
+            Effective from
+          </label>
+          <input
+            type="date"
+            value={effectiveFrom}
+            onChange={e => setEffectiveFrom(e.target.value)}
+            className="w-full text-xs px-2 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          />
+          <p className="text-[10px] text-slate-500 leading-snug mt-1">
+            These hours apply from this date onward. Earlier weeks keep the hours
+            that were set for them — past attendance won&apos;t be re-judged.
+          </p>
         </div>
       )}
 
