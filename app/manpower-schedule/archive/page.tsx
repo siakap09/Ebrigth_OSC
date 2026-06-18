@@ -35,6 +35,8 @@ const SummaryTable = ({ data, trainingMap = {} }: { data: any[], trainingMap?: R
     return { h: h, m: m.toString().padStart(2, '0') };
   };
 
+  const hasMod = data.some(r => (r.modHrs ?? 0) > 0);
+
   return (
     <div className="bg-white rounded-xl shadow-md border overflow-hidden mt-8">
         <div className="bg-slate-100 py-4 border-b border-slate-200">
@@ -46,6 +48,7 @@ const SummaryTable = ({ data, trainingMap = {} }: { data: any[], trainingMap?: R
                     <th className="p-3 text-left w-12 border-r border-slate-600">No.</th>
                     <th className="p-3 text-left border-r border-slate-600">Name</th>
                     <th className="p-3 text-center border-r border-slate-600">Class (Coach)</th>
+                    {hasMod && <th className="p-3 text-center border-r border-slate-600">MOD Hrs</th>}
                     <th className="p-3 text-center border-r border-slate-600">Executive</th>
                     <th className="p-3 text-center">Total (hrs:min)</th>
                 </tr>
@@ -53,6 +56,7 @@ const SummaryTable = ({ data, trainingMap = {} }: { data: any[], trainingMap?: R
             <tbody className="divide-y text-sm">
                 {data.map((row, index) => {
                     const c = formatTime(row.coachHrs);
+                    const mod = formatTime(row.modHrs ?? 0);
                     const e = formatTime(row.execHrs);
                     const t = formatTime(row.total);
                     return (
@@ -65,6 +69,14 @@ const SummaryTable = ({ data, trainingMap = {} }: { data: any[], trainingMap?: R
                                     <span className="font-bold">{c.m}</span> <span className="text-[10px] text-slate-400">MIN</span>
                                 </span>
                             </td>
+                            {hasMod && (
+                                <td className="p-4 text-center border-r">
+                                    <span className="inline-flex items-baseline gap-1 border border-amber-200 bg-amber-50 px-2 py-1 rounded">
+                                        <span className="font-bold text-amber-700">{mod.h}</span> <span className="text-[10px] text-amber-400">HRS</span>
+                                        <span className="font-bold text-amber-700">{mod.m}</span> <span className="text-[10px] text-amber-400">MIN</span>
+                                    </span>
+                                </td>
+                            )}
                             <td className="p-4 text-center border-r">
                                 <span className="inline-flex items-baseline gap-1 border border-slate-200 bg-white px-2 py-1 rounded">
                                     <span className="font-bold">{e.h}</span> <span className="text-[10px] text-slate-400">HRS</span>
@@ -81,6 +93,49 @@ const SummaryTable = ({ data, trainingMap = {} }: { data: any[], trainingMap?: R
                     );
                 })}
             </tbody>
+            {data.length > 0 && (() => {
+                const totCoach = data.reduce((s, r) => s + r.coachHrs, 0);
+                const totMod   = data.reduce((s, r) => s + (r.modHrs ?? 0), 0);
+                const totExec  = data.reduce((s, r) => s + r.execHrs, 0);
+                const totTotal = data.reduce((s, r) => s + r.total, 0);
+                const tc = formatTime(totCoach);
+                const tm = formatTime(totMod);
+                const te = formatTime(totExec);
+                const tt = formatTime(totTotal);
+                return (
+                    <tfoot>
+                        <tr className="bg-[#2D3F50] text-white text-xs font-black uppercase tracking-wider">
+                            <td colSpan={2} className="p-3 text-right border-r border-slate-600">Total</td>
+                            <td className="p-3 text-center border-r border-slate-600">
+                                <span className="inline-flex items-baseline gap-1">
+                                    <span>{tc.h}</span> <span className="text-[10px] opacity-70">HRS</span>
+                                    <span>{tc.m}</span> <span className="text-[10px] opacity-70">MIN</span>
+                                </span>
+                            </td>
+                            {hasMod && (
+                                <td className="p-3 text-center border-r border-slate-600">
+                                    <span className="inline-flex items-baseline gap-1">
+                                        <span>{tm.h}</span> <span className="text-[10px] opacity-70">HRS</span>
+                                        <span>{tm.m}</span> <span className="text-[10px] opacity-70">MIN</span>
+                                    </span>
+                                </td>
+                            )}
+                            <td className="p-3 text-center border-r border-slate-600">
+                                <span className="inline-flex items-baseline gap-1">
+                                    <span>{te.h}</span> <span className="text-[10px] opacity-70">HRS</span>
+                                    <span>{te.m}</span> <span className="text-[10px] opacity-70">MIN</span>
+                                </span>
+                            </td>
+                            <td className="p-3 text-center">
+                                <span className="inline-flex items-baseline gap-1">
+                                    <span>{tt.h}</span> <span className="text-[10px] opacity-70">HRS</span>
+                                    <span>{tt.m}</span> <span className="text-[10px] opacity-70">MIN</span>
+                                </span>
+                            </td>
+                        </tr>
+                    </tfoot>
+                );
+            })()}
         </table>
     </div>
   );
@@ -211,8 +266,8 @@ export default function ArchiveSchedulePage() {
     const selectedInTable = (Object.values(validData).filter(val => val !== "" && val !== "None") as string[]).filter(n => !managerNames.has(n));
     const uniqueEmployeesToTrack: string[] = Array.from(new Set([...allBranchStaff, ...selectedInTable]));
 
-    const staffStats: Record<string, { coachHrs: number; execHrs: number; total: number }> = {};
-    uniqueEmployeesToTrack.forEach((emp: string) => { staffStats[emp] = { coachHrs: 0, execHrs: 0, total: 0 }; });
+    const staffStats: Record<string, { coachHrs: number; modHrs: number; execHrs: number; total: number }> = {};
+    uniqueEmployeesToTrack.forEach((emp: string) => { staffStats[emp] = { coachHrs: 0, modHrs: 0, execHrs: 0, total: 0 }; });
 
     getWorkingDaysForBranch(selectedRecord.branch).forEach((day) => {
       const isWeekend = day === "Saturday" || day === "Sunday";
@@ -223,13 +278,22 @@ export default function ArchiveSchedulePage() {
         let trainingSlotHoursForDay = 0;
         let workedThatDay = false;
         let inTrainingThatDay = false;
+        let managerSlotsForDay = 0;
 
         getTimeSlotsForDay(day, selectedRecord.branch).forEach((slot: string) => {
           if (isOpeningClosingSlot(slot, selectedRecord.branch)) return;
+          const isAdmin = isAdminSlot(slot, selectedRecord.branch);
+
+          // Check MANAGER column — counts for non-BM replacement managers.
+          if (validData[`${day}-${slot}-MANAGER`] === emp) {
+            workedThatDay = true;
+            if (!isAdmin) managerSlotsForDay++;
+          }
+
           ALL_COLUMNS.forEach((col) => {
             if (validData[`${day}-${slot}-${col.id}`] !== emp) return;
             workedThatDay = true;
-            const slotDuration = isAdminSlot(slot, selectedRecord.branch) ? 0.25 : 1.25;
+            const slotDuration = isAdmin ? 0.25 : 1.25;
             // A training assignment makes the whole day a flat training day
             // (TRAINING_DAY_HOURS) — handled below.
             if (col.type === "training") {
@@ -243,6 +307,16 @@ export default function ArchiveSchedulePage() {
 
         if (!workedThatDay) return;
 
+        // Non-BM replacement in MANAGER column: MOD slot hours go to modHrs;
+        // remaining time up to the daily target counts as exec hrs.
+        if (managerSlotsForDay > 0) {
+          const mHrs = Math.min(managerSlotsForDay * 1.25, dailyTarget);
+          staffStats[emp].modHrs += mHrs;
+          staffStats[emp].execHrs += Math.max(0, dailyTarget - mHrs);
+          staffStats[emp].total = staffStats[emp].coachHrs + staffStats[emp].modHrs + staffStats[emp].execHrs;
+          return;
+        }
+
         if (inTrainingThatDay) {
           // Training day: a flat TRAINING_DAY_HOURS day, shown as slot hours
           // (coach) plus the remainder (exec) — the same split the manpower
@@ -250,7 +324,7 @@ export default function ArchiveSchedulePage() {
           const dayCoachHrs = coachingHoursForDay + trainingSlotHoursForDay;
           staffStats[emp].coachHrs += dayCoachHrs;
           staffStats[emp].execHrs += Math.max(0, TRAINING_DAY_HOURS - dayCoachHrs);
-          staffStats[emp].total = staffStats[emp].coachHrs + staffStats[emp].execHrs;
+          staffStats[emp].total = staffStats[emp].coachHrs + staffStats[emp].modHrs + staffStats[emp].execHrs;
           return;
         }
 

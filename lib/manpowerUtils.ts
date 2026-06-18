@@ -56,7 +56,7 @@ export const BRANCH_WORKING_DAYS: Record<string, string[]> = {
   "Bandar Seri Putra": ["Thursday", "Friday", "Saturday", "Sunday"],
   "Klang": ["Thursday", "Friday", "Saturday", "Sunday"],
   "Rimbayu": ["Saturday", "Sunday"],
-  "Kota Warisan": ["Saturday", "Sunday"],
+  "Kota Warisan": ["Friday", "Saturday", "Sunday"],
   "Tropicana Sungai Buloh": ["Saturday", "Sunday"],
   "Setia Alam": ["Thursday", "Friday", "Saturday", "Sunday"],
 };
@@ -196,6 +196,7 @@ export const BRANCH_SLOTS_CONFIG: Record<string, { weekday: readonly string[], w
   "Bandar Seri Putra": { weekday: AMPANG_WEEKDAY_TIME_SLOTS, weekend: AMPANG_WEEKEND_TIME_SLOTS },
   "Klang": { weekday: AMPANG_WEEKDAY_TIME_SLOTS, weekend: AMPANG_WEEKEND_TIME_SLOTS },
   "Setia Alam": { weekday: AMPANG_WEEKDAY_TIME_SLOTS, weekend: AMPANG_WEEKEND_TIME_SLOTS },
+  "Kota Warisan": { weekday: AMPANG_WEEKDAY_TIME_SLOTS, weekend: AMPANG_WEEKEND_TIME_SLOTS },
   "default": { weekday: DEFAULT_WEEKDAY_TIME_SLOTS, weekend: DEFAULT_WEEKEND_TIME_SLOTS }
 };
 
@@ -204,6 +205,7 @@ const OPENING_CLOSING_SLOTS: Record<string, string[]> = {
   "Bandar Seri Putra": ["5:00 PM - 6:00 PM", "9:45 PM - 10:00 PM", "8:45 AM - 9:15 AM", "6:45 PM - 7:15 PM"],
   "Klang": ["5:00 PM - 6:00 PM", "9:45 PM - 10:00 PM", "8:45 AM - 9:15 AM", "6:45 PM - 7:15 PM"],
   "Setia Alam": ["5:00 PM - 6:00 PM", "9:45 PM - 10:00 PM", "8:45 AM - 9:15 AM", "6:45 PM - 7:15 PM"],
+  "Kota Warisan": ["5:00 PM - 6:00 PM", "9:45 PM - 10:00 PM", "8:45 AM - 9:15 AM", "6:45 PM - 7:15 PM"],
 };
 
 export function isOpeningClosingSlot(slot: string, branchName: string): boolean {
@@ -246,6 +248,19 @@ const MANAGER_ON_DUTY_SLOTS: Record<string, { weekday: string[], weekend: string
     weekend: ["09:15 AM – 10:30 AM", "10:30 AM – 11:45 AM", "12:00 PM – 1:15 PM", "1:15 PM – 2:30 PM", "2:45 PM – 4:00 PM", "4:00 PM – 5:15 PM", "5:30 PM – 6:45 PM"],
   },
 };
+
+// Extra (replacement) managers to show in the MOD dropdown for specific branch + day combinations.
+// These names are merged into the own-branch manager list so they appear as selectable options.
+const BRANCH_MANAGER_EXTRAS: Partial<Record<string, Partial<Record<string, string[]>>>> = {
+  "Bandar Baru Bangi": {
+    Saturday: ["SREEDRAN", "AINA"],
+    Sunday: ["SREEDRAN", "AINA"],
+  },
+};
+
+export function getManagerExtrasForDay(branchName: string, day: string): string[] {
+  return BRANCH_MANAGER_EXTRAS[branchName]?.[day] ?? [];
+}
 
 export function isManagerOnDutySlot(slot: string, branchName: string, day: string): boolean {
   const isWeekend = !WEEKDAY_DAYS.includes(day as any);

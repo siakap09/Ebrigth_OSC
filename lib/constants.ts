@@ -6,6 +6,7 @@ export const BRANCH_LIST = [
   'Denai Alam', 'Bandar Baru Bangi', 'Danau Kota', 'Shah Alam',
   'Bandar Tun Hussein Onn', 'Eco Grandeur', 'Bandar Seri Putra',
   'Bandar Rimbayu', 'Taman Sri Gombak', 'Kota Warisan', 'Kajang',
+  'Tropicana Sungai Buloh',
 ] as const;
 
 export function normalizeLocation(raw: string | null): string {
@@ -34,6 +35,7 @@ export function normalizeLocation(raw: string | null): string {
     'bsp': 'Bandar Seri Putra',
     'rby': 'Bandar Rimbayu',
     'tsg': 'Taman Sri Gombak',
+    'tsb': 'Tropicana Sungai Buloh', 'tropicana sungai buloh': 'Tropicana Sungai Buloh',
     'ktg': 'Kajang TTDI Groove', 'kajang ttdi groove': 'Kajang TTDI Groove', 'kota warisan': 'Kota Warisan',
     'kajang': 'Kajang',
     'dpu': 'Dataran Puchong Utama', 'dataran puchong utama': 'Dataran Puchong Utama',
@@ -128,6 +130,7 @@ export const BRANCH_OPTIONS = [
   { value: "KW", label: "KW" },
   { value: "KTG", label: "KTG" },
   { value: "DPU", label: "DPU" },
+  { value: "TSB", label: "TSB" },
 ];
 
 export const GENDER_OPTIONS = [

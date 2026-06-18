@@ -34,7 +34,7 @@ const BRANCH_HOURS: Record<string, Partial<Record<DayKey, Slot>>> = {
   KTG: { Thu: s("17:00", "22:00"), Fri: s("17:00", "22:00"), Sat: s("08:45", "19:15"), Sun: s("08:45", "19:15") },
   RBY: { Sat: s("08:45", "19:15"), Sun: s("08:45", "19:15") },
   TSG: { Wed: s("16:30", "18:30"), Thu: s("17:00", "22:15"), Fri: s("17:00", "22:15"), Sat: s("08:45", "19:15"), Sun: s("08:45", "19:15") },
-  KW:  { Sat: s("08:45", "19:15"), Sun: s("08:45", "19:15") },
+  KW:  { Fri: s("17:00", "22:00"), Sat: s("08:45", "19:15"), Sun: s("08:45", "19:15") },
   PJY: { Sat: s("09:00", "19:00"), Sun: s("09:00", "17:00") }, // Thu/Fri blank in PDF
   KLG: { Thu: s("17:00", "22:00"), Fri: s("17:00", "22:00"), Sat: s("08:45", "19:15"), Sun: s("08:45", "19:15") },
   BSP: { Thu: s("17:00", "22:00"), Fri: s("17:00", "22:00"), Sat: s("08:45", "19:15"), Sun: s("08:45", "19:15") },
@@ -60,7 +60,7 @@ const ROTATION: { name: string; Wed: Cell; Thu: Cell; Fri: Cell; Sat: Cell; Sun:
   { name: "NUR AIN ZULAIKHA BINTI SHAHROM",          Wed: "HQ", Thu: "SA",  Fri: "SA",  Sat: "SA",  Sun: "SA"  },
   { name: "MUHAMMAD IRFAN HAIRIE BIN SORNADI",       Wed: "HQ", Thu: "HQ",  Fri: "HQ",  Sat: "SHA", Sun: "SHA" },
   { name: "ZAHID ZULFIQAR BIN MOHAMAD ZAHID",        Wed: "HQ", Thu: "AMP", Fri: "AMP", Sat: "AMP", Sun: "AMP" },
-  { name: "LAILA HAZIQAH BINTI REIN RITHAUDIN",      Wed: "HQ", Thu: "HQ",  Fri: "HQ",  Sat: "KW",  Sun: "KW"  },
+  { name: "LAILA HAZIQAH BINTI REIN RITHAUDIN",      Wed: "HQ", Thu: "HQ",  Fri: "KW",  Sat: "KW",  Sun: "KW"  },
   { name: "UMMU SYAFIQAH BINTI MAZLAN",              Wed: "HQ", Thu: "ST",  Fri: "ST",  Sat: "ST",  Sun: "ST"  },
   { name: "IZZATI SYAHIRAH BINTI MOHD KAMARULNIZAM", Wed: "HQ", Thu: "HQ",  Fri: "BSP", Sat: "BSP", Sun: "BSP" },
   { name: "NUREEN UMAIRA BINTI ROSLI",               Wed: "HQ", Thu: "HQ",  Fri: "HQ",  Sat: "RBY", Sun: "RBY" },

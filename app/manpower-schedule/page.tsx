@@ -59,8 +59,8 @@ export default function ManpowerHub() {
         {/* SCROLLING CONTENT AREA */}
         <div className="flex-1 overflow-y-auto w-full mx-auto px-6 pb-12">
           {/* 4. The Original Cards Grid */}
-          <div className={`w-full grid grid-cols-1 ${hasHistory ? 'md:grid-cols-4' : 'md:grid-cols-2 max-w-2xl'} gap-8 text-slate-800`}>
-            
+          <div className={`w-full grid grid-cols-1 ${hasHistory ? 'md:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-4'} gap-8 text-slate-800`}>
+
             {/* Button 1: Plan New Week */}
             <div onClick={() => router.push("/manpower-schedule/plan-new-week")} className="bg-white p-10 rounded-3xl shadow-xl border-4 border-transparent hover:border-green-500 cursor-pointer transition-all flex flex-col items-center text-center group">
               <div className="w-20 h-20 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center mb-6 text-3xl group-hover:bg-green-600 group-hover:text-white transition-all">✍️</div>
@@ -88,6 +88,18 @@ export default function ManpowerHub() {
                 </div>
               </>
             )}
+
+            {/* Button 4: Branch Opening Planning */}
+            <div onClick={() => router.push("/manpower-schedule/branch-opening-planning")} className="bg-white p-10 rounded-3xl shadow-xl border-4 border-transparent hover:border-teal-500 cursor-pointer transition-all flex flex-col items-center text-center group">
+              <div className="w-20 h-20 bg-teal-100 text-teal-600 rounded-2xl flex items-center justify-center mb-6 text-3xl group-hover:bg-teal-600 group-hover:text-white transition-all">🏪</div>
+              <h2 className="text-2xl font-bold tracking-tight uppercase">Branch Opening Planning</h2>
+            </div>
+
+            {/* Button 5: Branch Operation Days */}
+            <div onClick={() => router.push("/manpower-schedule/branch-operation-days")} className="bg-white p-10 rounded-3xl shadow-xl border-4 border-transparent hover:border-rose-500 cursor-pointer transition-all flex flex-col items-center text-center group">
+              <div className="w-20 h-20 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mb-6 text-3xl group-hover:bg-rose-600 group-hover:text-white transition-all">📅</div>
+              <h2 className="text-2xl font-bold tracking-tight uppercase">Branch Operation Days</h2>
+            </div>
           </div>
         </div>
 

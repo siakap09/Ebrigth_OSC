@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   ChevronDown,
   Search,
@@ -15,8 +15,11 @@ import {
   History,
   Table as TableIcon,
   Users,
+  MapPin,
 } from "lucide-react";
 import { saveWorkingHours, saveWorkingHoursBatch } from "./actions";
+import { ADMIN_ROLES, ROLES, normalizeRole } from "@/lib/roles";
+import { branchesMatch } from "@/lib/constants";
 
 export interface DirectoryPerson {
   id: number;
@@ -53,10 +56,19 @@ export interface DirectoryDepartment {
   code: string | null;
 }
 
+export interface CurrentUser {
+  email: string;
+  role: string;
+  branchName: string | null;
+}
+
 interface DaySchedule {
   start: string;
   end: string;
+  location?: string; // "HQ" when working at HQ; absent means own branch
 }
+
+const WEEKDAYS = new Set<DayKey>(["Mon", "Tue", "Wed", "Thu", "Fri"]);
 type DayKey = "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
 type WeekSchedule = Record<DayKey, DaySchedule | null>;
 
@@ -130,7 +142,11 @@ function parseWorkingHoursStrict(json: unknown): WeekSchedule | null {
       const v = val as Record<string, unknown>;
       const start = typeof v.start === "string" ? v.start : (typeof v.from === "string" ? v.from : null);
       const end = typeof v.end === "string" ? v.end : (typeof v.to === "string" ? v.to : null);
-      if (start && end) { result[key] = { start, end }; parsedAny = true; }
+      if (start && end) {
+        const location = typeof v.location === "string" && v.location.trim() ? v.location.trim() : undefined;
+        result[key] = { start, end, ...(location ? { location } : {}) };
+        parsedAny = true;
+      }
     }
   }
 
@@ -438,10 +454,12 @@ export default function StaffDirectory({
   people,
   branches,
   departments,
+  currentUser,
 }: {
   people: DirectoryPerson[];
   branches: DirectoryBranch[];
   departments: DirectoryDepartment[];
+  currentUser: CurrentUser;
 }) {
   const hqBranch = useMemo(() => branches.find(isHQBranch) ?? null, [branches]);
 
@@ -470,6 +488,26 @@ export default function StaffDirectory({
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [batchOpen, setBatchOpen] = useState(false);
+
+  // Role-based edit permissions:
+  // - superadmin/admin/hr → can edit any person
+  // - branch manager → can edit own-branch staff + themselves only
+  // - all others (coaches, interns, etc.) → view-only
+  const canEdit = useCallback((person: DirectoryPerson): boolean => {
+    const role = normalizeRole(currentUser.role);
+    if (!role) return false;
+    if (ADMIN_ROLES.includes(role)) return true;
+    if (role === ROLES.BRANCH_MANAGER) {
+      if (branchesMatch(person.branchName, currentUser.branchName)) return true;
+      if (person.email.toLowerCase() === currentUser.email.toLowerCase()) return true;
+      return false;
+    }
+    return false;
+  }, [currentUser]);
+
+  const canBatchEdit = useMemo(() => {
+    return normalizeRole(currentUser.role) === ROLES.SUPER_ADMIN;
+  }, [currentUser]);
 
   // Show every canonical department in the dropdown, even if it has no staff
   // yet — the list is fixed by company structure, not by data presence.
@@ -720,17 +758,18 @@ export default function StaffDirectory({
               </button>
             )}
 
-            {/* Batch edit — opens a modal to apply one working-week to a group
-                of staff selected by branch / department / role. */}
-            <button
-              type="button"
-              onClick={() => setBatchOpen(true)}
-              aria-label="Batch edit working hours"
-              title="Batch edit working hours"
-              className="inline-flex items-center justify-center bg-emerald-600 text-white rounded-xl p-2 hover:bg-emerald-700 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-            >
-              <Pencil className="w-4 h-4" aria-hidden="true" />
-            </button>
+            {/* Batch edit — only visible to admins and branch managers */}
+            {canBatchEdit && (
+              <button
+                type="button"
+                onClick={() => setBatchOpen(true)}
+                aria-label="Batch edit working hours"
+                title="Batch edit working hours"
+                className="inline-flex items-center justify-center bg-emerald-600 text-white rounded-xl p-2 hover:bg-emerald-700 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+              >
+                <Pencil className="w-4 h-4" aria-hidden="true" />
+              </button>
+            )}
             </div>
 
             <div
@@ -987,6 +1026,7 @@ export default function StaffDirectory({
                 <WorkingHoursCard
                   employmentId={selected.id}
                   schedule={selectedSchedule}
+                  canEdit={canEdit(selected)}
                 />
               </div>
             )}
@@ -1005,6 +1045,7 @@ export default function StaffDirectory({
           people={people}
           branches={branches}
           departments={populatedDepartments}
+          currentUser={currentUser}
           onClose={() => setBatchOpen(false)}
         />
       )}
@@ -1173,9 +1214,11 @@ function mondayOfThisWeek(): string {
 function WorkingHoursCard({
   employmentId,
   schedule,
+  canEdit,
 }: {
   employmentId: number;
   schedule: WeekSchedule;
+  canEdit: boolean;
 }) {
   const today = new Date().toLocaleDateString("en-US", { weekday: "short" }) as DayKey;
 
@@ -1242,7 +1285,7 @@ function WorkingHoursCard({
               {totalHours.toFixed(0)} hrs / week
             </p>
           </div>
-          {!editing ? (
+          {!editing && canEdit ? (
             <button
               type="button"
               onClick={() => setEditing(true)}
@@ -1251,7 +1294,7 @@ function WorkingHoursCard({
             >
               <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
-          ) : (
+          ) : editing ? (
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -1272,7 +1315,7 @@ function WorkingHoursCard({
                 <Check className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -1335,17 +1378,30 @@ function WorkingHoursCard({
                     )}
                   </p>
                   {editing && (
-                    <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={isOff}
-                        onChange={(e) => {
-                          updateDay(d, e.target.checked ? null : { start: "09:00", end: "18:00" });
-                        }}
-                        className="w-3 h-3 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                      />
-                      Off
-                    </label>
+                    <div className="flex items-center gap-2">
+                      {!isOff && WEEKDAYS.has(d) && (
+                        <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={slot.location === "HQ"}
+                            onChange={(e) => updateDay(d, { ...slot, location: e.target.checked ? "HQ" : undefined })}
+                            className="w-3 h-3 rounded text-teal-600 focus:ring-teal-500 cursor-pointer"
+                          />
+                          HQ
+                        </label>
+                      )}
+                      <label className="inline-flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={isOff}
+                          onChange={(e) => {
+                            updateDay(d, e.target.checked ? null : { start: "09:00", end: "18:00" });
+                          }}
+                          className="w-3 h-3 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                        Off
+                      </label>
+                    </div>
                   )}
                 </div>
                 {editing ? (
@@ -1369,12 +1425,20 @@ function WorkingHoursCard({
                     </div>
                   )
                 ) : (
-                  <p className={[
-                    "text-[11px] mt-0.5",
-                    isOff ? "text-slate-400 italic" : "text-slate-600 tabular-nums",
-                  ].join(" ")}>
-                    {isOff ? "Day off" : `${format12h(slot.start)} – ${format12h(slot.end)}`}
-                  </p>
+                  <div>
+                    <p className={[
+                      "text-[11px] mt-0.5",
+                      isOff ? "text-slate-400 italic" : "text-slate-600 tabular-nums",
+                    ].join(" ")}>
+                      {isOff ? "Day off" : `${format12h(slot.start)} – ${format12h(slot.end)}`}
+                    </p>
+                    {!isOff && slot.location === "HQ" && (
+                      <p className="flex items-center gap-0.5 text-[10px] text-teal-600 font-medium mt-0.5">
+                        <MapPin className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
+                        HQ
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </li>
@@ -1392,14 +1456,22 @@ function BatchEditModal({
   people,
   branches,
   departments,
+  currentUser,
   onClose,
 }: {
   people: DirectoryPerson[];
   branches: DirectoryBranch[];
   departments: DirectoryDepartment[];
+  currentUser: CurrentUser;
   onClose: () => void;
 }) {
-  const [branchId, setBranchId] = useState<number | null>(null);
+  const isBM = normalizeRole(currentUser.role) === ROLES.BRANCH_MANAGER;
+  // For BM: lock the branch filter to their own branch so they can't touch other branches.
+  const bmBranch = isBM
+    ? branches.find(b => branchesMatch(b.name, currentUser.branchName)) ?? null
+    : null;
+
+  const [branchId, setBranchId] = useState<number | null>(bmBranch ? bmBranch.id : null);
   const [deptId, setDeptId] = useState<number | null>(null);
   const [position, setPosition] = useState<string>(""); // "" = any role
   const [draft, setDraft] = useState<WeekSchedule>(STANDARD_OFFICE);
@@ -1420,17 +1492,19 @@ function BatchEditModal({
     return [...set].sort();
   }, [people]);
 
-  // Active staff matching every chosen criterion (criteria are ANDed; an
-  // unset criterion matches everyone).
+  // Active staff matching every chosen criterion. BM's scope is always
+  // restricted to their own branch regardless of the branch filter value.
   const matched = useMemo(() => {
     return people.filter(p => {
       if (!p.isActive) return false;
       if (branchId !== null && p.branchId !== branchId) return false;
       if (deptId !== null && p.departmentId !== deptId) return false;
       if (position && p.position !== position) return false;
+      // BM: only their own branch staff (belt-and-suspenders on top of branchId lock)
+      if (isBM && !branchesMatch(p.branchName, currentUser.branchName)) return false;
       return true;
     });
-  }, [people, branchId, deptId, position]);
+  }, [people, branchId, deptId, position, isBM, currentUser.branchName]);
 
   const totalHours = totalWeeklyHours(draft);
 
@@ -1500,15 +1574,24 @@ function BatchEditModal({
               1. Select staff
             </p>
 
-            <ModalSelect
-              label="Branch"
-              value={branchId === null ? ALL : String(branchId)}
-              onChange={(v) => { setBranchId(v === ALL ? null : Number(v)); setDone(null); }}
-              options={[
-                { value: ALL, label: "All branches" },
-                ...branches.map(b => ({ value: String(b.id), label: b.name })),
-              ]}
-            />
+            {isBM && bmBranch ? (
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500">Branch</p>
+                <div className="w-full px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 border border-slate-200 rounded-lg">
+                  {bmBranch.name}
+                </div>
+              </div>
+            ) : (
+              <ModalSelect
+                label="Branch"
+                value={branchId === null ? ALL : String(branchId)}
+                onChange={(v) => { setBranchId(v === ALL ? null : Number(v)); setDone(null); }}
+                options={[
+                  { value: ALL, label: "All branches" },
+                  ...branches.map(b => ({ value: String(b.id), label: b.name })),
+                ]}
+              />
+            )}
             <ModalSelect
               label="Department"
               value={deptId === null ? ALL : String(deptId)}

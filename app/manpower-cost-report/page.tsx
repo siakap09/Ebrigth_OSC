@@ -58,6 +58,7 @@ interface StaffEntry {
   execPay: number;
   trainingPay?: number;
   totalPay: number;
+  modRate?: number | null;
   days: { date: string; day: string; coachHrs: number; execHrs: number; managerExecHrs?: number; trainingHrs?: number; totalHrs: number; classCount: number; starCoachClasses?: number; starCoachHrs?: number; scheduleBranch?: string }[];
 }
 
@@ -177,6 +178,8 @@ function DailyBreakdownModal({
   s.days.forEach((d) => { workedMap[d.date] = d; });
 
   const showPay = s.isPT || s.isTraining;
+  const hasMod = (s.managerExecHrs || 0) > 0;
+  const totModHrs = s.managerExecHrs || 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
@@ -249,7 +252,7 @@ function DailyBreakdownModal({
                       ? (dayRegularCoachHrs * (s.rate || 0))
                         + (dayStarCoachClasses * starCoachRate)
                         + ((entry.execHrs - mgrHrs) * execRate)
-                        + (mgrHrs * bmRate)
+                        + (mgrHrs * (s.modRate ?? bmRate))
                       : 0;
                 const isReplacement = worked && entry.scheduleBranch;
 
@@ -271,20 +274,22 @@ function DailyBreakdownModal({
                         <span className="ml-1 text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">@ {entry.scheduleBranch}</span>
                       )}
                       {isManagerDay && (
-                        <span className="ml-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded" title={`Manager on Duty — exec hours paid at RM${bmRate}/hr`}>BM</span>
+                        <span className="ml-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded" title={`Manager on Duty — exec hours paid at RM${s.modRate ?? bmRate}/hr`}>BM</span>
                       )}
                       {isTrainingDay && (
                         <span className="ml-1 text-[9px] font-bold text-yellow-800 bg-yellow-100 px-1.5 py-0.5 rounded" title={`Training day — paid at RM${trainingRate}/hr for ${fmtHrs(trnHrs)}`}>TRAINING</span>
                       )}
                     </td>
                     <td className="px-4 py-1.5 text-center text-xs font-bold">
-                      <span className={worked ? "text-orange-600" : "text-slate-300"}>{worked ? fmtHrs(entry.coachHrs) : "-"}</span>
+                      <span className={!worked ? "text-slate-300" : isManagerDay ? "text-amber-600" : "text-orange-600"}>
+                        {!worked ? "-" : isManagerDay ? fmtHrs(mgrHrs) : fmtHrs(entry.coachHrs)}
+                      </span>
                     </td>
                     <td className="px-4 py-1.5 text-center text-xs font-bold">
                       <span className={worked && (entry.classCount ?? 0) > 0 ? "text-pink-600" : "text-slate-300"}>{worked && (entry.classCount ?? 0) > 0 ? entry.classCount : "-"}</span>
                     </td>
                     <td className="px-4 py-1.5 text-center text-xs font-bold">
-                      <span className={worked ? "text-indigo-600" : "text-slate-300"}>{worked ? fmtHrs(entry.execHrs) : "-"}</span>
+                      <span className={worked ? "text-indigo-600" : "text-slate-300"}>{worked ? fmtHrs(entry.execHrs - mgrHrs) : "-"}</span>
                     </td>
                     <td className="px-4 py-1.5 text-center text-xs font-black">
                       <span className={worked ? "text-blue-600" : "text-slate-300"}>{worked ? fmtHrs(entry.totalHrs) : "-"}</span>
@@ -303,7 +308,7 @@ function DailyBreakdownModal({
                 <td colSpan={3} className="px-4 py-3 text-xs font-black uppercase">Monthly Total ({s.days.length} days worked)</td>
                 <td className="px-4 py-3 text-center text-xs font-black text-orange-300">{fmtHrs(s.coachHrs)}</td>
                 <td className="px-4 py-3 text-center text-xs font-black text-pink-300">{s.classCount ?? 0}</td>
-                <td className="px-4 py-3 text-center text-xs font-black text-indigo-300">{fmtHrs(s.execHrs)}</td>
+                <td className="px-4 py-3 text-center text-xs font-black text-indigo-300">{fmtHrs(s.execHrs - totModHrs)}</td>
                 <td className="px-4 py-3 text-center text-xs font-black text-blue-300">{fmtHrs(s.totalHrs)}</td>
                 {showPay && <td className="px-4 py-3 text-right text-sm font-black text-green-400">RM {s.totalPay.toFixed(2)}</td>}
               </tr>
@@ -495,9 +500,10 @@ export default function ManpowerCostReportPage() {
           // training day — the day is paid purely at the training rate.
           const isTrn = trn > 0;
           const cp = worked && !isTrn ? e.coachHrs * (s.rate || 0) : 0;
-          const ep = worked && !isTrn ? (e.execHrs - mgrHrs) * eRate + mgrHrs * bmRate : 0;
+          const effBmRate = s.modRate ?? bmRate;
+          const ep = worked && !isTrn ? (e.execHrs - mgrHrs) * eRate + mgrHrs * effBmRate : 0;
           const dayPay = isTrn ? trn * trRate : cp + ep;
-          const execRateLabel = isTrn ? `RM${trRate}` : mgrHrs > 0 ? `RM${bmRate}/${eRate}` : `RM${eRate}`;
+          const execRateLabel = isTrn ? `RM${trRate}` : mgrHrs > 0 ? `RM${effBmRate}/${eRate}` : `RM${eRate}`;
           return [
             String(row.dayNum), row.day.slice(0,3), row.date + (mgrHrs > 0 ? " (BM)" : "") + (isTrn ? " (TRAINING)" : ""),
             worked ? fmtHrs(e.coachHrs) : "-",
@@ -666,7 +672,7 @@ export default function ManpowerCostReportPage() {
       const starCoachRate = data?.totals.starCoachRate || 50;
       const coachPay = s.isPT && s.rate ? regularCoachHrs * s.rate : 0;
       const starCoachPay = s.isPT ? starCoachClasses * starCoachRate : 0;
-      const execPay = s.isPT ? (execHrs - managerExecHrs) * execRate + managerExecHrs * bmRate : 0;
+      const execPay = s.isPT ? (execHrs - managerExecHrs) * execRate + managerExecHrs * (s.modRate ?? bmRate) : 0;
       const trainingPay = trainingHrs * trainingRate;
       return { ...s, days: weekDays, coachHrs, execHrs, managerExecHrs, trainingHrs, totalHrs, classCount, starCoachClasses, starCoachHrs, coachPay, starCoachPay, execPay, trainingPay, isTraining: trainingHrs > 0, totalPay: coachPay + starCoachPay + execPay + trainingPay };
     })
@@ -922,6 +928,8 @@ export default function ManpowerCostReportPage() {
               const execRate = data.totals.executiveRate || 11;
               const bmRate = data.totals.bmExecRate || execRate;
               const trainingRate = data.totals.trainingRate || 8;
+              const hasMod = (s.managerExecHrs || 0) > 0;
+              const totModHrs = s.managerExecHrs || 0;
               const [yr, mn] = selectedMonth.split("-").map(Number);
               const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
               const numDays = new Date(yr, mn, 0).getDate();
@@ -1081,7 +1089,7 @@ export default function ManpowerCostReportPage() {
                             // trnHrs × trainingRate, never coach/exec rates.
                             const isTrainingDay = trnHrs > 0;
                             const coachPayDay = worked && !isTrainingDay ? entry.coachHrs * (s.rate || 0) : 0;
-                            const execPayDay = worked && !isTrainingDay ? (entry.execHrs - mgrHrs) * execRate + mgrHrs * bmRate : 0;
+                            const execPayDay = worked && !isTrainingDay ? (entry.execHrs - mgrHrs) * execRate + mgrHrs * (s.modRate ?? bmRate) : 0;
                             const dayPay = isTrainingDay ? trnHrs * trainingRate : coachPayDay + execPayDay;
 
                             const isReplacement = worked && entry.scheduleBranch;
@@ -1104,14 +1112,16 @@ export default function ManpowerCostReportPage() {
                                     <span className="ml-1 text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">@ {entry.scheduleBranch}</span>
                                   )}
                                   {isManagerDay && (
-                                    <span className="ml-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded" title={`Manager on Duty — exec hours paid at RM${bmRate}/hr`}>BM</span>
+                                    <span className="ml-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded" title={`Manager on Duty — exec hours paid at RM${s.modRate ?? bmRate}/hr`}>BM</span>
                                   )}
                                   {isTrainingDay && (
                                     <span className="ml-1 text-[9px] font-bold text-yellow-800 bg-yellow-100 px-1.5 py-0.5 rounded" title={`Training day — paid at RM${trainingRate}/hr for ${fmtHrs(trnHrs)}`}>TRAINING</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
-                                  <span className={worked ? "text-orange-600" : "text-slate-300"}>{worked ? fmtHrs(entry.coachHrs) : "-"}</span>
+                                  <span className={!worked ? "text-slate-300" : isManagerDay ? "text-amber-600" : "text-orange-600"}>
+                                    {!worked ? "-" : isManagerDay ? fmtHrs(mgrHrs) : fmtHrs(entry.coachHrs)}
+                                  </span>
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
                                   <span className={worked && (entry.classCount ?? 0) > 0 ? "text-pink-600" : "text-slate-300"}>{worked && (entry.classCount ?? 0) > 0 ? entry.classCount : "-"}</span>
@@ -1123,10 +1133,10 @@ export default function ManpowerCostReportPage() {
                                   <span className={worked && coachPayDay > 0 ? "text-orange-700" : "text-slate-300"}>{worked && coachPayDay > 0 ? `RM ${coachPayDay.toFixed(2)}` : "-"}</span>
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
-                                  <span className={worked ? "text-indigo-600" : "text-slate-300"}>{worked ? fmtHrs(entry.execHrs) : "-"}</span>
+                                  <span className={worked ? "text-indigo-600" : "text-slate-300"}>{worked ? fmtHrs(entry.execHrs - mgrHrs) : "-"}</span>
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs text-slate-400">
-                                  {worked && entry.execHrs > 0 ? (isTrainingDay ? `RM${trainingRate}` : isManagerDay ? `RM${bmRate}/${execRate}` : `RM${execRate}`) : "-"}
+                                  {worked && entry.execHrs > 0 ? (isTrainingDay ? `RM${trainingRate}` : `RM${execRate}`) : "-"}
                                 </td>
                                 <td className="px-3 py-2 text-center text-xs font-bold">
                                   <span className={worked && execPayDay > 0 ? "text-indigo-700" : "text-slate-300"}>{worked && execPayDay > 0 ? `RM ${execPayDay.toFixed(2)}` : "-"}</span>
@@ -1183,7 +1193,7 @@ export default function ManpowerCostReportPage() {
                               <td className="px-3 py-3 text-center text-xs font-black text-pink-300">{s.classCount ?? 0}</td>
                               <td className="px-3 py-3"></td>
                               <td className="px-3 py-3 text-center text-xs font-black text-orange-300">RM {s.coachPay.toFixed(2)}</td>
-                              <td className="px-3 py-3 text-center text-xs font-black text-indigo-300">{fmtHrs(s.execHrs)}</td>
+                              <td className="px-3 py-3 text-center text-xs font-black text-indigo-300">{fmtHrs(s.execHrs - totModHrs)}</td>
                               <td className="px-3 py-3"></td>
                               <td className="px-3 py-3 text-center text-xs font-black text-indigo-300">RM {s.execPay.toFixed(2)}</td>
                               <td className="px-3 py-3 text-center text-xs font-black text-blue-300">{fmtHrs(s.totalHrs)}</td>
@@ -1297,8 +1307,8 @@ export default function ManpowerCostReportPage() {
                             </td>
                           </tr>
                         ) : (
-                          filteredStaff.map((s) => (
-                              <tr key={`${s.name}:::${s.branch}`} className="hover:bg-slate-50/50 transition-colors">
+                          filteredStaff.map((s, i) => (
+                              <tr key={`${s.name}:::${s.branch}:::${i}`} className="hover:bg-slate-50/50 transition-colors">
                                   <td className="px-5 py-4">
                                     <div className="flex items-center gap-3">
                                       <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">

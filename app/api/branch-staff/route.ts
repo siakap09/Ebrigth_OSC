@@ -30,6 +30,7 @@ export async function GET(request: Request) {
     'ST': 'Subang Taipan',
     'Subang Taipan': 'Subang Taipan',
     'TSG': 'Taman Sri Gombak',
+    'TSB': 'Tropicana Sungai Buloh',
   };
 
   try {
@@ -140,6 +141,7 @@ export async function POST(request: Request) {
     'Sri Petaling': 'SP',
     'Subang Taipan': 'ST',
     'Taman Sri Gombak': 'TSG',
+    'Tropicana Sungai Buloh': 'TSB',
   };
 
   try {
