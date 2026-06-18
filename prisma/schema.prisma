@@ -552,6 +552,9 @@ model crm_opportunity {
 
   @@index([tenantId, branchId, stageId])
   @@index([tenantId, pipelineId])
+  // Kanban fetches a stage's cards filtered by createdAt and ordered by it —
+  // this covers the per-column query + ORDER BY without a sort step.
+  @@index([tenantId, stageId, createdAt])
   @@map("crm_opportunity")
 }
 
@@ -921,6 +924,9 @@ model crm_appointment {
   user    crm_auth_user? @relation(fields: [userId], references: [id])
 
   @@index([tenantId, branchId])
+  // Each kanban card looks up its latest "Trial Class" appointment
+  // (WHERE contactId = ? AND title = ? ORDER BY startAt DESC LIMIT 1).
+  @@index([contactId, title, startAt])
   @@map("crm_appointment")
 }
 
