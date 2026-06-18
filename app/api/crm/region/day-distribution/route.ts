@@ -28,6 +28,7 @@ import { Prisma } from '@prisma/client'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
+import { isOperationAccount, OPERATION_HIDDEN_BRANCHES } from '@/lib/crm/operation-accounts'
 
 type TrialDay = 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN'
 const DAYS: TrialDay[] = ['WED', 'THU', 'FRI', 'SAT', 'SUN']
@@ -142,6 +143,11 @@ export async function GET(req: NextRequest) {
     const branchWhere: Record<string, unknown> = { tenantId: access.tenantId }
     if (!access.elevated) {
       branchWhere.id = { in: access.branchIds }
+    }
+    // Operation accounts never see the internal OD + Marketing branches in the
+    // Day Distribution (chips, overall, and per-branch rows all exclude them).
+    if (isOperationAccount(session.user.email)) {
+      branchWhere.name = { notIn: Array.from(OPERATION_HIDDEN_BRANCHES) }
     }
     if (regionParam !== 'ALL') {
       branchWhere.region = regionParam

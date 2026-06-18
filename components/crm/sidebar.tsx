@@ -29,6 +29,7 @@ import {
   BarChart3,
 } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
+import { isOperationAccount } from '@/lib/crm/operation-accounts'
 import { NavItem } from './nav-item'
 import { authClient } from '@/lib/crm/auth-client'
 import { signOut as nextAuthSignOut } from 'next-auth/react'
@@ -136,11 +137,9 @@ function pickNavForPath(pathname: string, stickyModule: 'tickets' | 'leads' | nu
 }
 
 // ─── Operation accounts ───────────────────────────────────────────────────────
-// Operation/marketing oversight accounts are elevated (they view all branches)
-// but get a deliberately trimmed sidebar: lead oversight only, no tenant admin.
-// Gated by email (extensible) — mirrors the admin@ebright.my email convention
-// already used by the topbar. Add more addresses here as needed.
-const OPERATION_EMAILS = new Set<string>(['operation@ebright.my'])
+// Operation/marketing oversight accounts (see lib/crm/operation-accounts.ts) are
+// elevated (they view all branches) but get a deliberately trimmed sidebar: lead
+// oversight only, no tenant admin.
 
 // The ONLY sidebar items an operation account may see (by label). Notably
 // includes Region + Analytics (normally admin-gated) but excludes Branches,
@@ -148,10 +147,6 @@ const OPERATION_EMAILS = new Set<string>(['operation@ebright.my'])
 const OPERATION_ALLOWED_LABELS = new Set<string>([
   'Dashboard', 'Contacts', 'Opportunities', 'Forms', 'Region', 'Analytics', 'Notifications',
 ])
-
-function isOperationAccount(email: string | null | undefined): boolean {
-  return !!email && OPERATION_EMAILS.has(email.trim().toLowerCase())
-}
 
 function filterNav(
   items: NavItemDef[],
