@@ -233,7 +233,11 @@ export async function bulkAssignContacts(
   requestingUserId: string,
 ): Promise<{ success: true; updated: number } | { success: false; error: string }> {
   try {
-    const { userEmail, tenantId } = await getSessionAndTenant()
+    const { userEmail, tenantId, role } = await getSessionAndTenant()
+    // Reassigning leads is a lead edit — AGENCY_ADMIN is read-only on leads.
+    if (!hasPermission(role, 'contacts:write')) {
+      return { success: false, error: 'Your role cannot reassign leads.' }
+    }
     const scope = scopedPrisma(tenantId)
 
     const result = await prisma.crm_contact.updateMany({

@@ -179,6 +179,9 @@ export async function GET(req: NextRequest) {
       where: {
         tenantId,
         deletedAt: null,
+        // Deleting a lead soft-deletes the CONTACT but not its opportunity, so
+        // exclude contact-deleted leads here too (matches the CT query).
+        contact: { deletedAt: null },
         createdAt: { gte: from, lte: to },
         branchId: { in: branches.map((b) => b.id) },
       },
@@ -213,7 +216,12 @@ export async function GET(req: NextRequest) {
               toStageId: { in: targetStageIds },
               // Exclude soft-deleted (e.g. deleted test) leads so the headline
               // count matches the drill-in list, which also filters deletedAt.
-              opportunity: { branchId: { in: branches.map((b) => b.id) }, deletedAt: null },
+              // Contact-deletes don't cascade to the opp, so filter both.
+              opportunity: {
+                branchId: { in: branches.map((b) => b.id) },
+                deletedAt: null,
+                contact: { deletedAt: null },
+              },
             },
             select: {
               opportunityId: true,
@@ -414,6 +422,7 @@ export async function GET(req: NextRequest) {
         where: {
           tenantId,
           deletedAt: null,
+          contact: { deletedAt: null },
           createdAt: { gte: sixMonthsBack, lte: to },
           branchId: { in: branches.map((b) => b.id) },
         },
@@ -430,7 +439,11 @@ export async function GET(req: NextRequest) {
                 tenantId,
                 changedAt: { gte: sixMonthsBack, lte: to },
                 toStageId: { in: targetStageIds },
-                opportunity: { branchId: { in: branches.map((b) => b.id) }, deletedAt: null },
+                opportunity: {
+                  branchId: { in: branches.map((b) => b.id) },
+                  deletedAt: null,
+                  contact: { deletedAt: null },
+                },
               },
               select: {
                 opportunityId: true,
@@ -441,12 +454,17 @@ export async function GET(req: NextRequest) {
             })
 
       // CT — trial appointments over the 6-month window, bucketed by class date.
+      // startAt is stored naive-KL-as-UTC; shift the window forward by the KL
+      // offset so late-/Sunday-KL trials at the edges aren't dropped (matches
+      // the headline CT query's apptFrom/apptTo handling).
+      const trendApptFrom = new Date(sixMonthsBack.getTime() + KL_OFFSET_MS)
+      const trendApptTo = new Date(to.getTime() + KL_OFFSET_MS)
       const trendTrialAppointments = await prisma.crm_appointment.findMany({
         where: {
           tenantId,
           title: 'Trial Class',
           branchId: { in: branches.map((b) => b.id) },
-          startAt: { gte: sixMonthsBack, lte: to },
+          startAt: { gte: trendApptFrom, lte: trendApptTo },
           contact: { deletedAt: null, opportunities: { some: { deletedAt: null } } },
         },
         select: { contactId: true, startAt: true },

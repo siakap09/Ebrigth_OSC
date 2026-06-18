@@ -41,6 +41,33 @@ function normalizeStageCode(code: string): string {
   return code.toUpperCase().replace(/_/g, '')
 }
 
+/**
+ * Trial Class appointments are stored as KL-wall-clock-as-UTC (the picked
+ * "2026-06-18 10:00" is saved as 10:00Z, not 02:00Z). To compare a trial date
+ * against the kanban's week filter — whose bounds are browser-local wall clock —
+ * we must read the appointment's UTC fields and rebuild a local Date with the
+ * SAME wall-clock numbers. Comparing the raw instant instead skews trials by 8h
+ * and drops Sunday-evening / Monday-morning trials into the wrong week.
+ */
+function trialWallClock(startAt: string | Date): Date {
+  const d = new Date(startAt)
+  return new Date(
+    d.getUTCFullYear(),
+    d.getUTCMonth(),
+    d.getUTCDate(),
+    d.getUTCHours(),
+    d.getUTCMinutes(),
+    d.getUTCSeconds(),
+    d.getUTCMilliseconds(),
+  )
+}
+
+/** A stage is "Confirmed for Trial" (not the Trial Buffer CTB). */
+function isConfirmedTrialStage(shortCode: string, name: string): boolean {
+  const code = normalizeStageCode(shortCode)
+  return code === 'CT' || (/confirmed for trial/i.test(name) && code !== 'CTB')
+}
+
 const ALLOWED_LEAD_TRANSITIONS: Record<string, string[]> = {
   // NL: must start with FU1 (no skipping to FU2 / FU3), but can short-cut
   // directly to CT when a lead is already confirmed for a trial. RSD is the
@@ -875,16 +902,25 @@ export function KanbanBoard({
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name))
   }, [stages])
 
-  // Filter by creation date range + lead source + age class + tag (client-side)
+  // Filter by date range + lead source + age class + tag (client-side).
+  // For "Confirmed for Trial" the date that matters is the TRIAL date, not the
+  // lead's creation date — a lead created weeks ago with a trial booked this
+  // week must appear under the "this week" filter. All other stages filter by
+  // createdAt (when the lead came in).
   const filteredStages = useMemo(() => {
     const range = resolveRange(weekFilter, customFrom, customTo)
-    return stages.map((stage) => ({
+    return stages.map((stage) => {
+      const ctStage = isConfirmedTrialStage(stage.shortCode, stage.name)
+      return {
       ...stage,
       opportunities: stage.opportunities.filter((o) => {
         // Date range
         if (range) {
-          const created = new Date(o.createdAt)
-          if (created < range.from || created > range.to) return false
+          const trialAt = ctStage ? o.contact.appointments?.[0]?.startAt : undefined
+          // CT cards key off the booked trial date; cards with no trial yet
+          // (data anomaly) and every other stage fall back to createdAt.
+          const when = trialAt ? trialWallClock(trialAt) : new Date(o.createdAt)
+          if (when < range.from || when > range.to) return false
         }
         // Lead source / platform
         if (sourceFilter && o.contact.leadSource?.name !== sourceFilter) return false
@@ -900,7 +936,8 @@ export function KanbanBoard({
         }
         return true
       }),
-    }))
+    }
+    })
   }, [stages, weekFilter, customFrom, customTo, sourceFilter, ageFilter, tagFilter])
 
   // ── Drag & Drop ──────────────────────────────────────────────────────────────

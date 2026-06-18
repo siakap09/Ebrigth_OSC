@@ -120,6 +120,8 @@ export async function GET(req: NextRequest) {
       title: 'Trial Class',
       branchId: { in: branchIds },
       startAt: { gte: from, lte: to },
+      // Exclude appointments whose lead (contact) was soft-deleted.
+      contact: { deletedAt: null },
     },
     select: {
       id: true,
