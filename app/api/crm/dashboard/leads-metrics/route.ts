@@ -407,7 +407,11 @@ export async function GET(req: NextRequest) {
     // headline block — NL by createdAt, CT/SU/ENR by stage_history entry
     // date — but bucketed by KL month instead of summed for one range.
     let byMonth: Array<{ month: string; NL: number; CT: number; SU: number; ENR: number; BUF: number }> = []
-    if (!elevated) {
+    // Non-elevated branch views always get their 6-month trend. Elevated views
+    // (super/agency) only compute it when explicitly asked (?trend=1) — the
+    // Analytics page wants an all-branches trend, but the dashboard doesn't, so
+    // gating it keeps the dashboard payload + behaviour unchanged.
+    if (!elevated || req.nextUrl.searchParams.get('trend') === '1') {
       // Bucket by KL month so a lead at 02:00 KL on the 1st doesn't fall
       // back into the previous UTC month. Same +8h shift trick as above.
       const monthKey = (d: Date) => {

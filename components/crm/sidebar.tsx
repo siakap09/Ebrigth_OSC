@@ -135,11 +135,34 @@ function pickNavForPath(pathname: string, stickyModule: 'tickets' | 'leads' | nu
   return LEAD_NAV_ITEMS
 }
 
+// ─── Operation accounts ───────────────────────────────────────────────────────
+// Operation/marketing oversight accounts are elevated (they view all branches)
+// but get a deliberately trimmed sidebar: lead oversight only, no tenant admin.
+// Gated by email (extensible) — mirrors the admin@ebright.my email convention
+// already used by the topbar. Add more addresses here as needed.
+const OPERATION_EMAILS = new Set<string>(['operation@ebright.my'])
+
+// The ONLY sidebar items an operation account may see (by label). Notably
+// includes Region + Analytics (normally admin-gated) but excludes Branches,
+// Automations, Integrations, and Settings.
+const OPERATION_ALLOWED_LABELS = new Set<string>([
+  'Dashboard', 'Contacts', 'Opportunities', 'Forms', 'Region', 'Analytics', 'Notifications',
+])
+
+function isOperationAccount(email: string | null | undefined): boolean {
+  return !!email && OPERATION_EMAILS.has(email.trim().toLowerCase())
+}
+
 function filterNav(
   items: NavItemDef[],
   role: string | null | undefined,
   inBranchView: boolean,
+  userEmail: string | null | undefined,
 ): NavItemDef[] {
+  // Operation accounts get a fixed allowlist regardless of role/branch-view.
+  if (isOperationAccount(userEmail)) {
+    return items.filter((item) => OPERATION_ALLOWED_LABELS.has(item.label))
+  }
   // Treat unknown / null role as 'user'
   const r = (role ?? 'user') as 'super_admin' | 'platform_admin' | 'user' | 'regional_manager'
   return items.filter((item) => {
@@ -260,12 +283,15 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
     }
   }, [pathname])
 
-  const navItems = filterNav(pickNavForPath(pathname, stickyModule), user.tktRole, inBranchView)
+  const navItems = filterNav(pickNavForPath(pathname, stickyModule), user.tktRole, inBranchView, user.email)
   // Settings is admin-only. Regional managers (and basic users) work like a
   // branch manager — branch/region data + the Region view — without the
   // tenant settings tree, so they don't see the Settings accordion.
+  // Operation accounts never see Settings (lead oversight only).
   const canSeeSettings =
-    !inBranchView && (user.tktRole === 'super_admin' || user.tktRole === 'platform_admin')
+    !inBranchView &&
+    !isOperationAccount(user.email) &&
+    (user.tktRole === 'super_admin' || user.tktRole === 'platform_admin')
 
   return (
     <aside className="flex h-full flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">

@@ -13,6 +13,7 @@ import { headers } from 'next/headers'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
+import { regionFor } from '@/lib/crm/dashboard-metrics'
 import {
   TRIAL_DAY_ORDER,
   TRIAL_ALL_SLOTS,
@@ -41,17 +42,30 @@ export async function GET(req: NextRequest) {
   //   - else (elevated, no override) returns empty grid — the trial widget is
   //     a branch-level tool, not a tenant-wide rollup.
   const requestedBranchId = sp.get('branchId')
+  // Branch name/region lookup for every branch in the tenant — used both to
+  // resolve the "All Branches" set and to label each student with branch +
+  // region in the drill-in.
+  const allBranches = await prisma.crm_branch.findMany({
+    where: { tenantId: access.tenantId },
+    select: { id: true, name: true },
+  })
+  const branchNameById = new Map(allBranches.map((b) => [b.id, b.name]))
+
   // A non-elevated caller (branch manager / regional manager) may only query
   // a branch they're linked to — the RM trial-schedule picker sends each of
   // their region's branches, so this both enables that and closes the hole
   // where any signed-in user could read another branch's grid via ?branchId.
   const canSeeBranch = (id: string) => access.elevated || access.branchIds.includes(id)
+  // "all" → every branch the caller may see (whole tenant for elevated, their
+  // own links otherwise), so the widget can show an aggregated all-branches grid.
   const branchIds: string[] | null =
-    requestedBranchId
-      ? (canSeeBranch(requestedBranchId) ? [requestedBranchId] : [])
-      : access.elevated
-        ? null              // No branch chosen → no data
-        : access.branchIds
+    requestedBranchId === 'all'
+      ? (access.elevated ? allBranches.map((b) => b.id) : access.branchIds)
+      : requestedBranchId
+        ? (canSeeBranch(requestedBranchId) ? [requestedBranchId] : [])
+        : access.elevated
+          ? null              // No branch chosen → no data
+          : access.branchIds
 
   if (!branchIds || branchIds.length === 0) {
     return NextResponse.json({
@@ -126,11 +140,13 @@ export async function GET(req: NextRequest) {
     select: {
       id: true,
       startAt: true,
+      branchId: true,
       contact: {
         select: {
           id: true,
           firstName: true,
           lastName: true,
+          phone: true,
           childAge1: true,
           opportunities: {
             where: { deletedAt: null },
@@ -149,6 +165,9 @@ export async function GET(req: NextRequest) {
     contactId: string
     opportunityId: string | null
     name: string
+    phone: string | null
+    branchName: string | null
+    region: 'A' | 'B' | 'C' | null
     childAge: string | null
     startAt: string
   }
@@ -179,11 +198,15 @@ export async function GET(req: NextRequest) {
     const bucket = grid[dayMeta.key]?.[slotLabel]
     if (!bucket) continue
     const name = `${a.contact.firstName}${a.contact.lastName ? ' ' + a.contact.lastName : ''}`.trim()
+    const branchName = branchNameById.get(a.branchId) ?? null
     bucket.push({
       appointmentId:  a.id,
       contactId:      a.contact.id,
       opportunityId:  a.contact.opportunities[0]?.id ?? null,
       name:           name || '(No name)',
+      phone:          a.contact.phone,
+      branchName,
+      region:         branchName ? regionFor(branchName) : null,
       childAge:       a.contact.childAge1,
       startAt:        a.startAt.toISOString(),
     })
