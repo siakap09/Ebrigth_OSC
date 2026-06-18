@@ -223,8 +223,7 @@ function VirtualColumnList({
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto pr-1"
-      style={{ minHeight: 80 }}
+      className="flex-1 min-h-0 overflow-y-auto pr-1"
     >
       {/* Top spacer keeps scroll position accurate */}
       {topSpacer > 0 && (
@@ -328,7 +327,7 @@ function KanbanColumn({
   }, [stage.opportunities, sortDir])
 
   return (
-    <div className="flex flex-col w-72 shrink-0 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+    <div className="flex flex-col w-72 shrink-0 h-full min-h-0 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
       {/* Column header */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-200 dark:border-slate-700">
         {/* Select-all-in-stage — appears only in bulk mode. */}
@@ -387,11 +386,10 @@ function KanbanColumn({
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cn(
-              'flex flex-col p-2 flex-1 min-h-20 transition-colors',
+              'flex flex-col p-2 flex-1 min-h-0 transition-colors',
               snapshot.isDraggingOver &&
                 'bg-indigo-50 dark:bg-indigo-950/30',
             )}
-            style={{ minHeight: 80 }}
           >
             <VirtualColumnList
               items={sortedOpportunities}
@@ -1600,8 +1598,9 @@ export function KanbanBoard({
         onConfirm={confirmBulkDelete}
       />
 
-      {/* Board */}
-      <div className="flex-1 overflow-auto">
+      {/* Board — scrolls horizontally between stages; each column scrolls its
+          own card list vertically (so the stage header stays put). */}
+      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden">
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
@@ -1622,7 +1621,7 @@ export function KanbanBoard({
           </div>
         ) : (
           <DragDropContext onDragEnd={onDragEnd}>
-            <div className="flex h-full gap-4 p-4 items-start">
+            <div className="flex h-full gap-4 p-4 items-stretch">
               {filteredStages.map((stage) => (
                 <KanbanColumn
                   key={stage.id}

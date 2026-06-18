@@ -32,6 +32,7 @@ import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/crm/utils'
+import { isOperationAccount, isHiddenForOperation } from '@/lib/crm/operation-accounts'
 import { useBranchContext, type BranchInfo } from './branch-context'
 import { authClient } from '@/lib/crm/auth-client'
 import { useUnreadCount, useNotifications, useMarkNotificationRead, useMarkAllRead } from '@/hooks/crm/useNotifications'
@@ -109,6 +110,16 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
     (user as { tktRole?: string | null }).tktRole === 'super_admin' ||
     user.email === 'admin@ebright.my'
 
+  // Operation accounts are elevated (all-branches) but get a single
+  // "Operation View" — NO Agency-View toggle, NO super-admin tooling — and the
+  // internal OD + Marketing branches are hidden from their branch list.
+  const isOperation = isOperationAccount(user.email)
+  // The Super↔Agency toggle and agency-only tooling are for real admins only.
+  const showViewToggle = isAdmin && !isOperation
+  // Force super (all-branches) semantics for operation regardless of any
+  // leftover localStorage view-mode from a prior admin session on this browser.
+  const effectiveViewMode: 'super' | 'agency' = isOperation ? 'super' : viewMode
+
   useEffect(() => {
     setMounted(true)
     if (typeof window === 'undefined') return
@@ -136,6 +147,8 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
   // without a numeric prefix sort alphabetically below the numbered set.
   const sorted = [...branches]
     .filter((b) => !/^Ebright HR$/i.test(b.name))
+    // Operation accounts don't see the internal OD + Marketing branches.
+    .filter((b) => !isOperation || !isHiddenForOperation(b.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
 
   const filtered = query
@@ -147,11 +160,18 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
     : sorted
 
   // Labels — keep server + first client render identical, then update after mount.
+  // Operation accounts always read "Operation View" (no Super/Agency wording).
+  const adminViewLabel = isOperation
+    ? 'Operation View'
+    : effectiveViewMode === 'agency' ? 'Agency View' : 'Super Admin View'
   const defaultPanelLabel = !mounted
-    ? isAdmin ? 'Super Admin View' : 'My Branch'
+    ? isAdmin ? (isOperation ? 'Operation View' : 'Super Admin View') : 'My Branch'
     : isAdmin
-      ? viewMode === 'agency' ? 'Agency View' : 'Super Admin View'
+      ? adminViewLabel
       : branches.length > 0 ? branches[0].name : 'My Branch'
+
+  // Branch count shown to operation excludes the hidden OD + Marketing branches.
+  const adminBranchCount = isOperation ? sorted.length : (branches.length || '—')
 
   const currentLabel = mounted ? (selectedBranch?.name ?? defaultPanelLabel) : defaultPanelLabel
   const currentSublabel = !mounted
@@ -162,7 +182,7 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
         // branch-manager view — clearer than "Viewing all 23 branches".
         ? selectedBranch
           ? `Viewing as ${selectedBranch.name.replace(/^\d+\s+/, '')}`
-          : `Viewing all ${branches.length || '—'} branches`
+          : `Viewing all ${adminBranchCount} branches`
         : branches.length > 1
           ? `Viewing ${branches.length} accessible branches`
           : 'Your branch'
@@ -201,8 +221,9 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
       {/* Dropdown */}
       {open && (
         <div className="absolute left-0 top-full z-50 mt-2 w-120 max-w-[90vw] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
-          {/* Admin-only view-mode toggle (Super Admin ↔ Agency View) */}
-          {isAdmin && (
+          {/* Admin-only view-mode toggle (Super Admin ↔ Agency View).
+              Operation accounts don't get this — they have a single view. */}
+          {showViewToggle && (
             <div className="flex items-center gap-1 border-b border-slate-100 bg-slate-50 p-1.5 dark:border-slate-700 dark:bg-slate-900">
               <button
                 onClick={() => setMode('super')}
@@ -230,7 +251,7 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
           )}
 
           {/* Agency-only: Manage branch access */}
-          {isAdmin && viewMode === 'agency' && (
+          {showViewToggle && effectiveViewMode === 'agency' && (
             <button
               onClick={() => { router.push('/crm/settings/branch-access'); setOpen(false) }}
               className="flex w-full items-center gap-3 border-b border-slate-100 bg-indigo-50/60 px-3 py-2.5 text-sm transition hover:bg-indigo-100 dark:border-slate-700 dark:bg-indigo-950/30 dark:hover:bg-indigo-950/50"
@@ -275,7 +296,7 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
               </div>
               <span className="flex-1 text-left font-medium text-indigo-600 dark:text-indigo-400">
                 {isAdmin
-                  ? viewMode === 'agency' ? 'Switch to Agency View' : 'View all branches'
+                  ? effectiveViewMode === 'agency' ? 'Switch to Agency View' : 'View all branches'
                   : 'All my branches'}
               </span>
               {selectedBranch === null && <Check className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />}
@@ -320,7 +341,7 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
             ) : (
               filtered.map((branch: BranchInfo) => {
                 const selected = selectedBranch?.id === branch.id
-                const showShare = isAdmin && viewMode === 'agency'
+                const showShare = showViewToggle && effectiveViewMode === 'agency'
                 return (
                   <div
                     key={branch.id}

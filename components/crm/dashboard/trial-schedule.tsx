@@ -13,6 +13,9 @@ interface Student {
   contactId: string
   opportunityId: string | null
   name: string
+  phone: string | null
+  branchName: string | null
+  region: 'A' | 'B' | 'C' | null
   childAge: string | null
   startAt: string
 }
@@ -91,11 +94,11 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
   // precedence — they've already narrowed scope via the topbar.
   const effectiveBranchId = branchId ?? pickedBranchId
 
-  // Seed the picker with the first branch in the list so the grid isn't
-  // blank on initial mount for elevated users.
+  // Default the picker to "All Branches" so elevated users get the tenant-wide
+  // trial grid on first mount (individual branches still selectable).
   useEffect(() => {
     if (!branchId && !pickedBranchId && branches && branches.length > 0) {
-      setPickedBranchId(branches[0].id)
+      setPickedBranchId('all')
     }
   }, [branchId, branches, pickedBranchId])
 
@@ -151,7 +154,7 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
           </div>
           <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
             Students booked into trial classes for the selected range.{' '}
-            {readOnly ? 'Drill-in is disabled for super-admin view.' : 'Click a count to see who\'s joining.'}
+            Click a count to see who&apos;s joining (name, contact, branch, region).
           </p>
         </div>
 
@@ -164,6 +167,9 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
                 onChange={(e) => setPickedBranchId(e.target.value || null)}
                 className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
               >
+                <option value="all" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">
+                  All Branches
+                </option>
                 {pickerBranches.map((b) => (
                   <option
                     key={b.id}
@@ -234,7 +240,10 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
                     const dayBucket = data.days.find((x) => x.key === d.key)
                     const cell = dayBucket?.slots.find((s) => s.slot === slot)
                     const count = cell?.count ?? 0
-                    const interactive = !readOnly && count > 0
+                    // Drill-in is available to everyone (view-only); clicking a
+                    // non-empty cell opens the student list. `readOnly` no longer
+                    // suppresses it — super admins explicitly need this view.
+                    const interactive = count > 0
                     return (
                       <td key={d.key} className="min-w-30">
                         <button
@@ -251,7 +260,7 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
                           )}
                         >
                           <span className="block text-xl font-bold tabular-nums">{count}</span>
-                          {count > 0 && !readOnly && (
+                          {count > 0 && (
                             <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-wide">
                               View
                             </span>
@@ -267,8 +276,8 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
         </div>
       )}
 
-      {/* Click-through students modal — readOnly users can't open this. */}
-      {activeCell && !readOnly && (
+      {/* Click-through students modal — available to everyone (view-only). */}
+      {activeCell && (
         <StudentListModal
           dayLabel={activeCell.day.label}
           slot={activeCell.slot.slot}
@@ -372,6 +381,19 @@ function StudentListModal({
                       timeZone: 'UTC',
                     })}
                   </p>
+                  {/* Branch + region (populated for the All Branches view) and
+                      the parent's contact number. */}
+                  {(s.branchName || s.phone) && (
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      {s.branchName && (
+                        <span className="truncate font-medium text-slate-600 dark:text-slate-300">
+                          {s.branchName}{s.region ? ` · Region ${s.region}` : ''}
+                        </span>
+                      )}
+                      {s.branchName && s.phone && <span className="text-slate-300 dark:text-slate-600">·</span>}
+                      {s.phone && <span className="tabular-nums">{s.phone}</span>}
+                    </p>
+                  )}
                 </div>
                 {s.opportunityId && (
                   <Link
