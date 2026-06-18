@@ -365,9 +365,20 @@ export default async function StaffDirectoryPage() {
     code: d.code,
   }));
 
+  const sessionUser = session.user as { email?: string; role?: string; branchName?: string | null };
+
   return (
     <ClientShell>
-      <StaffDirectory people={people} branches={branches} departments={departments} />
+      <StaffDirectory
+        people={people}
+        branches={branches}
+        departments={departments}
+        currentUser={{
+          email: sessionUser.email ?? "",
+          role: sessionUser.role ?? "",
+          branchName: sessionUser.branchName ?? null,
+        }}
+      />
     </ClientShell>
   );
 }

@@ -13,7 +13,7 @@ import {
   ALL_COLUMNS, getColumnsForDay, TRAINING_DAY_HOURS, BRANCH_SLOTS_CONFIG,
   getTimeSlotsForDay, isAdminSlot, getStaffColorByIndex,
   getWorkingDaysForBranch, isOpeningClosingSlot,
-  isManagerOnDutySlot, isOnlineCoachOnly,
+  isManagerOnDutySlot, isOnlineCoachOnly, getManagerExtrasForDay,
   SELECT_ARROW_WHITE, SELECT_ARROW_DARK
 } from "@/lib/manpowerUtils";
 import { isBranchManager } from "@/lib/roles";
@@ -533,14 +533,6 @@ function PlanNewWeekPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              {hasConfirmedBranch && hasConfirmedWeek && !isLocked && (
-                <button
-                  onClick={() => { setShowAddEmployeeModal(true); setNewEmployeeName(""); setNewEmployeePosition("Part Time"); setAddEmployeeError(""); }}
-                  className="bg-green-600 text-white px-5 py-3 rounded-xl font-black uppercase text-sm tracking-wide hover:bg-green-700 transition-colors shadow-sm flex items-center gap-2"
-                >
-                  + Add Employee
-                </button>
-              )}
               {/* ONLY show "Change Branch" if they are NOT a Branch Manager */}
               {hasConfirmedBranch && !hasConfirmedWeek && !isBranchManager(userRole) && (
                 <button
@@ -750,7 +742,7 @@ function PlanNewWeekPage() {
                                       }}
                                     >
                                       <option value="">-- Select --</option>
-                                      {(branchManagerData[managerReplacementBranch[day] || selectedBranch] || []).map(e => {
+                                      {[...(branchManagerData[managerReplacementBranch[day] || selectedBranch] || []), ...(managerReplacementBranch[day] ? [] : getManagerExtrasForDay(selectedBranch, day))].map(e => {
                                         const mgReplacementBranch = managerReplacementBranch[day];
                                         const conflictBranch = mgReplacementBranch
                                           ? Object.entries(scheduledElsewhere).find(([, dayMap]) => dayMap[day]?.has(e.toUpperCase()))?.[0]

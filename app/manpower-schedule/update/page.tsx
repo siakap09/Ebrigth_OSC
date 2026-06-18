@@ -11,7 +11,7 @@ import {
   SHARED_EMPLOYEES, ALL_BRANCHES, ALL_COLUMNS, getColumnsForDay, TRAINING_DAY_HOURS,
   getTimeSlotsForDay, isAdminSlot, getStaffColorByIndex,
   getWorkingDaysForBranch, isOpeningClosingSlot,
-  isManagerOnDutySlot, isOnlineCoachOnly,
+  isManagerOnDutySlot, isOnlineCoachOnly, getManagerExtrasForDay,
 } from "@/lib/manpowerUtils";
 import { isBranchManager } from "@/lib/roles";
 import { isInTraining } from "@/lib/training";
@@ -479,12 +479,6 @@ export default function UpdateSchedulePage() {
                 </h1>
               </div>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => { setShowAddEmployeeModal(true); setNewEmployeeName(""); setNewEmployeePosition("Part Time"); setAddEmployeeError(""); }}
-                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl text-sm font-black uppercase shadow-md transition-colors flex items-center gap-2"
-                >
-                  + Add Employee
-                </button>
                 <button onClick={handleUpdateSave} className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-xl text-sm font-black uppercase shadow-md transition-colors flex items-center gap-2">
                   <span>💾</span> Save Adjustments
                 </button>
@@ -719,7 +713,7 @@ export default function UpdateSchedulePage() {
                                             className="w-full h-full p-1 text-[11px] font-bold text-center border border-emerald-200 rounded bg-white appearance-none outline-none"
                                           >
                                             <option value="">-- Select --</option>
-                                            {(branchManagerData[managerReplacementBranch[day] || selectedRecord.branch] || []).map(e => {
+                                            {[...(branchManagerData[managerReplacementBranch[day] || selectedRecord.branch] || []), ...(managerReplacementBranch[day] ? [] : getManagerExtrasForDay(selectedRecord.branch, day))].map(e => {
                                               const mgReplacementBranch = managerReplacementBranch[day];
                                               const conflictBranch = mgReplacementBranch
                                                 ? Object.entries(scheduledElsewhere).find(([, dayMap]) => dayMap[day]?.has(e.toUpperCase()))?.[0]

@@ -5,7 +5,8 @@ import { getServerSession } from "next-auth/next";
 import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/nextauth";
 import { hrfsPrisma } from "@/lib/hrfs";
-import { ADMIN_ROLES, normalizeRole } from "@/lib/roles";
+import { ADMIN_ROLES, ROLES, normalizeRole } from "@/lib/roles";
+import { branchesMatch } from "@/lib/constants";
 
 export interface SaveResult {
   ok: boolean;
@@ -19,6 +20,7 @@ export interface BatchSaveResult extends SaveResult {
 interface DaySlot {
   start: string;
   end: string;
+  location?: string;
 }
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -51,7 +53,8 @@ function sanitize(input: unknown): Record<DayKey, DaySlot | null> | null {
     if (!start && !end) { out[day] = null; continue; }
     if (!TIME_RE.test(start) || !TIME_RE.test(end)) return null;
     if (start >= end) return null;
-    out[day] = { start, end };
+    const location = typeof slot.location === "string" && slot.location.trim() ? slot.location.trim() : undefined;
+    out[day] = { start, end, ...(location ? { location } : {}) };
   }
   return out;
 }
@@ -67,13 +70,31 @@ export async function saveWorkingHours(
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
 
-  const role = normalizeRole((session.user as { role?: string }).role);
-  if (!role || !ADMIN_ROLES.includes(role)) {
+  const sessionUser = session.user as { email?: string; role?: string; branchName?: string | null };
+  const role = normalizeRole(sessionUser.role);
+  const isAdminRole = role ? ADMIN_ROLES.includes(role) : false;
+  const isBM = role === ROLES.BRANCH_MANAGER;
+
+  if (!isAdminRole && !isBM) {
     return { ok: false, error: "Not authorized to edit working hours." };
   }
 
   if (!Number.isInteger(branchStaffId) || branchStaffId <= 0) {
     return { ok: false, error: "Invalid staff id." };
+  }
+
+  // Branch managers may only edit staff in their own branch or themselves.
+  if (isBM) {
+    const targets = await hrfsPrisma.$queryRaw<{ branch: string | null; email: string | null }[]>`
+      SELECT branch, email FROM "BranchStaff" WHERE id = ${branchStaffId}
+    `;
+    const target = targets[0];
+    if (!target) return { ok: false, error: "Staff record not found." };
+    const isSelf = target.email?.toLowerCase() === sessionUser.email?.toLowerCase();
+    const sameBranch = branchesMatch(target.branch, sessionUser.branchName);
+    if (!isSelf && !sameBranch) {
+      return { ok: false, error: "Not authorized to edit this staff member." };
+    }
   }
 
   const sanitized = sanitize(schedule);
@@ -128,12 +149,16 @@ export async function saveWorkingHoursBatch(
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
 
-  const role = normalizeRole((session.user as { role?: string }).role);
-  if (!role || !ADMIN_ROLES.includes(role)) {
+  const sessionUser = session.user as { email?: string; role?: string; branchName?: string | null };
+  const role = normalizeRole(sessionUser.role);
+  const isAdminRole = role ? ADMIN_ROLES.includes(role) : false;
+  const isBM = role === ROLES.BRANCH_MANAGER;
+
+  if (!isAdminRole && !isBM) {
     return { ok: false, error: "Not authorized to edit working hours." };
   }
 
-  const ids = Array.from(
+  let ids = Array.from(
     new Set(
       (Array.isArray(branchStaffIds) ? branchStaffIds : []).filter(
         (n) => Number.isInteger(n) && n > 0,
@@ -141,6 +166,21 @@ export async function saveWorkingHoursBatch(
     ),
   );
   if (ids.length === 0) return { ok: false, error: "No staff selected." };
+
+  // Branch managers may only update staff in their own branch (or themselves).
+  if (isBM) {
+    const records = await hrfsPrisma.$queryRaw<{ id: number; branch: string | null; email: string | null }[]>`
+      SELECT id, branch, email FROM "BranchStaff" WHERE id IN (${Prisma.join(ids)})
+    `;
+    ids = records
+      .filter((s) => {
+        const isSelf = s.email?.toLowerCase() === sessionUser.email?.toLowerCase();
+        const sameBranch = branchesMatch(s.branch, sessionUser.branchName);
+        return isSelf || sameBranch;
+      })
+      .map((s) => s.id);
+    if (ids.length === 0) return { ok: false, error: "No authorized staff in selection." };
+  }
 
   const sanitized = sanitize(schedule);
   if (!sanitized) {

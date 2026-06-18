@@ -29,26 +29,28 @@ const BM_EXEC_RATE = 13;
 // split is display-only — pay is always the flat day rate.
 const TRAINING_RATE = 8;
 
-// One-off "stand-in manager" overrides.
+// Stand-in manager overrides.
 //
 // Manager-on-duty slots live in the MANAGER column, which is OUTSIDE the regular
 // coach/exec grid (COLUMNS) — so they normally contribute zero hours and zero
 // pay to this report. The real branch managers are excluded from the report
-// anyway. But when a non-BM (e.g. a PT coach) covers as Manager on Duty because
-// the branch's BM is on leave, those slots are genuine paid hours that would
-// otherwise vanish.
+// anyway. But when a non-BM covers as Manager on Duty, those slots are genuine
+// paid hours that would otherwise vanish.
 //
-// For the dates listed here only, we count that person's MANAGER slots as exec
-// hours and pay them at the elevated BM_EXEC_RATE (the residual exec time needed
-// to reach the daily target stays at the normal EXECUTIVE_RATE).
+// `dates`   — when set, only applies on those specific dates (one-off leave cover).
+//             When omitted, applies every time that person appears in the MANAGER
+//             column for that branch (permanent replacement).
+// `modRate` — the hourly rate for the MANAGER-column hours. Defaults to
+//             BM_EXEC_RATE (13) when omitted. Residual exec time to reach the
+//             daily target always stays at EXECUTIVE_RATE (11).
 //
-//   16–17 May 2026 — Rimbayu's BM (Nureen) was on leave; Iqbal (PT coach,
-//   id 213) covered as Manager on Duty for all 7 weekend slots each day.
-//
-// This is a deliberate hardcoded exception. If stand-in managers become common,
-// promote it to first-class schedule data instead of extending this list.
-const MANAGER_ON_DUTY_OVERRIDES: { branch: string; managerValue: string; dates: string[] }[] = [
-  { branch: "Rimbayu", managerValue: "IQBAL", dates: ["2026-05-16", "2026-05-17"] },
+//   16–17 May 2026 — Rimbayu's BM on leave; Iqbal covered all 7 weekend slots.
+//   BBB (Bandar Baru Bangi) — Sreedran & Aina permanently replace the BM on
+//   Saturdays and Sundays at 12.38/hr MOD rate, 11/hr exec rate.
+const MANAGER_ON_DUTY_OVERRIDES: { branch: string; managerValue: string; dates?: string[]; modRate?: number }[] = [
+  { branch: "Rimbayu",          managerValue: "IQBAL",    dates: ["2026-05-16", "2026-05-17"] },
+  { branch: "Bandar Baru Bangi", managerValue: "SREEDRAN", modRate: 12.38 },
+  { branch: "Bandar Baru Bangi", managerValue: "AINA",     modRate: 12.38 },
 ];
 
 interface DailyHour {
@@ -79,41 +81,58 @@ interface StaffHourEntry {
   starCoachClasses: number;
   starCoachHrs: number;
   dailyBreakdown: DailyHour[];
+  modRate?: number;
 }
 
 /**
- * Build the extra daily entries for any MANAGER_ON_DUTY_OVERRIDES that apply to
- * this schedule. Each match becomes an exec-only day: `managerExecHrs` of the
- * exec time is paid at BM_EXEC_RATE, the rest (up to the daily target) at the
- * normal rate. Returns [] when nothing in this schedule matches.
+ * Build the extra daily entries for every non-BM name found in the MANAGER
+ * column of this schedule. Each match becomes an exec-only day: `managerExecHrs`
+ * of the exec time is paid at the override's modRate (or BM_EXEC_RATE when
+ * unset), the rest (up to the daily target) at the normal EXECUTIVE_RATE.
+ *
+ * Actual BMs who appear in the MANAGER column are NOT excluded here — they are
+ * filtered out downstream by shouldExcludeStaff(). This means any coach placed
+ * in the MANAGER column will automatically have their hours tallied, without
+ * needing a MANAGER_ON_DUTY_OVERRIDES entry. The overrides list is only needed
+ * to attach a custom modRate or a date restriction to a specific person.
  */
 function managerOnDutyEntries(
   selections: Record<string, string>,
   branch: string,
   startDate: string,
   toDate: (day: string, start: string) => string,
-): { name: string; day: string; date: string; execHrs: number; managerExecHrs: number }[] {
-  const overrides = MANAGER_ON_DUTY_OVERRIDES.filter((o) => branchesMatch(branch, o.branch));
-  if (overrides.length === 0) return [];
-
-  const out: { name: string; day: string; date: string; execHrs: number; managerExecHrs: number }[] = [];
-  for (const o of overrides) {
-    // Count this person's MANAGER slots per weekday in the schedule.
-    const slotsPerDay: Record<string, number> = {};
-    for (const [key, val] of Object.entries(selections)) {
-      if (!key.endsWith("-MANAGER")) continue;
-      if (norm(val) !== norm(o.managerValue)) continue;
-      const day = key.slice(0, key.indexOf("-")); // weekday names contain no "-"
-      slotsPerDay[day] = (slotsPerDay[day] || 0) + 1;
+): { name: string; day: string; date: string; execHrs: number; managerExecHrs: number; modRate?: number }[] {
+  // Build a lookup of optional constraints from MANAGER_ON_DUTY_OVERRIDES.
+  const overrideMap = new Map<string, { dates?: string[]; modRate?: number }>();
+  for (const o of MANAGER_ON_DUTY_OVERRIDES) {
+    if (branchesMatch(branch, o.branch)) {
+      overrideMap.set(norm(o.managerValue), { dates: o.dates, modRate: o.modRate });
     }
+  }
+
+  // Collect every name that appears in a MANAGER column key, grouped by day.
+  const nameSlots: Record<string, Record<string, number>> = {};
+  for (const [key, val] of Object.entries(selections)) {
+    if (!key.endsWith("-MANAGER")) continue;
+    const name = val?.trim();
+    if (!name || name === "None") continue;
+    const day = key.slice(0, key.indexOf("-")); // day names contain no "-"
+    nameSlots[name] = nameSlots[name] || {};
+    nameSlots[name][day] = (nameSlots[name][day] || 0) + 1;
+  }
+
+  const out: { name: string; day: string; date: string; execHrs: number; managerExecHrs: number; modRate?: number }[] = [];
+
+  for (const [name, slotsPerDay] of Object.entries(nameSlots)) {
+    const override = overrideMap.get(norm(name));
     for (const [day, slots] of Object.entries(slotsPerDay)) {
       const date = toDate(day, startDate);
-      if (!o.dates.includes(date)) continue;
+      // When the override has specific dates, skip days not in that list.
+      if (override?.dates && !override.dates.includes(date)) continue;
       const isWeekend = day === "Saturday" || day === "Sunday";
       const dailyTarget = isWeekend ? 10.5 : 5.0;
-      // Each non-admin slot is 1.25h; never let manager hours exceed the target.
       const managerExecHrs = Math.min(slots * 1.25, dailyTarget);
-      out.push({ name: o.managerValue, day, date, execHrs: dailyTarget, managerExecHrs });
+      out.push({ name, day, date, execHrs: dailyTarget, managerExecHrs, modRate: override?.modRate });
     }
   }
   return out;
@@ -563,6 +582,7 @@ export async function GET(request: Request) {
             classCount: 0,
             starCoachClasses: 0,
             starCoachHrs: 0,
+            modRate: e.modRate,
             dailyBreakdown: [{
               day: e.day,
               date: e.date,
@@ -586,6 +606,7 @@ export async function GET(request: Request) {
       name: string;
       branch: string;
       rate: number | null;
+      modRate: number | null;
       employmentType: string | null;
       position: string | null;
       coachHrs: number;
@@ -629,6 +650,7 @@ export async function GET(request: Request) {
           name: displayName,
           branch: homeBranch,
           rate,
+          modRate: entry.modRate ?? null,
           employmentType,
           position,
           coachHrs: 0,
@@ -649,6 +671,8 @@ export async function GET(request: Request) {
       }
 
       const bucket = aggregated[key];
+      // Carry modRate from any MOD override entry into the bucket (first one wins).
+      if (entry.modRate !== undefined && bucket.modRate === null) bucket.modRate = entry.modRate;
       bucket.coachHrs += entry.coachHrs;
       bucket.execHrs += entry.execHrs;
       bucket.managerExecHrs += entry.managerExecHrs;
@@ -734,11 +758,16 @@ export async function GET(request: Request) {
         const coachPay = isPT && hasRate ? regularCoachHrs * (emp.rate || 0) : 0;
         // Star Coach column: flat RM50/class regardless of stored rate.
         const starCoachPay = isPT ? (emp.starCoachClasses || 0) * STAR_COACH_RATE : 0;
-        // Manager-on-duty hours are paid at the elevated BM rate; the remaining
-        // exec time is paid at the normal rate.
+        // Manager-on-duty hours: use the override modRate when set (e.g. stand-in managers
+        // with a custom agreed rate), otherwise fall back to the standard BM_EXEC_RATE.
+        // Stand-in managers may not have a DB coach rate — treat hasRate as true when
+        // they have a modRate so their exec pay is still calculated.
+        const effectiveModRate = emp.modRate ?? BM_EXEC_RATE;
+        const hasRateForExec = hasRate || (emp.modRate !== null && managerExecHrs > 0);
+        const effectiveIsPTForExec = isPT || (emp.modRate !== null && managerExecHrs > 0);
         const regularExecHrs = Math.max(0, execHrs - managerExecHrs);
-        const execPay = isPT && hasRate
-          ? regularExecHrs * EXECUTIVE_RATE + managerExecHrs * BM_EXEC_RATE
+        const execPay = effectiveIsPTForExec && hasRateForExec
+          ? regularExecHrs * EXECUTIVE_RATE + managerExecHrs * effectiveModRate
           : 0;
         // Training is paid at the flat TRAINING_RATE for everyone who logged
         // training hours — independent of PT/FT status or coach rate.
