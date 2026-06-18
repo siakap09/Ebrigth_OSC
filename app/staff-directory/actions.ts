@@ -25,6 +25,15 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 type DayKey = (typeof DAYS)[number];
 
 const TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The date a saved schedule starts applying from. The editor sends one
+ *  (defaulting to the current week's Monday); if it's missing or malformed we
+ *  fall back to today so a version is always recorded. */
+function resolveEffectiveFrom(input: unknown): string {
+  if (typeof input === "string" && DATE_RE.test(input.trim())) return input.trim();
+  return new Date().toISOString().slice(0, 10);
+}
 
 function sanitize(input: unknown): Record<DayKey, DaySlot | null> | null {
   if (!input || typeof input !== "object") return null;
@@ -53,6 +62,7 @@ function sanitize(input: unknown): Record<DayKey, DaySlot | null> | null {
 export async function saveWorkingHours(
   branchStaffId: number,
   schedule: unknown,
+  effectiveFrom?: string,
 ): Promise<SaveResult> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
@@ -88,6 +98,17 @@ export async function saveWorkingHours(
     `;
     if (affected === 0) return { ok: false, error: "Staff record not found." };
 
+    // Record this as a dated version in the schedule history so the attendance
+    // report judges each day by the hours active that day. Re-saving the same
+    // effective-from date overwrites that version rather than duplicating it.
+    const effFrom = resolveEffectiveFrom(effectiveFrom);
+    await hrfsPrisma.$executeRaw`
+      INSERT INTO "BranchStaffSchedule" ("branchStaffId", "effectiveFrom", schedule)
+      VALUES (${branchStaffId}, ${effFrom}::date, ${JSON.stringify(sanitized)}::jsonb)
+      ON CONFLICT ("branchStaffId", "effectiveFrom")
+      DO UPDATE SET schedule = EXCLUDED.schedule
+    `;
+
     revalidatePath("/staff-directory");
     return { ok: true };
   } catch {
@@ -102,6 +123,7 @@ export async function saveWorkingHours(
 export async function saveWorkingHoursBatch(
   branchStaffIds: number[],
   schedule: unknown,
+  effectiveFrom?: string,
 ): Promise<BatchSaveResult> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return { ok: false, error: "Not authenticated." };
@@ -132,6 +154,18 @@ export async function saveWorkingHoursBatch(
           "updatedAt"    = NOW()
       WHERE id IN (${Prisma.join(ids)})
     `;
+
+    // Record a dated version for each targeted employee (same effective-from).
+    const effFrom = resolveEffectiveFrom(effectiveFrom);
+    const scheduleJson = JSON.stringify(sanitized);
+    await hrfsPrisma.$executeRaw`
+      INSERT INTO "BranchStaffSchedule" ("branchStaffId", "effectiveFrom", schedule)
+      SELECT id, ${effFrom}::date, ${scheduleJson}::jsonb
+        FROM "BranchStaff" WHERE id IN (${Prisma.join(ids)})
+      ON CONFLICT ("branchStaffId", "effectiveFrom")
+      DO UPDATE SET schedule = EXCLUDED.schedule
+    `;
+
     revalidatePath("/staff-directory");
     return { ok: true, count: Number(affected) };
   } catch {

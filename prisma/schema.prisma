@@ -125,6 +125,25 @@ model BranchStaff {
   @@map("BranchStaff")
 }
 
+// Dated history of an employee's weekly working-hours schedule. Each row is a
+// version that takes effect on `effectiveFrom` and stays active until a later
+// version supersedes it. The attendance report judges each day's Late/Early by
+// the version active that day, so editing this/next week never rewrites past
+// weeks. BranchStaff.workingHours still holds the latest version as a cache for
+// the editor. Written/read via raw SQL (see staff-directory/actions.ts) so it
+// works before the generated client is refreshed.
+model BranchStaffSchedule {
+  id            Int      @id @default(autoincrement())
+  branchStaffId Int
+  effectiveFrom DateTime @db.Date
+  schedule      Json
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([branchStaffId, effectiveFrom], map: "uq_branchstaff_eff")
+  @@index([branchStaffId, effectiveFrom], map: "idx_bss_staff_eff")
+  @@map("BranchStaffSchedule")
+}
+
 model AttendanceLog {
   id                Int      @id @default(autoincrement())
   date              String

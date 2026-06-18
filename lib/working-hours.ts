@@ -45,6 +45,38 @@ export function hasSchedule(wh: unknown): wh is WeekSchedule {
   );
 }
 
+/** One dated version of an employee's weekly schedule. `effectiveFrom` is the
+ *  first calendar date (YYYY-MM-DD) this schedule applies to; it stays active
+ *  until a later version's effectiveFrom takes over. */
+export interface ScheduleVersion {
+  effectiveFrom: string; // YYYY-MM-DD
+  schedule: unknown;     // WeekSchedule JSON (or null-ish)
+}
+
+/**
+ * Resolve which weekly schedule was in effect on a given date, from a list of
+ * dated versions. Picks the version with the greatest effectiveFrom that is
+ * still on or before `dateStr`.
+ *   undefined → no version covers this date (date is before the earliest
+ *               version) — the caller treats it as "no schedule", so no
+ *               Late/Early badge is shown. This is what stops a schedule change
+ *               from rewriting weeks that predate it.
+ *
+ * Versions may arrive in any order; we don't assume they're sorted.
+ */
+export function scheduleForDate(
+  versions: ScheduleVersion[],
+  dateStr: string,
+): unknown {
+  let best: ScheduleVersion | null = null;
+  for (const v of versions) {
+    if (v.effectiveFrom <= dateStr && (best === null || v.effectiveFrom > best.effectiveFrom)) {
+      best = v;
+    }
+  }
+  return best ? best.schedule : undefined;
+}
+
 /**
  * Resolve the scheduled slot for a specific calendar date.
  *   undefined → no schedule configured for this employee
