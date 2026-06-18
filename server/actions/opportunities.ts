@@ -171,6 +171,14 @@ export async function moveOpportunity(
       const [startStr] = extras.trialTimeSlot.split('–').map((s) => s.trim())
       const startAt = new Date(`${extras.trialDate}T${toHHMM(startStr)}:00`)
 
+      // Re-booking a trial (e.g. after a reschedule back into CT) must replace
+      // the lead's prior Trial Class appointment, not stack a second one —
+      // otherwise the old slot stays "booked" forever (ghost capacity) and the
+      // card's latest-appointment pill can show the wrong date.
+      await tx.crm_appointment.deleteMany({
+        where: { tenantId, contactId: opportunity.contactId, title: 'Trial Class' },
+      })
+
       const booked = await tx.crm_appointment.count({
         where: {
           tenantId,
@@ -280,21 +288,35 @@ async function runStageSideEffects(args: {
     }
   }
 
-  if (isReschedule && extras.rescheduleDate) {
+  if (isReschedule) {
+    // Moving a confirmed trial into Reschedule cancels the booked slot — leaving
+    // it would keep the slot "full" and still surface the lead on the trial
+    // schedule. The new date is captured as a follow-up task; the appointment is
+    // re-created when the lead is moved back into "Confirmed for Trial".
     try {
-      const dueAt = new Date(`${extras.rescheduleDate}T09:00:00`)
-      await prisma.crm_task.create({
-        data: {
-          tenantId,
-          branchId: opportunity.branchId,
-          contactId: opportunity.contactId,
-          assignedUserId: userId,
-          title: 'Reschedule follow-up',
-          dueAt,
-        },
+      await prisma.crm_appointment.deleteMany({
+        where: { tenantId, contactId: opportunity.contactId, title: 'Trial Class' },
       })
     } catch (err) {
-      console.error('[moveOpportunity] failed to create reschedule task:', err)
+      console.error('[moveOpportunity] failed to cancel trial appointment on reschedule:', err)
+    }
+
+    if (extras.rescheduleDate) {
+      try {
+        const dueAt = new Date(`${extras.rescheduleDate}T09:00:00`)
+        await prisma.crm_task.create({
+          data: {
+            tenantId,
+            branchId: opportunity.branchId,
+            contactId: opportunity.contactId,
+            assignedUserId: userId,
+            title: 'Reschedule follow-up',
+            dueAt,
+          },
+        })
+      } catch (err) {
+        console.error('[moveOpportunity] failed to create reschedule task:', err)
+      }
     }
   }
 

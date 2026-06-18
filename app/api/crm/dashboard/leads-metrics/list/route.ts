@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
     if (metric === 'NL') {
       // NL = opportunities CREATED in range within scope (matches the card).
       const opps = await prisma.crm_opportunity.findMany({
-        where: { tenantId, deletedAt: null, createdAt: { gte: from, lte: to }, branchId: { in: branchIds } },
+        where: { tenantId, deletedAt: null, contact: { deletedAt: null }, createdAt: { gte: from, lte: to }, branchId: { in: branchIds } },
         select: { branchId: true, createdAt: true, contact: { select: CONTACT_SELECT } },
         orderBy: { createdAt: 'desc' },
         take: MAX_ROWS + 1,
@@ -201,7 +201,7 @@ export async function GET(req: NextRequest) {
             tenantId,
             changedAt: { gte: from, lte: to },
             toStageId: { in: catStageIds },
-            opportunity: { branchId: { in: branchIds }, deletedAt: null },
+            opportunity: { branchId: { in: branchIds }, deletedAt: null, contact: { deletedAt: null } },
           },
           select: {
             opportunityId: true,

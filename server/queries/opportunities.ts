@@ -144,9 +144,12 @@ export async function getAllBranchesKanban(
       deletedAt: null,
       createdAt: { gte: DISPLAY_MIN_CREATED_AT },
       ...(branchId ? { branchId } : {}),
-      ...(search
-        ? {
-            contact: {
+      // Deleting a lead soft-deletes the CONTACT but not its opportunity, so a
+      // contact-deleted card would otherwise linger on the board — exclude them.
+      contact: {
+        deletedAt: null,
+        ...(search
+          ? {
               OR: [
                 { firstName: { contains: search, mode: 'insensitive' } },
                 { lastName: { contains: search, mode: 'insensitive' } },
@@ -154,9 +157,9 @@ export async function getAllBranchesKanban(
                 { phone: { contains: search, mode: 'insensitive' } },
                 ...(phoneIds && phoneIds.length ? [{ id: { in: phoneIds } }] : []),
               ],
-            },
-          }
-        : {}),
+            }
+          : {}),
+      },
     },
     orderBy: { createdAt: 'desc' },
     include: {
@@ -237,9 +240,12 @@ export async function getPipelineKanban(
           deletedAt: null,
           createdAt: { gte: DISPLAY_MIN_CREATED_AT },
           ...(branchId ? { branchId } : {}),
-          ...(search
-            ? {
-                contact: {
+          // Contact-deletes don't cascade to the opp — exclude contact-deleted
+          // leads so a deleted card doesn't linger on the board.
+          contact: {
+            deletedAt: null,
+            ...(search
+              ? {
                   OR: [
                     { firstName: { contains: search, mode: 'insensitive' } },
                     { lastName: { contains: search, mode: 'insensitive' } },
@@ -247,9 +253,9 @@ export async function getPipelineKanban(
                     { phone: { contains: search, mode: 'insensitive' } },
                     ...(phoneIds && phoneIds.length ? [{ id: { in: phoneIds } }] : []),
                   ],
-                },
-              }
-            : {}),
+                }
+              : {}),
+          },
         },
         orderBy: { createdAt: 'desc' },
         include: {
