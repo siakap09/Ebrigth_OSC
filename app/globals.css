@@ -55,3 +55,36 @@ details[open] > summary svg.lucide-chevron-right {
   top: 0;
   z-index: 20;
 }
+
+/* Themed slim scrollbar — used by the kanban pipeline columns (and any other
+   scroll pane that wants the system look). Slate thumb on a transparent track,
+   rounded, with a hover lift; tracks the .dark class like the rest of the UI. */
+.cns-scroll {
+  scrollbar-width: thin;                         /* Firefox */
+  scrollbar-color: rgb(203 213 225) transparent; /* slate-300 on transparent */
+}
+.dark .cns-scroll {
+  scrollbar-color: rgb(71 85 105) transparent;   /* slate-600 */
+}
+.cns-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.cns-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cns-scroll::-webkit-scrollbar-thumb {
+  background-color: rgb(203 213 225);            /* slate-300 */
+  border-radius: 9999px;
+  border: 2px solid transparent;                 /* inset the thumb */
+  background-clip: content-box;
+}
+.cns-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(148 163 184);            /* slate-400 */
+}
+.dark .cns-scroll::-webkit-scrollbar-thumb {
+  background-color: rgb(71 85 105);              /* slate-600 */
+}
+.dark .cns-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(100 116 139);            /* slate-500 */
+}

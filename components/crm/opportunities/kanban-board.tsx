@@ -132,7 +132,6 @@ function useDebounce<T>(value: T, delay: number): T {
 
 // ─── Virtual list for a column ────────────────────────────────────────────────
 
-const CARD_HEIGHT = 96 // approximate px height per card
 const CARD_GAP = 8
 
 // Progressive reveal: a column shows the first INITIAL_REVEAL cards, then loads
@@ -167,8 +166,6 @@ function VirtualColumnList({
   cardPrefs: CardPrefs
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [scrollTop, setScrollTop] = useState(0)
-  const [containerHeight, setContainerHeight] = useState(600)
   const [revealLimit, setRevealLimit] = useState(INITIAL_REVEAL)
 
   // Keep latest values readable inside the (mount-once) scroll listener.
@@ -187,17 +184,7 @@ function VirtualColumnList({
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    setContainerHeight(el.clientHeight)
-    const obs = new ResizeObserver(() => setContainerHeight(el.clientHeight))
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [])
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
     const onScroll = () => {
-      setScrollTop(el.scrollTop)
       // Near the bottom and more cards remain → reveal the next batch.
       if (
         el.scrollTop + el.clientHeight >= el.scrollHeight - 200 &&
@@ -210,65 +197,47 @@ function VirtualColumnList({
     return () => el.removeEventListener('scroll', onScroll)
   }, [])
 
-  const itemHeight = CARD_HEIGHT + CARD_GAP
-
-  // Only the revealed slice participates in the (already efficient) virtual
-  // windowing — so the column starts light and grows as the user scrolls.
+  // Render the revealed slice directly. We deliberately do NOT virtual-window
+  // with spacers: cards vary in height (trial pill, tags, age badge), so a
+  // fixed-height estimate made the scroll position drift and "jump" as the user
+  // scrolled. Progressive reveal alone keeps the DOM light (50 cards, +20 per
+  // scroll) while leaving scroll position rock-steady.
   const revealedItems = items.slice(0, revealLimit)
   const hasMore = revealLimit < items.length
-
-  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - 2)
-  const visibleCount = Math.ceil(containerHeight / itemHeight) + 4
-  const endIndex = Math.min(revealedItems.length, startIndex + visibleCount)
-
-  const visibleItems = revealedItems.slice(startIndex, endIndex)
-  const topSpacer = startIndex * itemHeight
-  const bottomSpacer = (revealedItems.length - endIndex) * itemHeight
 
   return (
     <div
       ref={containerRef}
-      className="flex-1 min-h-0 overflow-y-auto pr-1"
+      className="cns-scroll flex-1 min-h-0 overflow-y-auto pr-1"
     >
-      {/* Top spacer keeps scroll position accurate */}
-      {topSpacer > 0 && (
-        <div style={{ height: topSpacer }} aria-hidden="true" />
-      )}
-      {visibleItems.map((opp, localIdx) => {
-        const index = startIndex + localIdx
-        return (
-          <Draggable key={opp.id} draggableId={opp.id} index={index}>
-            {(provided, snapshot) => (
-              <div
-                ref={provided.innerRef}
-                {...provided.draggableProps}
-                style={{
-                  ...provided.draggableProps.style,
-                  marginBottom: CARD_GAP,
-                }}
-              >
-                <KanbanCard
-                  opportunity={opp}
-                  stageShortCode={stageShortCode}
-                  stageName={stageName}
-                  stuckHoursYellow={stuckHoursYellow}
-                  stuckHoursRed={stuckHoursRed}
-                  isSelected={selectedIds.has(opp.id)}
-                  dragHandleProps={provided.dragHandleProps as unknown as Record<string, unknown>}
-                  isDragging={snapshot.isDragging}
-                  onClick={() => onCardClick?.(opp)}
-                  onToggleSelect={onToggleSelect ? () => onToggleSelect(opp.id) : undefined}
-                  prefs={cardPrefs}
-                />
-              </div>
-            )}
-          </Draggable>
-        )
-      })}
-      {/* Bottom spacer */}
-      {bottomSpacer > 0 && (
-        <div style={{ height: bottomSpacer }} aria-hidden="true" />
-      )}
+      {revealedItems.map((opp, index) => (
+        <Draggable key={opp.id} draggableId={opp.id} index={index}>
+          {(provided, snapshot) => (
+            <div
+              ref={provided.innerRef}
+              {...provided.draggableProps}
+              style={{
+                ...provided.draggableProps.style,
+                marginBottom: CARD_GAP,
+              }}
+            >
+              <KanbanCard
+                opportunity={opp}
+                stageShortCode={stageShortCode}
+                stageName={stageName}
+                stuckHoursYellow={stuckHoursYellow}
+                stuckHoursRed={stuckHoursRed}
+                isSelected={selectedIds.has(opp.id)}
+                dragHandleProps={provided.dragHandleProps as unknown as Record<string, unknown>}
+                isDragging={snapshot.isDragging}
+                onClick={() => onCardClick?.(opp)}
+                onToggleSelect={onToggleSelect ? () => onToggleSelect(opp.id) : undefined}
+                prefs={cardPrefs}
+              />
+            </div>
+          )}
+        </Draggable>
+      ))}
       {/* Reveal hint — shown while more cards remain to be scrolled into view. */}
       {hasMore && (
         <div className="py-2 text-center text-[10px] font-medium text-slate-400 dark:text-slate-500">
@@ -1605,7 +1574,7 @@ export function KanbanBoard({
 
       {/* Board — scrolls horizontally between stages; each column scrolls its
           own card list vertically (so the stage header stays put). */}
-      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden">
+      <div className="cns-scroll flex-1 min-h-0 overflow-x-auto overflow-y-hidden">
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />

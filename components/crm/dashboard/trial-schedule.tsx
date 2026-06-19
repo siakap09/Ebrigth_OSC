@@ -133,6 +133,20 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
     return TRIAL_ALL_SLOTS.filter((s) => seen.has(s))
   }, [data])
 
+  // Per-day totals (every slot in the day) and the grand total for the range.
+  const { dayTotals, weekTotal } = useMemo(() => {
+    const dayTotals: Record<string, number> = {}
+    let weekTotal = 0
+    if (data) {
+      for (const d of data.days) {
+        const sum = d.slots.reduce((acc, s) => acc + s.count, 0)
+        dayTotals[d.key] = sum
+        weekTotal += sum
+      }
+    }
+    return { dayTotals, weekTotal }
+  }, [data])
+
   const pickerBranches = branches ?? []
   const showPicker = !branchId && pickerBranches.length > 0
   const hasAnyBranchInScope = !!effectiveBranchId
@@ -153,6 +167,14 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
                 className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:bg-slate-800 dark:text-slate-400"
               >
                 <Lock className="h-2.5 w-2.5" /> Read-only
+              </span>
+            )}
+            {data && (
+              <span
+                title="Total trials booked in the selected range"
+                className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
+              >
+                {weekTotal} total
               </span>
             )}
           </div>
@@ -276,6 +298,22 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr>
+                <td className="w-32 pt-1 align-bottom text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Daily total
+                </td>
+                {TRIAL_DAY_ORDER.map((d) => (
+                  <td key={d.key} className="min-w-30 pt-1">
+                    <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-center dark:border-slate-700 dark:bg-slate-800">
+                      <span className="block text-lg font-bold tabular-nums text-slate-700 dark:text-slate-200">
+                        {dayTotals[d.key] ?? 0}
+                      </span>
+                    </div>
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

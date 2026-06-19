@@ -104,15 +104,15 @@ export async function POST(req: NextRequest) {
     }
     const newLeadStage = pipeline.stages[0]
 
-    // Leads submitted through the CRM trial form are tagged with the
-    // "CRM Form" lead source so they're distinguishable in the Opportunities
+    // Leads submitted through the CNS trial form are tagged with the
+    // "CNS Form" lead source so they're distinguishable in the Opportunities
     // board / lead-source filter (created on first use if missing).
     let leadSource = await prisma.crm_lead_source.findFirst({
-      where: { tenantId: tenant.id, name: 'CRM Form' },
+      where: { tenantId: tenant.id, name: 'CNS Form' },
     })
     if (!leadSource) {
       leadSource = await prisma.crm_lead_source.create({
-        data: { tenantId: tenant.id, name: 'CRM Form' },
+        data: { tenantId: tenant.id, name: 'CNS Form' },
       })
     }
 
