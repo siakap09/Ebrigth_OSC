@@ -59,7 +59,7 @@ export default function Sidebar({ sidebarOpen, onToggle, onCollapse }: SidebarPr
       {/* Fixed hamburger — always visible at top-left */}
       <button
         onClick={handleToggle}
-        className="fixed top-3 left-3 z-[9999] p-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl shadow-md transition-all flex items-center justify-center"
+        className="fixed top-3 left-3 z-9999 p-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl shadow-md transition-all flex items-center justify-center"
         title={sidebarOpen ? "Close Sidebar" : "Open Sidebar"}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
