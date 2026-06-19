@@ -6,7 +6,7 @@ import { resolveBranchAccess } from '@/lib/crm/branch-access'
 import { RegionDashboard } from './region-dashboard'
 
 export const metadata = {
-  title: 'Region | Ebright CRM',
+  title: 'Region | Ebright Nexus',
 }
 
 /**

@@ -326,7 +326,7 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
         </span>
         {!collapsed && (
           <span className="font-semibold text-slate-900 dark:text-white tracking-tight">
-            Ebright CRM
+            Ebright Nexus
           </span>
         )}
       </div>

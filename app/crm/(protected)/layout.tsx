@@ -7,8 +7,8 @@ import { CrmProviders } from '@/components/crm/providers'
 import { CrmShell } from '@/components/crm/shell'
 
 export const metadata = {
-  title: 'Ebright CRM',
-  description: 'Customer Relationship Management — Ebright',
+  title: 'Ebright Nexus',
+  description: 'Client Nexus System (CNS) — Ebright',
 }
 
 export default async function CrmProtectedLayout({
