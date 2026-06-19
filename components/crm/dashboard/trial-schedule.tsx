@@ -16,6 +16,7 @@ interface Student {
   phone: string | null
   branchName: string | null
   region: 'A' | 'B' | 'C' | null
+  source: string | null
   childAge: string | null
   startAt: string
 }
@@ -84,7 +85,10 @@ interface TrialScheduleProps {
 }
 
 export function TrialSchedule({ branchId, branches, readOnly = false }: TrialScheduleProps) {
+  // Clicking a slot cell opens the branch/source breakdown (`activeCell`); a row
+  // there drills into the existing "who's joining" student list (`drill`).
   const [activeCell, setActiveCell] = useState<{ day: DayBucket; slot: SlotCell } | null>(null)
+  const [drill, setDrill] = useState<{ label: string; students: Student[] } | null>(null)
   const [preset, setPreset] = useState<SchedulePreset>('this_week')
   const [pickedBranchId, setPickedBranchId] = useState<string | null>(null)
 
@@ -154,7 +158,7 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
           </div>
           <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
             Students booked into trial classes for the selected range.{' '}
-            Click a count to see who&apos;s joining (name, contact, branch, region).
+            Click a count for the branch &amp; source breakdown, then drill into who&apos;s joining.
           </p>
         </div>
 
@@ -276,16 +280,153 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
         </div>
       )}
 
-      {/* Click-through students modal — available to everyone (view-only). */}
+      {/* Step 1 — branch/source breakdown for the clicked slot. */}
       {activeCell && (
-        <StudentListModal
+        <SlotBreakdownModal
           dayLabel={activeCell.day.label}
           slot={activeCell.slot.slot}
           students={activeCell.slot.students}
-          onClose={() => setActiveCell(null)}
+          onClose={() => {
+            setActiveCell(null)
+            setDrill(null)
+          }}
+          onDrill={(label, students) => setDrill({ label, students })}
+        />
+      )}
+
+      {/* Step 2 — the "who's joining" student list, scoped to the drilled
+          branch/source (or all students when "View all" was chosen). Layered
+          above the breakdown; closing it returns to the breakdown. */}
+      {activeCell && drill && (
+        <StudentListModal
+          dayLabel={activeCell.day.label}
+          slot={activeCell.slot.slot}
+          subtitle={drill.label}
+          students={drill.students}
+          onClose={() => setDrill(null)}
         />
       )}
     </section>
+  )
+}
+
+// ─── Slot breakdown modal ───────────────────────────────────────────────────────
+//
+// First level of the drill-in: for the clicked day × time slot, group the booked
+// students by (branch, lead source) and show a count per group. A "View all" row
+// opens the full list; clicking any group opens the student list scoped to it.
+
+function SlotBreakdownModal({
+  dayLabel,
+  slot,
+  students,
+  onClose,
+  onDrill,
+}: {
+  dayLabel: string
+  slot: string
+  students: Student[]
+  onClose: () => void
+  onDrill: (label: string, students: Student[]) => void
+}) {
+  const groups = useMemo(() => {
+    const map = new Map<
+      string,
+      { branch: string; region: 'A' | 'B' | 'C' | null; source: string; students: Student[] }
+    >()
+    for (const s of students) {
+      const branch = s.branchName ?? 'Unknown branch'
+      const source = s.source ?? 'Unknown source'
+      const key = `${branch}||${source}`
+      let g = map.get(key)
+      if (!g) {
+        g = { branch, region: s.region, source, students: [] }
+        map.set(key, g)
+      }
+      g.students.push(s)
+    }
+    return Array.from(map.values()).sort(
+      (a, b) =>
+        b.students.length - a.students.length ||
+        a.branch.localeCompare(b.branch) ||
+        a.source.localeCompare(b.source),
+    )
+  }, [students])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg max-h-[85vh] overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200 dark:ring-slate-700 dark:bg-slate-900">
+        <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4 dark:border-slate-800">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+              Trial Class · Breakdown
+            </p>
+            <h3 className="mt-0.5 text-lg font-bold text-slate-900 dark:text-white">
+              {dayLabel} <span className="text-slate-400">·</span> {slot}
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {students.length} student{students.length === 1 ? '' : 's'} across {groups.length} branch
+              {groups.length === 1 ? '' : 'es'}/source{groups.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="overflow-y-auto px-2 py-2" style={{ maxHeight: 'calc(85vh - 100px)' }}>
+          {/* View-all shortcut — opens the full student list for the slot. */}
+          <button
+            type="button"
+            onClick={() => onDrill('All branches & sources', students)}
+            className="flex w-full items-center justify-between gap-3 rounded-lg px-4 py-2.5 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800/60"
+          >
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              View all students
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+              {students.length}
+              <ExternalLink className="h-3 w-3" />
+            </span>
+          </button>
+
+          <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {groups.map((g) => (
+              <li key={`${g.branch}||${g.source}`}>
+                <button
+                  type="button"
+                  onClick={() => onDrill(`${g.branch} · ${g.source}`, g.students)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-indigo-50/60 dark:hover:bg-indigo-950/20"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-sm font-bold text-indigo-700 ring-1 ring-indigo-100 dark:bg-indigo-950/30 dark:text-indigo-300 dark:ring-indigo-900/40">
+                    {g.students.length}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                      {g.branch}
+                      {g.region ? (
+                        <span className="font-normal text-slate-400"> · Region {g.region}</span>
+                      ) : null}
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                      Source: <span className="font-medium text-slate-600 dark:text-slate-300">{g.source}</span>
+                    </p>
+                  </div>
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -299,11 +440,14 @@ function StudentListModal({
   dayLabel,
   slot,
   students,
+  subtitle,
   onClose,
 }: {
   dayLabel: string
   slot: string
   students: Student[]
+  /** Branch/source scope chosen in the breakdown step, shown under the title. */
+  subtitle?: string
   onClose: () => void
 }) {
   return (
@@ -318,6 +462,11 @@ function StudentListModal({
             <h3 className="mt-0.5 text-lg font-bold text-slate-900 dark:text-white">
               {dayLabel} <span className="text-slate-400">·</span> {slot}
             </h3>
+            {subtitle && (
+              <p className="mt-0.5 truncate text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+                {subtitle}
+              </p>
+            )}
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               {students.length} student{students.length === 1 ? '' : 's'} joining
             </p>

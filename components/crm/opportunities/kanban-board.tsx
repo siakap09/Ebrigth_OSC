@@ -70,16 +70,21 @@ function isConfirmedTrialStage(shortCode: string, name: string): boolean {
 
 const ALLOWED_LEAD_TRANSITIONS: Record<string, string[]> = {
   // NL: must start with FU1 (no skipping to FU2 / FU3), but can short-cut
-  // directly to CT when a lead is already confirmed for a trial. RSD is the
-  // sole backward escape hatch (see "Recovery to RSD" below).
-  NL: ['FU1', 'CT', 'CTB', 'ENR', 'RSD'],
+  // directly to CT when a lead is already confirmed for a trial, enrol, drop
+  // to Cold Lead / DND, or reschedule (RSD). CTB stays as an optional Trial
+  // Buffer holding-pen destination.
+  NL: ['FU1', 'CT', 'CTB', 'ENR', 'RSD', 'CL', 'DND'],
   // FU1/FU2/FU3: can advance to a later follow-up, jump to CT (or park in the
   // Trial Buffer CTB), reschedule (RSD), or drop the lead directly to Cold Lead
   // without going through UR_W1/UR_W2/FU3M first.
   FU1: ['FU2', 'FU3', 'CT', 'CTB', 'RSD', 'CL', 'DND'],
   FU2: ['FU3', 'CT', 'CTB', 'RSD', 'CL', 'DND'],
   FU3: ['RSD', 'URW1', 'CT', 'CTB', 'CL', 'DND'],
-  RSD: ['CT', 'CTB', 'DND'],
+  // RSD (Reschedule) is a fully open recovery hub — a rescheduled lead can be
+  // re-confirmed for trial, dropped back into any follow-up, parked in CNS/SU/
+  // SNE, enrolled, escalated to UR_W1, or closed (CL/DND). CTB stays as an
+  // optional Trial Buffer destination.
+  RSD: ['CT', 'CTB', 'FU1', 'FU2', 'FU3', 'CNS', 'SU', 'SNE', 'ENR', 'URW1', 'CL', 'DND'],
   // Recovery to RSD: CT → RSD lets a confirmed trial be rescheduled without
   // an admin override. The "terminal-ish" / unresponsive stages below
   // (NL, CNS, SNE, URW1-3, CL, DND) also allow → RSD so a lead that was

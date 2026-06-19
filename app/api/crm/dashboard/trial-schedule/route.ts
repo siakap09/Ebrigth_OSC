@@ -148,6 +148,7 @@ export async function GET(req: NextRequest) {
           lastName: true,
           phone: true,
           childAge1: true,
+          leadSource: { select: { name: true } },
           opportunities: {
             where: { deletedAt: null },
             orderBy: { createdAt: 'desc' },
@@ -168,6 +169,7 @@ export async function GET(req: NextRequest) {
     phone: string | null
     branchName: string | null
     region: 'A' | 'B' | 'C' | null
+    source: string | null
     childAge: string | null
     startAt: string
   }
@@ -207,6 +209,7 @@ export async function GET(req: NextRequest) {
       phone:          a.contact.phone,
       branchName,
       region:         branchName ? regionFor(branchName) : null,
+      source:         a.contact.leadSource?.name ?? null,
       childAge:       a.contact.childAge1,
       startAt:        a.startAt.toISOString(),
     })
