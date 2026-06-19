@@ -163,7 +163,7 @@ export function DashboardClient() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Leads Dashboard</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {rangeLabel || 'Select a range'} · NL by created · CT / SU / ENR by stage entry
+            {rangeLabel || 'Select a range'} · NL by created · CT by trial date · SU / ENR by stage entry
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

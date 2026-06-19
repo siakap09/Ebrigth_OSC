@@ -230,13 +230,17 @@ export async function GET(req: NextRequest) {
             },
           })
 
-    // CT — counted by TRIAL CLASS DATE, not the drag date. Confirming a lead
-    // for trial books a Trial Class appointment with the class date/time; we
-    // count it in whichever range its class falls in, matching the Trial Class
-    // Schedule widget (same crm_appointment source + startAt window). So
-    // selecting "This Week" shows the trials happening this week regardless of
-    // when the card was dragged into CT; "Next Week" shows next week's, etc.
-    // Deduped per contact so a reschedule inside the range isn't double-counted.
+    // CT — counted by TRIAL CLASS DATE, exactly mirroring the Trial Class
+    // Schedule widget (same crm_appointment source, same startAt window, same
+    // `contact.deletedAt: null` filter). It counts EVERY trial happening in the
+    // range regardless of the lead's current stage — so a lead that already
+    // showed up (SU), enrolled (ENR) or was rescheduled still counts as a trial
+    // that took place this period. (Previously CT also required the live opp to
+    // still sit at the "Confirmed for Trial" stage, which dropped shown-up /
+    // enrolled leads and made the headline CT under-count vs the schedule.)
+    // Deduped per contact so the rare double-booking isn't double-counted; in
+    // practice move-to-CT / reschedule delete prior Trial Class appointments, so
+    // there's ≤1 per contact and this tallies 1:1 with the schedule's totals.
     // crm_appointment.startAt is stored naive-KL-as-UTC, but `from`/`to` are
     // real-UTC (KL-offset) — comparing them directly drops late-/Sunday-KL
     // trials. Shift the window forward by the KL offset so it aligns with the
@@ -249,14 +253,7 @@ export async function GET(req: NextRequest) {
         title: 'Trial Class',
         branchId: { in: branches.map((b) => b.id) },
         startAt: { gte: apptFrom, lte: apptTo },
-        // CT = leads whose CURRENT stage is "Confirmed for Trial" with a trial
-        // this period. Keying on the live opportunity's stage (not just the
-        // appointment) means a lead moved to Reschedule / Show-Up / etc. stops
-        // counting as CT — and a deleted-test lead (no live opp) is excluded.
-        contact: {
-          deletedAt: null,
-          opportunities: { some: { deletedAt: null, stageId: { in: stageIdsByCategory.CT } } },
-        },
+        contact: { deletedAt: null },
       },
       select: { branchId: true, contactId: true },
     })
