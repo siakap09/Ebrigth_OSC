@@ -5,8 +5,15 @@ import { BRANCHES, BranchCode, Student, AgeCategory, StudentLoadReport } from "@
 const BRANCH_CODES = new Set<string>(BRANCHES.map(b => b.code));
 
 // Accept anything that mentions a grade — chapter optional.
-//   "G3 — C5", "G 3 - C 5", "G3", "Grade 3", "g3-c5", etc.
-const GRADE_RE = /(?:^|\b)g\s*(\d+)/i;
+//   "G3 — C5", "G 3 - C 5", "G3", "g3-c5", etc.
+// The curriculum ladder continues past G8 into two advanced series, GA and GB,
+// which we fold onto the same numeric scale so the rest of the system (invite
+// picker, progress, eligibility) keeps working on plain numbers:
+//   G1..G8  → 1..8
+//   GA1..GA4 → 9..12   (GA<n> = 8 + n)
+//   GB1..GB4 → 13..16  (GB<n> = 12 + n)
+// Display converts the number back to the G/GA/GB label via gradeLabel().
+const GRADE_RE = /(?:^|\b)g\s*([ab])?\s*(\d+)/i;
 const CHAPTER_RE = /c\s*(\d+)/i;
 
 function parseGradeChapter(raw: unknown): { grade: number; credit: number } | null {
@@ -15,8 +22,11 @@ function parseGradeChapter(raw: unknown): { grade: number; credit: number } | nu
   if (!trimmed) return null;
   const gm = trimmed.match(GRADE_RE);
   if (!gm) return null;
-  const grade = Number(gm[1]);
-  if (!Number.isFinite(grade) || grade < 1 || grade > 12) return null;
+  const series = (gm[1] ?? "").toUpperCase(); // "" | "A" | "B"
+  const base = Number(gm[2]);
+  if (!Number.isFinite(base) || base < 1) return null;
+  const grade = series === "A" ? 8 + base : series === "B" ? 12 + base : base;
+  if (grade < 1 || grade > 16) return null;
   const cm = trimmed.match(CHAPTER_RE);
   const credit = cm ? Number(cm[1]) : 1; // default to chapter 1 if absent
   if (!Number.isFinite(credit)) return null;
@@ -112,8 +122,86 @@ function rowToStudent(row: StudentRow): { student: Student } | { skip: SkipReaso
       parentPhone: row.guardian_mobile ?? "",
       enrolmentDate: toIsoDate(row.enrollment_date),
       active: (row.status ?? "").toLowerCase() === "active",
+      archived: false,
     },
   };
+}
+
+/** Shape of a row from the separate `archived_students` table. Same fields we
+ *  need from studentrecords, but the primary key is `no` (int) and `student_id`
+ *  is often a placeholder ("—"), so we namespace the PCM id off `no`. */
+interface ArchivedStudentRow {
+  no: number;
+  name: string | null;
+  status: string | null;
+  branch: string | null;
+  enrollment_date: Date | string | null;
+  grade_chapter: string | null;
+  pcm_progress_json: unknown;
+  guardian_name: string | null;
+  guardian_mobile: string | null;
+  age_group: string | null;
+}
+
+/** Stable, collision-free PCM id for an archived student. `studentrecords.id`
+ *  is a bigint and `archived_students.no` is a separate sequence, so we prefix
+ *  to guarantee the two namespaces never clash. Invitations store this string
+ *  verbatim (pcm_invitations.student_id is free-form text). */
+export function archivedStudentId(no: number): string {
+  return `arch-${no}`;
+}
+
+function archivedRowToStudent(row: ArchivedStudentRow): { student: Student } | { skip: SkipReason } {
+  if (!row.branch) return { skip: "missing_branch" };
+  const branch = normaliseBranch(row.branch);
+  if (!branch) return { skip: "unknown_branch" };
+  if (!row.grade_chapter) return { skip: "missing_grade" };
+  const gc = parseGradeChapter(row.grade_chapter);
+  if (!gc) return { skip: "bad_grade_format" };
+
+  const ageCategory = normaliseAgeGroup(row.age_group) ?? ageCategoryFromGrade(gc.grade);
+
+  return {
+    student: {
+      id: archivedStudentId(row.no),
+      name: row.name ?? "",
+      branch,
+      grade: gc.grade,
+      ageCategory,
+      credit: gc.credit,
+      faHistory: parseFaHistory(row.pcm_progress_json, gc.grade),
+      parentName: row.guardian_name ?? "",
+      parentPhone: row.guardian_mobile ?? "",
+      enrolmentDate: toIsoDate(row.enrollment_date),
+      active: false, // archived → never active
+      archived: true,
+    },
+  };
+}
+
+/** Load every row from `archived_students` and map onto the Student shape.
+ *  Failures are swallowed (returns []) so a missing/renamed archive table can
+ *  never take down the main student list — archived students are additive. */
+async function fetchArchivedStudents(): Promise<Student[]> {
+  try {
+    const { rows } = await pool.query<ArchivedStudentRow>(
+      `SELECT no, name, status, branch, enrollment_date, grade_chapter,
+              pcm_progress_json, guardian_name, guardian_mobile, age_group
+         FROM archived_students`
+    );
+    const out: Student[] = [];
+    for (const r of rows) {
+      const result = archivedRowToStudent(r);
+      if ("student" in result) out.push(result.student);
+    }
+    return out;
+  } catch (err) {
+    console.warn(
+      "[PCM] Could not load archived_students — archived list will be empty:",
+      err instanceof Error ? err.message : err
+    );
+    return [];
+  }
 }
 
 
@@ -176,6 +264,14 @@ export async function fetchAllStudents(): Promise<{ students: Student[]; report:
       }
     }
   }
+
+  // Archived students live in their own table. Additive — appended after the
+  // live roster, each carrying archived:true so the UI can badge them and group
+  // them into a separate tab of the invite picker.
+  const archived = await fetchArchivedStudents();
+  students.push(...archived);
+  report.loaded += archived.length;
+  report.archivedLoaded = archived.length;
 
   const totalSkipped =
     report.skipped.missing_branch +

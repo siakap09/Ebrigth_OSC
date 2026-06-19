@@ -5,8 +5,15 @@ import { BRANCHES, BranchCode, Student, AgeCategory, StudentLoadReport } from "@
 const BRANCH_CODES = new Set<string>(BRANCHES.map(b => b.code));
 
 // Accept anything that mentions a grade — chapter optional.
-//   "G3 — C5", "G 3 - C 5", "G3", "Grade 3", "g3-c5", etc.
-const GRADE_RE = /(?:^|\b)g\s*(\d+)/i;
+//   "G3 — C5", "G 3 - C 5", "G3", "g3-c5", etc.
+// The curriculum ladder continues past G8 into two advanced series, GA and GB,
+// folded onto the same numeric scale so the rest of the system keeps working on
+// plain numbers:
+//   G1..G8  → 1..8
+//   GA1..GA4 → 9..12   (GA<n> = 8 + n)
+//   GB1..GB4 → 13..16  (GB<n> = 12 + n)
+// Display converts the number back to the G/GA/GB label via gradeLabel().
+const GRADE_RE = /(?:^|\b)g\s*([ab])?\s*(\d+)/i;
 const CHAPTER_RE = /c\s*(\d+)/i;
 
 function parseGradeChapter(raw: unknown): { grade: number; credit: number } | null {
@@ -15,8 +22,11 @@ function parseGradeChapter(raw: unknown): { grade: number; credit: number } | nu
   if (!trimmed) return null;
   const gm = trimmed.match(GRADE_RE);
   if (!gm) return null;
-  const grade = Number(gm[1]);
-  if (!Number.isFinite(grade) || grade < 1 || grade > 12) return null;
+  const series = (gm[1] ?? "").toUpperCase(); // "" | "A" | "B"
+  const base = Number(gm[2]);
+  if (!Number.isFinite(base) || base < 1) return null;
+  const grade = series === "A" ? 8 + base : series === "B" ? 12 + base : base;
+  if (grade < 1 || grade > 16) return null;
   const cm = trimmed.match(CHAPTER_RE);
   const credit = cm ? Number(cm[1]) : 1; // default to chapter 1 if absent
   if (!Number.isFinite(credit)) return null;

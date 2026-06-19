@@ -285,6 +285,11 @@ export interface Student {
   parentPhone: string;
   enrolmentDate: string;        // ISO date
   active: boolean;
+  /** True when this row comes from the `archived_students` table rather than
+   *  the live `studentrecords` table. Archived students still appear in the
+   *  list and can be invited to PCM events — they carry an "Archived" badge
+   *  and live in their own tab of the invite picker. */
+  archived: boolean;
 }
 
 /** Eligibility rule: a student is eligible for FA when they have at least
@@ -318,6 +323,9 @@ export interface StudentLoadReport {
   /** True if the `ade_group` join succeeded. When false, age-category labels
    *  are still derived from grade as a fallback. */
   ageGroupJoinAvailable: boolean;
+  /** How many rows were loaded from the separate `archived_students` table
+   *  (counted toward `loaded` too). */
+  archivedLoaded?: number;
 }
 
 /** Check if student has a backlog — any completed grade below current where FA was not done. */
@@ -347,6 +355,16 @@ export function invitableGradesFor(student: Student): number[] {
     grades.push(student.grade);
   }
   return grades;
+}
+
+/** Render a numeric grade back to its curriculum label. The ladder runs
+ *  G1..G8 (1..8), then the GA series (9..12 → GA1..GA4), then the GB series
+ *  (13..16 → GB1..GB4). Use this everywhere a grade is shown so advanced
+ *  students read as "GA2" / "GB1" rather than "G10" / "G13". */
+export function gradeLabel(grade: number): string {
+  if (grade >= 13 && grade <= 16) return `GB${grade - 12}`;
+  if (grade >= 9 && grade <= 12) return `GA${grade - 8}`;
+  return `G${grade}`;
 }
 
 // ----------------------------------------------------------------------------

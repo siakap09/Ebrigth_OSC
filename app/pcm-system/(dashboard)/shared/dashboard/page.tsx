@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { AppShell } from "@pcm/_components/shared/AppShell";
@@ -36,6 +36,11 @@ export default function DashboardPage() {
   const events = useFAStore(s => s.events);
   const sessions = useFAStore(s => s.sessions);
   const invitations = useFAStore(s => s.invitations);
+  const students = useFAStore(s => s.students);
+  const loadStudents = useFAStore(s => s.loadStudents);
+  // Ensure the per-branch student counts are available for the coverage cards
+  // (no-op if the store already loaded them on login).
+  useEffect(() => { loadStudents(); }, [loadStudents]);
 
   // Default to "all" so the dashboard isn't accidentally empty when the
   // current month happens to have no events yet. BMs can narrow down with
@@ -186,60 +191,27 @@ export default function DashboardPage() {
   // Branches with zero invitations in an event are skipped so the table
   // stays compact. When the page-level branch filter is set, only that
   // branch's rows survive.
-  const eventBreakdown = useMemo(() => {
-    type Row = {
-      key: string;
-      event: typeof events[number];
-      branch: BranchCode;
-      invited: number;
-      confirmed: number;
-      attended: number;
-      absent: number;
-      rescheduled: number;
-      progress: number;
-      renewal: number;
-      pct: number;
-      /** True for the FIRST row of an event group — the table renders the
-       *  event name + date only on that row to visually group rows together. */
-      isFirstOfEvent: boolean;
+  // Per-branch invite-coverage cards. Target ("should invite") = the branch's
+  // total students ÷ 8; invited = invitations in the selected period. Respects
+  // region (RM) and branch (BM) scope like the rest of the page.
+  const branchCards = useMemo(() => {
+    const inScope = (code: string) => {
+      if (allowedBranches && !allowedBranches.includes(code)) return false;
+      if (effectiveBranch !== "all" && code !== effectiveBranch) return false;
+      return true;
     };
-    const rows: Row[] = [];
-    const sortedEvents = [...eventsInRange].sort((a, b) =>
-      b.startDate.localeCompare(a.startDate)
-    );
-    for (const event of sortedEvents) {
-      const evInvs = filteredInvs.filter(i => i.eventId === event.id);
-      // Branches touched by this event, ordered by their BRANCHES list index
-      // so the table is stable across renders.
-      const branchesInEvent = BRANCHES
-        .map(b => b.code as BranchCode)
-        .filter(code => evInvs.some(i => i.branch === code));
-      let isFirst = true;
-      for (const branch of branchesInEvent) {
-        const branchInvs = evInvs.filter(i => i.branch === branch);
-        const invited     = branchInvs.length;
-        const confirmed   = branchInvs.filter(i => i.status === "confirmed" || i.status === "attended").length;
-        const attended    = branchInvs.filter(i => i.status === "attended").length;
-        const absent      = branchInvs.filter(i => i.status === "no_show" || i.status === "declined").length;
-        const rescheduled = branchInvs.filter(i => i.status === "rescheduled").length;
-        const progress    = branchInvs.filter(i => i.inviteType === "progress").length;
-        const renewal     = branchInvs.filter(i => i.inviteType === "renewal").length;
-        const pct = invited > 0 ? Math.round((attended / invited) * 100) : 0;
-        rows.push({
-          key: `${event.id}:${branch}`,
-          event, branch, invited, confirmed, attended, absent, rescheduled,
-          progress, renewal, pct, isFirstOfEvent: isFirst,
-        });
-        isFirst = false;
-      }
-    }
-    return rows;
-  }, [eventsInRange, filteredInvs]);
-
-  const totalEventsShown = useMemo(
-    () => new Set(eventBreakdown.map(r => r.event.id)).size,
-    [eventBreakdown],
-  );
+    return BRANCHES
+      .filter(b => inScope(b.code))
+      .map(b => {
+        const totalStudents = students.filter(s => s.branch === b.code).length;
+        const shouldInvite = Math.round(totalStudents / 8);
+        const invited = filteredInvs.filter(i => i.branch === b.code).length;
+        const pct = shouldInvite > 0 ? Math.round((invited / shouldInvite) * 100) : 0;
+        return { code: b.code, name: b.name, totalStudents, shouldInvite, invited, pct };
+      })
+      // Hide branches with neither students nor invitations so the grid stays tidy.
+      .filter(c => c.totalStudents > 0 || c.invited > 0);
+  }, [students, filteredInvs, allowedBranches, effectiveBranch]);
 
   return (
     <AppShell>
@@ -460,75 +432,69 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* By-event-and-branch table — tone-matched header */}
+      {/* Invite coverage by branch — card grid. Each card: total students,
+          target ("should invite" = total ÷ 8), and invited this period. */}
       <div className="rounded-2xl bg-white shadow-sm border border-ivory-300 overflow-hidden">
         <div className="bg-gradient-to-r from-violet-50 to-indigo-50 px-5 py-3 flex items-center justify-between border-b border-ivory-300">
-          <h2 className="text-base font-semibold text-violet-900">By event &amp; branch</h2>
+          <h2 className="text-base font-semibold text-violet-900">Invite coverage by branch</h2>
           <span className="text-xs text-ink-500">
-            {totalEventsShown} event{totalEventsShown !== 1 ? "s" : ""} · {eventBreakdown.length} branch row{eventBreakdown.length !== 1 ? "s" : ""}
+            Target = total students ÷ 8 · {branchCards.length} branch{branchCards.length !== 1 ? "es" : ""}
           </span>
         </div>
-        {eventBreakdown.length === 0 ? (
+        {branchCards.length === 0 ? (
           <div className="p-8 text-center text-sm text-ink-400">
-            No invitations fall in this range.
+            No branch data for this range.
           </div>
         ) : (
-          <table className="fa-table">
-            <thead>
-              <tr>
-                <th>Event</th>
-                <th>Date</th>
-                <th>Branch</th>
-                <th>Invited</th>
-                <th>Confirmed</th>
-                <th>Attended</th>
-                <th>Absent</th>
-                <th>Rescheduled</th>
-                <th>Progress</th>
-                <th>Renewal</th>
-                <th>%</th>
-              </tr>
-            </thead>
-            <tbody>
-              {eventBreakdown.map(row => (
-                <tr
-                  key={row.key}
-                  className={row.isFirstOfEvent ? "border-t-2 border-violet-200" : undefined}
-                >
-                  <td className="font-medium text-ink-900">
-                    {row.isFirstOfEvent ? row.event.name : <span className="text-ink-300">·</span>}
-                  </td>
-                  <td className="text-xs text-ink-500 font-mono">
-                    {row.isFirstOfEvent ? format(parseISO(row.event.startDate), "d MMM yyyy") : ""}
-                  </td>
-                  <td>
-                    <span
-                      className="fa-mono text-[11px] uppercase px-2 py-0.5 rounded bg-violet-100 text-violet-700 font-bold"
-                      style={{ letterSpacing: "0.06em" }}
-                    >
-                      {row.branch}
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {branchCards.map(c => {
+              const met = c.shouldInvite > 0 && c.invited >= c.shouldInvite;
+              const tone = met ? "emerald" : c.pct >= 50 ? "amber" : "rose";
+              const head =
+                tone === "emerald" ? "from-emerald-500 to-emerald-600"
+                : tone === "amber" ? "from-amber-500 to-amber-600"
+                : "from-rose-500 to-rose-600";
+              const bar =
+                tone === "emerald" ? "bg-emerald-500" : tone === "amber" ? "bg-amber-500" : "bg-rose-500";
+              const barPct = Math.min(100, c.pct);
+              return (
+                <div key={c.code} className="rounded-xl border border-ivory-300 shadow-sm overflow-hidden bg-white">
+                  <div className={`bg-gradient-to-r ${head} px-3 py-2 flex items-center justify-between`}>
+                    <span className="fa-mono text-xs font-bold uppercase text-white" style={{ letterSpacing: "0.08em" }} title={c.name}>
+                      {c.code}
                     </span>
-                  </td>
-                  <td className="font-mono">{row.invited}</td>
-                  <td className="font-mono text-indigo-700">{row.confirmed}</td>
-                  <td className="font-mono text-emerald-700">{row.attended}</td>
-                  <td className="font-mono text-rose-600">{row.absent}</td>
-                  <td className="font-mono text-amber-700">{row.rescheduled}</td>
-                  <td className="font-mono text-violet-700">{row.progress}</td>
-                  <td className="font-mono text-cyan-700">{row.renewal}</td>
-                  <td>
-                    <span
-                      className={`font-mono font-bold ${
-                        row.pct >= 80 ? "text-emerald-600" : row.pct >= 50 ? "text-amber-600" : "text-rose-600"
-                      }`}
-                    >
-                      {row.pct}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <span className="text-[11px] font-bold text-white/90">{c.pct}%</span>
+                  </div>
+                  <div className="px-4 pt-3 pb-2">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-black text-ink-900 leading-none">{c.invited}</span>
+                      <span className="text-base text-ink-300 font-semibold leading-none">/ {c.shouldInvite}</span>
+                    </div>
+                    <div className="fa-mono text-[9px] uppercase text-ink-400 mt-1" style={{ letterSpacing: "0.1em" }}>
+                      Invited / Target
+                    </div>
+                    <div className="w-full h-2 bg-ivory-200 rounded-full overflow-hidden mt-2">
+                      <div className={`h-full ${bar} rounded-full transition-all`} style={{ width: `${barPct}%` }} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 border-t border-ivory-200">
+                    <div className="px-3 py-2 text-center border-r border-ivory-200">
+                      <div className="text-lg font-bold text-ink-900 leading-none">{c.totalStudents}</div>
+                      <div className="fa-mono text-[9px] uppercase text-ink-400 mt-1" style={{ letterSpacing: "0.08em" }}>
+                        Total students
+                      </div>
+                    </div>
+                    <div className="px-3 py-2 text-center">
+                      <div className="text-lg font-bold text-violet-700 leading-none">{c.shouldInvite}</div>
+                      <div className="fa-mono text-[9px] uppercase text-ink-400 mt-1" style={{ letterSpacing: "0.08em" }}>
+                        Should invite
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </AppShell>
@@ -797,7 +763,8 @@ function OutcomeStudentLists({ invitations }: { invitations: import("@pcm/_types
     const student = studentsById.get(inv.studentId);
     return {
       key: inv.id,
-      name: student?.name ?? `#${inv.studentId}`,
+      // Live record name → name resolved server-side (snapshot / archived) → id.
+      name: student?.name ?? inv.studentName ?? `#${inv.studentId}`,
       branch: inv.branch,
       grade: inv.targetGrade || student?.grade || "?",
       eventName: eventNameById.get(inv.eventId) ?? "—",
