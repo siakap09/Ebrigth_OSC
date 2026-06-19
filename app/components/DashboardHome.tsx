@@ -53,8 +53,8 @@ const dashboards: DashboardCard[] = [
   },
   {
     id: "crm",
-    title: "CRM",
-    icon: "📰",
+    title: "CNS",
+    icon: "🤝",
     color: "bg-yellow-500",
     items: [
       { name: "Content Manager", href: "#", icon: "✏️" },

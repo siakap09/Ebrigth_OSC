@@ -18,7 +18,7 @@ const navigationItems = [
   { key: "library",            name: "Library",             href: "/dashboards/library",            icon: "📚" },
   { key: "internal-dashboard", name: "Internal Dashboard",  href: "/dashboards/internal-dashboard", icon: "📊" },
   { key: "hrms",               name: "HRMS",                href: "/dashboards/hrms",               icon: "👥" },
-  { key: "crm",                name: "CRM",                 href: "/dashboards/crm",                icon: "📰" },
+  { key: "crm",                name: "CNS",                 href: "/dashboards/crm",                icon: "🤝" },
   { key: "sms",                name: "SMS",                 href: "/dashboards/sms",                icon: "💬" },
   { key: "inventory",          name: "Inventory",           href: "/dashboards/inventory",          icon: "📦" },
   { key: "academy",            name: "Academy",             href: "/academy",                       icon: "🎓" },

@@ -264,7 +264,7 @@ export function DashboardClient() {
                 title="Region A"
                 subtitle={data.regionMap.A.join(' · ')}
                 metrics={data.regions.A}
-                accent="rose"
+                accent="sky"
                 compact
                 onMetric={(m) => setDrill({ metric: m, scope: 'A', scopeLabel: 'Region A' })}
               />
@@ -367,6 +367,7 @@ export function DashboardClient() {
 
 const ACCENT_CLASSES = {
   indigo:  'text-indigo-600 dark:text-indigo-400',
+  sky:     'text-sky-600 dark:text-sky-400',
   rose:    'text-rose-600 dark:text-rose-400',
   amber:   'text-amber-600 dark:text-amber-400',
   emerald: 'text-emerald-600 dark:text-emerald-400',
@@ -520,7 +521,7 @@ function BranchBarChart({ branches }: { branches: BranchMetrics[] }) {
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">New Leads by Branch</h2>
         <div className="flex items-center gap-4 text-[11px] text-slate-500 dark:text-slate-400">
-          <LegendDot color="bg-rose-500" label="Region A" />
+          <LegendDot color="bg-sky-500" label="Region A" />
           <LegendDot color="bg-amber-500" label="Region B" />
           <LegendDot color="bg-emerald-500" label="Region C" />
         </div>
@@ -535,7 +536,7 @@ function BranchBarChart({ branches }: { branches: BranchMetrics[] }) {
             // assumed branches arrived in regional order, which broke when
             // we switched to numerical "01 → 23" ordering.
             const barColor =
-              b.region === 'A' ? 'bg-rose-500' :
+              b.region === 'A' ? 'bg-sky-500' :
               b.region === 'B' ? 'bg-amber-500' :
               b.region === 'C' ? 'bg-emerald-500' :
                                  'bg-slate-400'
