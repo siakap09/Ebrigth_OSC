@@ -174,6 +174,7 @@ export function SessionInvitesPanel({
                   parentPhone: inv.studentParentPhone ?? "",
                   enrolmentDate: "",
                   active: false,
+                  archived: false,
                 };
                 const backlog = hasBacklog(student);
                 const isProgress = inv.inviteType === "progress";

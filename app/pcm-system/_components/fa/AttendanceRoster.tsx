@@ -153,6 +153,7 @@ export function AttendanceRoster({
                     parentPhone: inv.studentParentPhone ?? "",
                     enrolmentDate: "",
                     active: false,
+                    archived: false,
                   };
                   return (
                     <SortableInvitationRow

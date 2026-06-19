@@ -5,7 +5,7 @@ import { Search, Users, Filter, Download, RefreshCw } from "lucide-react";
 import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
 import { AppShell } from "@fa/_components/shared/AppShell";
-import { BRANCHES, BranchCode, hasBacklog, invitableGradesFor, FA_CURRENT_GRADE_MIN_CHAPTER } from "@fa/_types";
+import { BRANCHES, BranchCode, hasBacklog, invitableGradesFor, FA_CURRENT_GRADE_MIN_CHAPTER, gradeLabel } from "@fa/_types";
 import { downloadCSV } from "@fa/_lib/csv";
 import { RegistrationCrossCheck } from "@fa/_components/fa/RegistrationCrossCheck";
 
@@ -201,8 +201,8 @@ export default function StudentListPage() {
               className="fa-input"
             >
               <option value="all">All</option>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map(g => (
-                <option key={g} value={g}>G{g}</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(g => (
+                <option key={g} value={g}>{gradeLabel(g)}</option>
               ))}
             </select>
           </div>
@@ -313,14 +313,14 @@ export default function StudentListPage() {
                         <span className="text-xs text-ink-500 truncate">{branchName}</span>
                       </div>
                     </td>
-                    <td className="text-center font-mono text-sm text-ink-900">G{s.grade}</td>
+                    <td className="text-center font-mono text-sm text-ink-900">{gradeLabel(s.grade)}</td>
                     <td className="text-center font-mono text-sm text-ink-700">C{s.credit}</td>
                     <td>
                       <div className="flex items-center gap-1 flex-wrap">
                         {grades.length === 0 ? (
                           <span
                             className="fa-mono text-[10px] text-ink-400 italic"
-                            title={`Not yet at C${FA_CURRENT_GRADE_MIN_CHAPTER} of G${s.grade}`}
+                            title={`Not yet at C${FA_CURRENT_GRADE_MIN_CHAPTER} of ${gradeLabel(s.grade)}`}
                           >
                             Locked — needs C{FA_CURRENT_GRADE_MIN_CHAPTER}
                           </span>
@@ -337,10 +337,10 @@ export default function StudentListPage() {
                                       : "bg-danger-soft text-danger border-danger/30"
                                   }`}
                                   title={done
-                                    ? `Grade ${g} FA completed (from Heidi) — not an event invitation`
-                                    : `Grade ${g} FA not done yet`}
+                                    ? `Grade ${gradeLabel(g)} FA completed (from Heidi) — not an event invitation`
+                                    : `Grade ${gradeLabel(g)} FA not done yet`}
                                 >
-                                  G{g} {done ? "✓" : "✗"}
+                                  {gradeLabel(g)} {done ? "✓" : "✗"}
                                 </span>
                               );
                             })}
@@ -349,7 +349,7 @@ export default function StudentListPage() {
                                 className="fa-mono text-[10px] text-ink-400 italic"
                                 title={`Current-grade FA unlocks at C${FA_CURRENT_GRADE_MIN_CHAPTER} (now at C${s.credit})`}
                               >
-                                G{s.grade} 🔒
+                                {gradeLabel(s.grade)} 🔒
                               </span>
                             )}
                             <span className="fa-mono text-[10px] text-ink-500 ml-1">

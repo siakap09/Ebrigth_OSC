@@ -18,7 +18,7 @@ const navigationItems = [
   { key: "library",            name: "Library",             href: "/dashboards/library",            icon: "📚" },
   { key: "internal-dashboard", name: "Internal Dashboard",  href: "/dashboards/internal-dashboard", icon: "📊" },
   { key: "hrms",               name: "HRMS",                href: "/dashboards/hrms",               icon: "👥" },
-  { key: "crm",                name: "CRM",                 href: "/dashboards/crm",                icon: "📰" },
+  { key: "crm",                name: "CNS",                 href: "/dashboards/crm",                icon: "🤝" },
   { key: "sms",                name: "SMS",                 href: "/dashboards/sms",                icon: "💬" },
   { key: "inventory",          name: "Inventory",           href: "/dashboards/inventory",          icon: "📦" },
   { key: "academy",            name: "Academy",             href: "/academy",                       icon: "🎓" },
@@ -59,7 +59,7 @@ export default function Sidebar({ sidebarOpen, onToggle, onCollapse }: SidebarPr
       {/* Fixed hamburger — always visible at top-left */}
       <button
         onClick={handleToggle}
-        className="fixed top-3 left-3 z-[9999] p-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl shadow-md transition-all flex items-center justify-center"
+        className="fixed top-3 left-3 z-9999 p-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl shadow-md transition-all flex items-center justify-center"
         title={sidebarOpen ? "Close Sidebar" : "Open Sidebar"}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

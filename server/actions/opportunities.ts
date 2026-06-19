@@ -223,6 +223,17 @@ export async function moveOpportunity(
       }
     }
 
+    // Reschedule (CT → RSD, etc.) cancels any booked trial slot synchronously —
+    // inside the move transaction, BEFORE the response returns — so the kanban
+    // refetch reliably shows the lead's Trial Class time as reset. (The old
+    // fire-and-forget deletion in runStageSideEffects raced the refetch, so the
+    // card kept showing the stale trial pill.)
+    if (isReschedule) {
+      await tx.crm_appointment.deleteMany({
+        where: { tenantId, contactId: opportunity.contactId, title: 'Trial Class' },
+      })
+    }
+
     const updated = await tx.crm_opportunity.update({
       where: { id: opportunityId },
       data: {
@@ -289,18 +300,9 @@ async function runStageSideEffects(args: {
   }
 
   if (isReschedule) {
-    // Moving a confirmed trial into Reschedule cancels the booked slot — leaving
-    // it would keep the slot "full" and still surface the lead on the trial
-    // schedule. The new date is captured as a follow-up task; the appointment is
-    // re-created when the lead is moved back into "Confirmed for Trial".
-    try {
-      await prisma.crm_appointment.deleteMany({
-        where: { tenantId, contactId: opportunity.contactId, title: 'Trial Class' },
-      })
-    } catch (err) {
-      console.error('[moveOpportunity] failed to cancel trial appointment on reschedule:', err)
-    }
-
+    // The booked trial slot was already cancelled synchronously inside the move
+    // transaction (see moveOpportunity) so the kanban card's trial time clears
+    // immediately. Here we only schedule the new-date follow-up task.
     if (extras.rescheduleDate) {
       try {
         const dueAt = new Date(`${extras.rescheduleDate}T09:00:00`)

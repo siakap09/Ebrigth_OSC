@@ -261,13 +261,18 @@ export async function fetchAllEventData(): Promise<{
               i.status, i.invited_by, i.invited_at, i.confirmed_at,
               i.attendance_marked_at, i.attendance_marked_by, i.notes, i.invite_type,
               i.coach_id, i.coach_name, i.paid, i.video_sent_to_parent, i.video_link,
-              s.name           AS student_name,
+              -- Name resolution, best first: the live studentrecords name, else
+              -- the snapshot saved at invite time, else the archived_students
+              -- record (recovers students removed from studentrecords).
+              COALESCE(s.name, i.student_name_snapshot, a.name) AS student_name,
               s.grade_chapter  AS student_grade_chapter,
               s.guardian_name  AS student_parent_name,
               s.guardian_mobile AS student_parent_phone
          FROM pcm_invitations i
          LEFT JOIN studentrecords s
                 ON s.id::text = i.student_id
+         LEFT JOIN archived_students a
+                ON a.no::text = i.student_id
         WHERE i.tenant_id = $1`,
       [TENANT]
     ).catch((err) => {
@@ -279,7 +284,7 @@ export async function fetchAllEventData(): Promise<{
         `SELECT id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
                 invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes,
                 invite_type, coach_id, coach_name, paid, video_sent_to_parent, video_link,
-                NULL::text AS student_name,
+                student_name_snapshot AS student_name,
                 NULL::text AS student_grade_chapter,
                 NULL::text AS student_parent_name,
                 NULL::text AS student_parent_phone
@@ -690,8 +695,9 @@ export async function createInvitationRow(args: {
   try {
     const { rows } = await pool.query<InvitationRow>(
       `INSERT INTO pcm_invitations
-         (tenant_id, event_id, session_id, student_id, branch, target_grade, status, invited_by, invited_at, confirmed_at, invite_type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $7 = 'confirmed' THEN now() ELSE NULL END, $9)
+         (tenant_id, event_id, session_id, student_id, branch, target_grade, status, invited_by, invited_at, confirmed_at, invite_type, student_name_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $7 = 'confirmed' THEN now() ELSE NULL END, $9,
+               (SELECT name FROM studentrecords WHERE id::text = $4 LIMIT 1))
        RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
                  invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name, paid, video_sent_to_parent, video_link`,
       [TENANT, args.eventId, args.sessionId, args.studentId, args.branch, args.targetGrade, args.status, args.invitedBy, inviteType]
@@ -834,8 +840,16 @@ export async function markPcmProgressForStudent(
   studentId: string,
   grade: number,
 ): Promise<void> {
+  if (grade < 1) return;
+  // Archived students live in a different table keyed by `no` (id = "arch-<no>").
+  // Route their PCM-progress writeback there so the tick survives like a live
+  // student's.
+  if (studentId.startsWith("arch-")) {
+    await markArchivedPcmProgress(studentId, grade);
+    return;
+  }
   const sid = Number(studentId);
-  if (!Number.isFinite(sid) || grade < 1) return;
+  if (!Number.isFinite(sid)) return;
   const { rows } = await pool.query<{ pcm_progress_json: unknown }>(
     `SELECT pcm_progress_json FROM studentrecords WHERE id = $1`,
     [sid]
@@ -849,6 +863,27 @@ export async function markPcmProgressForStudent(
   await pool.query(
     `UPDATE studentrecords SET pcm_progress_json = $1::jsonb WHERE id = $2`,
     [JSON.stringify(arr), sid]
+  );
+}
+
+/** PCM-progress writeback for an archived student (id "arch-<no>") — mirrors
+ *  markPcmProgressForStudent but targets archived_students keyed on `no`. */
+async function markArchivedPcmProgress(studentId: string, grade: number): Promise<void> {
+  const no = Number(studentId.slice("arch-".length));
+  if (!Number.isFinite(no) || grade < 1) return;
+  const { rows } = await pool.query<{ pcm_progress_json: unknown }>(
+    `SELECT pcm_progress_json FROM archived_students WHERE no = $1`,
+    [no]
+  );
+  if (!rows[0]) return;
+  const arr: boolean[] = Array.isArray(rows[0].pcm_progress_json)
+    ? (rows[0].pcm_progress_json as unknown[]).map(v => v === true)
+    : [];
+  while (arr.length < grade) arr.push(false);
+  arr[grade - 1] = true;
+  await pool.query(
+    `UPDATE archived_students SET pcm_progress_json = $1::jsonb WHERE no = $2`,
+    [JSON.stringify(arr), no]
   );
 }
 

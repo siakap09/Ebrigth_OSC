@@ -87,44 +87,51 @@ export async function GET(req: NextRequest) {
   //   default ("next_7d")        → next 7 days starting today (back-compat)
   const preset = (sp.get('preset') ?? 'next_7d').toLowerCase()
   const today = startOfDayKL()
+  const DAY = 24 * 3600 * 1000
+  const WEEK = 7 * DAY
+  // Monday 00:00 (KL) of the current week, as a real-UTC instant.
+  const wall = new Date(today.getTime() + KL_OFFSET_MS)
+  const dow = wall.getUTCDay() // 0=Sun..6=Sat
+  const daysBackToMon = dow === 0 ? 6 : dow - 1 // 0 when today is Monday
+  const thisMonday = new Date(today.getTime() - daysBackToMon * DAY)
   let from: Date
   let to:   Date
   switch (preset) {
     case 'today':
       from = today
-      to   = new Date(today.getTime() + 24 * 3600 * 1000 - 1)
+      to   = new Date(today.getTime() + DAY - 1)
       break
     case 'yesterday':
-      from = new Date(today.getTime() - 24 * 3600 * 1000)
+      from = new Date(today.getTime() - DAY)
       to   = new Date(today.getTime() - 1)
       break
-    case 'this_week': {
-      const wall = new Date(today.getTime() + KL_OFFSET_MS)
-      const dow = wall.getUTCDay() // 0=Sun
-      const daysBack = dow === 0 ? 6 : dow - 1 // 0 when today is Mon
-      from = new Date(today.getTime() - daysBack * 24 * 3600 * 1000)
-      // End of Sunday (6 days after Monday)
-      const sunMs = today.getTime() + (6 - daysBack) * 24 * 3600 * 1000
-      to   = new Date(sunMs + 24 * 3600 * 1000 - 1)
+    case 'this_week':
+      // Mon 00:00 → Sun 23:59:59.999 (KL) of the current calendar week.
+      from = thisMonday
+      to   = new Date(thisMonday.getTime() + WEEK - 1)
       break
-    }
     case 'last_week':
-      from = new Date(today.getTime() - 7 * 24 * 3600 * 1000)
-      to   = new Date(today.getTime() - 1)
+      from = new Date(thisMonday.getTime() - WEEK)
+      to   = new Date(thisMonday.getTime() - 1)
+      break
+    case 'next_week':
+      // Proper NEXT calendar week (Mon-Sun). NOT a rolling 7 days from today —
+      // that overlapped this week's tail and made this-Sunday trials show up
+      // under "next week" as well.
+      from = new Date(thisMonday.getTime() + WEEK)
+      to   = new Date(thisMonday.getTime() + 2 * WEEK - 1)
       break
     case 'this_month': {
-      const wall = new Date(today.getTime() + KL_OFFSET_MS)
       const monthStartUtc = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), 1)
       const nextMonthStartUtc = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth() + 1, 1)
       from = new Date(monthStartUtc - KL_OFFSET_MS)
       to   = new Date(nextMonthStartUtc - KL_OFFSET_MS - 1)
       break
     }
-    case 'next_week':
     case 'next_7d':
     default:
       from = today
-      to   = new Date(today.getTime() + 7 * 24 * 3600 * 1000 - 1)
+      to   = new Date(today.getTime() + WEEK - 1)
       break
   }
 
@@ -133,7 +140,15 @@ export async function GET(req: NextRequest) {
       tenantId: access.tenantId,
       title: 'Trial Class',
       branchId: { in: branchIds },
-      startAt: { gte: from, lte: to },
+      // Trial appointments are stored "naive-KL-as-UTC" (a 10:30 KL trial has
+      // UTC hour 10:30 — see the slot-label bucketing below). from/to are
+      // real-UTC instants of KL midnights, so shift them +8h to compare in the
+      // same naive-KL space. Without this, the last 8h of Sunday (the evening
+      // slots) spilled out of "this week" into "next week".
+      startAt: {
+        gte: new Date(from.getTime() + KL_OFFSET_MS),
+        lte: new Date(to.getTime() + KL_OFFSET_MS),
+      },
       // Exclude appointments whose lead (contact) was soft-deleted.
       contact: { deletedAt: null },
     },
@@ -148,6 +163,7 @@ export async function GET(req: NextRequest) {
           lastName: true,
           phone: true,
           childAge1: true,
+          leadSource: { select: { name: true } },
           opportunities: {
             where: { deletedAt: null },
             orderBy: { createdAt: 'desc' },
@@ -168,6 +184,7 @@ export async function GET(req: NextRequest) {
     phone: string | null
     branchName: string | null
     region: 'A' | 'B' | 'C' | null
+    source: string | null
     childAge: string | null
     startAt: string
   }
@@ -207,6 +224,7 @@ export async function GET(req: NextRequest) {
       phone:          a.contact.phone,
       branchName,
       region:         branchName ? regionFor(branchName) : null,
+      source:         a.contact.leadSource?.name ?? null,
       childAge:       a.contact.childAge1,
       startAt:        a.startAt.toISOString(),
     })

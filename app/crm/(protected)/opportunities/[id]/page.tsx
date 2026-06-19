@@ -13,7 +13,7 @@ import { NotesPanel, type NotePanelEntry } from '@/components/crm/opportunities/
 import { LeadTransferPanel } from '@/components/crm/opportunities/lead-transfer-panel'
 
 export const metadata = {
-  title: 'Lead Detail | Ebright CRM',
+  title: 'Lead Detail | Ebright Nexus',
 }
 
 interface PageProps {

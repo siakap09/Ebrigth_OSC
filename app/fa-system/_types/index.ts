@@ -316,6 +316,16 @@ export function invitableGradesFor(student: Student): number[] {
   return grades;
 }
 
+/** Render a numeric grade back to its curriculum label. The ladder runs
+ *  G1..G8 (1..8), then the GA series (9..12 → GA1..GA4), then the GB series
+ *  (13..16 → GB1..GB4). Use this everywhere a grade is shown so advanced
+ *  students read as "GA2" / "GB1" rather than "G10" / "G13". */
+export function gradeLabel(grade: number): string {
+  if (grade >= 13 && grade <= 16) return `GB${grade - 12}`;
+  if (grade >= 9 && grade <= 12) return `GA${grade - 8}`;
+  return `G${grade}`;
+}
+
 // ----------------------------------------------------------------------------
 // Invitation — one student invited to one session
 // ----------------------------------------------------------------------------

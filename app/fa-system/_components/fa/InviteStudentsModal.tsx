@@ -6,7 +6,7 @@ import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
 import { Modal } from "@fa/_components/shared/Modal";
 import { StatusPill } from "@fa/_components/fa/StatusPill";
-import { DayPolicy, Invitation, Session, isStudentEligible, hasBacklog, invitableGradesFor, FA_CURRENT_GRADE_MIN_CHAPTER } from "@fa/_types";
+import { DayPolicy, Invitation, Session, isStudentEligible, hasBacklog, invitableGradesFor, FA_CURRENT_GRADE_MIN_CHAPTER, gradeLabel } from "@fa/_types";
 
 export interface InvitePick {
   studentId: string;
@@ -177,8 +177,8 @@ export function InviteStudentsModal({
           aria-label="Filter by grade"
         >
           <option value="all">All grades</option>
-          {[1, 2, 3, 4, 5, 6, 7, 8].map(g => (
-            <option key={g} value={g}>Grade {g}</option>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(g => (
+            <option key={g} value={g}>{gradeLabel(g)}</option>
           ))}
         </select>
 
@@ -288,7 +288,7 @@ export function InviteStudentsModal({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-ink-900">{student.name}</span>
-                      <span className="font-mono text-xs text-ink-400">G{student.grade}·C{student.credit}</span>
+                      <span className="font-mono text-xs text-ink-400">{gradeLabel(student.grade)}·C{student.credit}</span>
                       {student.archived ? (
                         <StatusPill tone="warning" showDot={false}>Archived</StatusPill>
                       ) : !student.active && (
@@ -332,7 +332,7 @@ export function InviteStudentsModal({
                           if (grades.length === 0) {
                             return (
                               <div className="text-[11px] text-ink-400 italic">
-                                Not yet at C{FA_CURRENT_GRADE_MIN_CHAPTER} of G{student.grade} —
+                                Not yet at C{FA_CURRENT_GRADE_MIN_CHAPTER} of {gradeLabel(student.grade)} —
                                 FA tickbox unlocks once the student reaches it.
                               </div>
                             );
@@ -361,16 +361,16 @@ export function InviteStudentsModal({
                                     disabled={disabled}
                                     title={
                                       alreadyBooked
-                                        ? `Already invited for G${g} in this event`
+                                        ? `Already invited for ${gradeLabel(g)} in this event`
                                         : done
-                                          ? `G${g} already completed (history) — not an invitation. Pickable if you want to re-appraise.`
-                                          : `G${g} not done yet — click to invite`
+                                          ? `${gradeLabel(g)} already completed (history) — not an invitation. Pickable if you want to re-appraise.`
+                                          : `${gradeLabel(g)} not done yet — click to invite`
                                     }
                                     className={`text-[11px] font-mono px-2 py-1 rounded border transition-colors ${baseCls} ${
                                       disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
                                     }`}
                                   >
-                                    G{g} {marker}
+                                    {gradeLabel(g)} {marker}
                                   </button>
                                 );
                               })}
