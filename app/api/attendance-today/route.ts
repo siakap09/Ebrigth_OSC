@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { hrfsPrisma } from '@/lib/hrfs';
 import { requireSession, canSeeAllBranches } from '@/lib/auth';
 import { isEmployee } from '@/lib/roles';
+import { remapStScan, stSourceFor } from '@/lib/scan-identity';
 
 // GET /api/attendance-today?date=YYYY-MM-DD
 //
@@ -98,6 +99,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json([]);
     }
 
+    // Scanner-ST collision remap (see @/lib/scan-identity): a caller allowed to
+    // see a remapped person (e.g. Poojha 77020106) must also be served the ST
+    // source id (44080099) that physically carries their scans. We widen the SQL
+    // filter to pull those rows, then re-attribute + re-filter on `allowedSet`
+    // below so only the rows the caller may actually see survive.
+    let allowedSet: Set<string> | null = null;
+    if (empNoFilter !== null) {
+      allowedSet = new Set(empNoFilter);
+      const extra = empNoFilter.map(stSourceFor).filter((x): x is string => !!x);
+      if (extra.length) empNoFilter = [...new Set([...empNoFilter, ...extra])];
+    }
+
     // Pull the day's raw scans (KL-bucketed), already converted to KL wall time.
     const params: unknown[] = [date];
     let filterClause = '';
@@ -132,10 +145,14 @@ export async function GET(req: NextRequest) {
     const groups = new Map<string, { empNo: string; name: string | null; location: string; times: string[] }>();
     for (const r of rawRows) {
       const location = deviceToLocation(r.device_name, r.device_id);
-      const key = `${r.person_id}|${location}`;
+      // Re-attribute ST-device scans whose person_id collides with an HQ staff id.
+      const { personId, name } = remapStScan(r.device_id, r.person_id, r.name);
+      // Drop the HQ source-id rows pulled in only to widen branch-manager scoping.
+      if (allowedSet && !allowedSet.has(personId)) continue;
+      const key = `${personId}|${location}`;
       let g = groups.get(key);
       if (!g) {
-        g = { empNo: r.person_id, name: r.name, location, times: [] };
+        g = { empNo: personId, name, location, times: [] };
         groups.set(key, g);
       }
       g.times.push(r.kl_time); // rows arrive chronologically (ORDER BY event_time)

@@ -75,6 +75,10 @@ interface FAStore {
   reportsLoading: boolean;
   loadReports: () => Promise<void>;
   saveReport: (report: Omit<FAReport, "id" | "createdAt" | "updatedAt">) => Promise<FAReport>;
+  /** Branch uploads a report-delivery evidence photo (base64). */
+  saveReportEvidence: (invitationId: string, base64Data: string, fileName: string, mimeType: string) => Promise<FAReport>;
+  /** Branch removes the evidence photo. */
+  removeReportEvidence: (invitationId: string) => Promise<FAReport>;
 
   // ------- Event CRUD -------
   createEvent: (ev: Omit<FAEvent, "id" | "createdAt">) => Promise<FAEvent>;
@@ -307,6 +311,36 @@ export const useFAStore = create<FAStore>()(
             : [saved, ...s.reports];
           return { reports: next };
         });
+        return saved;
+      },
+      saveReportEvidence: async (invitationId, base64Data, fileName, mimeType) => {
+        const r = await apiJson<{ report: FAReport }>("/api/fa/reports/evidence", {
+          method: "POST",
+          body: JSON.stringify({ invitationId, base64Data, fileName, mimeType }),
+        });
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error;
+          throw new Error(detail || `Upload failed (HTTP ${r.status})`);
+        }
+        const saved = r.data.report;
+        set((s) => ({
+          reports: s.reports.map(x => (x.invitationId === saved.invitationId ? saved : x)),
+        }));
+        return saved;
+      },
+      removeReportEvidence: async (invitationId) => {
+        const r = await apiJson<{ report: FAReport }>(
+          `/api/fa/reports/evidence?invitationId=${encodeURIComponent(invitationId)}`,
+          { method: "DELETE" },
+        );
+        if (!r.ok) {
+          const detail = (r.body as { error?: string })?.error;
+          throw new Error(detail || `Remove failed (HTTP ${r.status})`);
+        }
+        const saved = r.data.report;
+        set((s) => ({
+          reports: s.reports.map(x => (x.invitationId === saved.invitationId ? saved : x)),
+        }));
         return saved;
       },
 

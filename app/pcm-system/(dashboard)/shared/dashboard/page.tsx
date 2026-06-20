@@ -192,7 +192,7 @@ export default function DashboardPage() {
   // stays compact. When the page-level branch filter is set, only that
   // branch's rows survive.
   // Per-branch invite-coverage cards. Target ("should invite") = the branch's
-  // total students ÷ 8; invited = invitations in the selected period. Respects
+  // total students ÷ 12; invited = invitations in the selected period. Respects
   // region (RM) and branch (BM) scope like the rest of the page.
   const branchCards = useMemo(() => {
     const inScope = (code: string) => {
@@ -204,7 +204,7 @@ export default function DashboardPage() {
       .filter(b => inScope(b.code))
       .map(b => {
         const totalStudents = students.filter(s => s.branch === b.code).length;
-        const shouldInvite = Math.round(totalStudents / 8);
+        const shouldInvite = Math.round(totalStudents / 12);
         const invited = filteredInvs.filter(i => i.branch === b.code).length;
         const pct = shouldInvite > 0 ? Math.round((invited / shouldInvite) * 100) : 0;
         return { code: b.code, name: b.name, totalStudents, shouldInvite, invited, pct };
@@ -433,12 +433,12 @@ export default function DashboardPage() {
       </div>
 
       {/* Invite coverage by branch — card grid. Each card: total students,
-          target ("should invite" = total ÷ 8), and invited this period. */}
+          target ("should invite" = total ÷ 12), and invited this period. */}
       <div className="rounded-2xl bg-white shadow-sm border border-ivory-300 overflow-hidden">
         <div className="bg-gradient-to-r from-violet-50 to-indigo-50 px-5 py-3 flex items-center justify-between border-b border-ivory-300">
           <h2 className="text-base font-semibold text-violet-900">Invite coverage by branch</h2>
           <span className="text-xs text-ink-500">
-            Target = total students ÷ 8 · {branchCards.length} branch{branchCards.length !== 1 ? "es" : ""}
+            Target = total students ÷ 12 · {branchCards.length} branch{branchCards.length !== 1 ? "es" : ""}
           </span>
         </div>
         {branchCards.length === 0 ? (

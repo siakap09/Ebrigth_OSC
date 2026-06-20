@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
@@ -10,7 +10,7 @@ import {
 } from "@fa/_types";
 import {
   ClipboardCheck, Search, Printer, Pencil, FileText, Users,
-  FilterIcon,
+  FilterIcon, Camera, Upload, X, Loader2,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -237,6 +237,7 @@ export default function FaReportsListPage() {
                 <th>Total</th>
                 <th>Prepared by</th>
                 <th>Video</th>
+                <th>Report given</th>
                 <th></th>
               </tr>
             </thead>
@@ -306,6 +307,16 @@ export default function FaReportsListPage() {
                         <span className="text-ink-300 italic text-xs">—</span>
                       )}
                     </td>
+                    <td>
+                      {/* Report-delivery evidence. Branch (BM) uploads a photo
+                          once the report is filled; everyone else views it. */}
+                      <EvidenceCell
+                        invitationId={row.invitationId}
+                        filled={!!r}
+                        evidenceLink={r?.evidencePhotoLink}
+                        canUpload={user?.role === "BM"}
+                      />
+                    </td>
                     <td className="text-right">
                       <div className="inline-flex items-center gap-1.5">
                         {/* BMs are view-only — they see filled reports
@@ -345,6 +356,103 @@ export default function FaReportsListPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+// Report-delivery evidence photo cell. View link is shown to everyone; the
+// upload / replace / remove controls render only for the branch (BM) and only
+// once the report is filled (the server enforces both too).
+function EvidenceCell({
+  invitationId, filled, evidenceLink, canUpload,
+}: {
+  invitationId: string;
+  filled: boolean;
+  evidenceLink?: string;
+  canUpload: boolean;
+}) {
+  const saveReportEvidence   = useFAStore(s => s.saveReportEvidence);
+  const removeReportEvidence = useFAStore(s => s.removeReportEvidence);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err,  setErr]  = useState<string | null>(null);
+
+  const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setBusy(true); setErr(null);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload  = () => resolve(String(fr.result));
+        fr.onerror = () => reject(new Error("Could not read the file"));
+        fr.readAsDataURL(file);
+      });
+      await saveReportEvidence(invitationId, base64, file.name, file.type || "image/jpeg");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Not filled → can't attach evidence yet (server enforces this too).
+  if (!filled) return <span className="text-ink-300 italic text-xs">—</span>;
+
+  // Non-branch viewers: link only (or em dash when nothing uploaded).
+  if (!canUpload) {
+    return evidenceLink ? (
+      <a
+        href={evidenceLink}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+        title="View report-delivery photo"
+      >
+        <Camera className="w-3 h-3" /> View
+      </a>
+    ) : (
+      <span className="text-ink-300 italic text-xs">—</span>
+    );
+  }
+
+  // Branch: view + upload/replace + remove.
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      {evidenceLink && (
+        <a
+          href={evidenceLink}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+          title="View report-delivery photo"
+        >
+          <Camera className="w-3 h-3" /> View
+        </a>
+      )}
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onPick} />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+        title={evidenceLink ? "Replace photo" : "Upload report-delivery photo"}
+      >
+        {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+        {busy ? "Uploading…" : evidenceLink ? "Replace" : "Upload"}
+      </button>
+      {evidenceLink && !busy && (
+        <button
+          type="button"
+          onClick={() => { removeReportEvidence(invitationId).catch(e => setErr((e as Error).message)); }}
+          className="inline-flex items-center justify-center w-6 h-6 rounded border border-ivory-300 bg-white text-ink-400 hover:text-rose-600 hover:bg-rose-50"
+          title="Remove photo"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+      {err && <span className="text-[10px] text-rose-600 max-w-[120px] truncate" title={err}>{err}</span>}
+    </div>
   );
 }
 

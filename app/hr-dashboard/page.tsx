@@ -1,415 +1,341 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 
-interface StaffRecord {
-  name: string;
-  branch: string;
-  position: string;
-  dept: string;
-  date: string;
-  employeeId: string;
-  isHighlight: boolean;
-}
+/* ─── Self-contained palette (no dependency on global CSS tokens) ─── */
+const C = {
+  text: "#0f172a", muted: "#94a3b8", border: "#e2e8f0", bg: "#f8fafc",
+  success: "#059669", successLight: "#ecfdf5",
+  brand: "#dc2626", brandLight: "#fef2f2",
+  warning: "#d97706", warningLight: "#fffbeb",
+  purple: "#7c3aed", purpleLight: "rgba(124,58,237,0.08)",
+  orange: "#f97316", orangeLight: "rgba(249,115,22,0.12)",
+  red: "#ef4444", redLight: "rgba(239,68,68,0.1)",
+};
+const cardStyle: React.CSSProperties = {
+  background: "#fff", border: `1px solid ${C.border}`, borderRadius: 16,
+  boxShadow: "0 4px 15px -5px rgba(0,0,0,0.08)", display: "flex", flexDirection: "column",
+};
 
-interface LeaveRecord {
-  employeeCode: string;
-  name: string;
-  position: string;
-  dept: string;
-  branch: string;
-  date: string;
-  reason: string;
-  status: string;
-  days: string;
-  isHighlight: boolean;
+function fmtDate(d: any) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
-
-interface DashboardData {
-  onboarding: StaffRecord[];
-  offboarding: StaffRecord[];
-  mc: LeaveRecord[];
-  mcToday: LeaveRecord[];
-  annualLeave: LeaveRecord[];
-  annualLeaveToday: LeaveRecord[];
-  counts: {
-    onboarding: number;
-    onboardingHighlight: number;
-    offboarding: number;
-    offboardingHighlight: number;
-    mc: number;
-    mcToday: number;
-    mcHighlight: number;
-    annualLeave: number;
-    annualLeaveToday: number;
-    annualLeaveHighlight: number;
-  };
-}
-
-function formatDate(dateStr: string) {
+function isInRange(dateStr: any, startDaysAgo: number, endDaysAhead: number) {
+  if (!dateStr) return false;
   const d = new Date(dateStr);
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const today = new Date(new Date().toDateString());
+  const start = new Date(today); start.setDate(start.getDate() - startDaysAgo);
+  const end = new Date(today); end.setDate(end.getDate() + endDaysAhead);
+  return d >= start && d <= end;
+}
+function daysFromNow(dateStr: any): number | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  const today = new Date(new Date().toDateString());
+  return Math.round((d.getTime() - today.getTime()) / 86400000);
+}
+function DaysLabel({ days }: { days: number | null }) {
+  if (days === null) return null;
+  if (days === 0) return <span style={{ fontSize: 10, fontWeight: 600, color: C.brand, background: C.brandLight, padding: "1px 6px", borderRadius: 4 }}>Today</span>;
+  if (days < 0) return <span style={{ fontSize: 10, color: C.muted }}>{Math.abs(days)}d ago</span>;
+  return <span style={{ fontSize: 10, color: C.muted }}>in {days}d</span>;
 }
 
-function statusLabel(s: string) {
-  if (s === "A") return <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Approved</span>;
-  if (s === "N") return <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Pending</span>;
-  return <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{s}</span>;
-}
-
-type Section = "overview" | "onboarding" | "offboarding" | "mc" | "leave";
-
-export default function HRDashboardPage() {
-  const [activeSection, setActiveSection] = useState<Section>("overview");
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    fetch("/api/hr-dashboard")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) throw new Error(d.error);
-        setData(d);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="animate-spin w-10 h-10 border-4 border-slate-200 border-t-blue-500 rounded-full mx-auto mb-4" />
-          <p className="text-slate-500">Loading dashboard data...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center text-red-500">
-          <p className="text-lg font-bold">Error loading data</p>
-          <p className="text-sm mt-2">{error}</p>
-          <Link href="/dashboards/hrms" className="text-blue-500 mt-4 inline-block">← Back to HRMS</Link>
-        </div>
-      </div>
-    );
-  }
-
-  const c = data.counts;
-
+/* ─── Unified Dashboard Card ─── */
+function DashCard({ title, subtitle, color, lightColor, records, dateField, mainCount, mainLabel, smallCount, smallLabel, extraField, typeField, onViewAll, maxItems, extraCounts, monthSelector, alertNames }: any) {
+  const displayRecords = records.slice(0, maxItems || 8);
+  const dense = !!(extraCounts && extraCounts.length);
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-md">
-            <span className="text-white font-bold text-sm">E</span>
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-slate-800">HR Dashboard</h1>
-            <p className="text-xs text-slate-400">Employee Lifecycle Data</p>
+    <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15, color, letterSpacing: "0.5px" }}>{title}</div>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.3px" }}>{subtitle}</div>
+        </div>
+        <div style={{ display: "flex", gap: dense ? 6 : 12, alignItems: "center" }}>
+          {monthSelector && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, marginRight: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 2, border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden" }}>
+                <button onClick={monthSelector.onPrev} title="Previous month" style={{ background: "transparent", border: "none", padding: "1px 5px", cursor: "pointer", fontSize: 12, color: C.muted }}>‹</button>
+                <div style={{ fontSize: 10, fontWeight: 600, padding: "2px 2px", minWidth: 62, textAlign: "center", whiteSpace: "nowrap" }}>{monthSelector.label}</div>
+                <button onClick={monthSelector.onNext} title="Next month" style={{ background: "transparent", border: "none", padding: "1px 5px", cursor: "pointer", fontSize: 12, color: C.muted }}>›</button>
+              </div>
+              <div style={{ fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: "0.3px" }}>Signed In</div>
+            </div>
+          )}
+          {extraCounts && extraCounts.map((ec: any, i: number) => {
+            const clickable = typeof ec.onClick === "function";
+            return (
+              <div key={i} onClick={clickable ? ec.onClick : undefined} title={clickable ? "Click to see details" : undefined}
+                style={{ textAlign: "center", cursor: clickable ? "pointer" : "default", padding: clickable ? "2px 4px" : 0, borderRadius: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: clickable ? color : C.text }}>{ec.value}</div>
+                <div style={{ fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: "0.3px", whiteSpace: "nowrap" }}>{ec.label}</div>
+              </div>
+            );
+          })}
+          {smallCount !== undefined && (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: dense ? 13 : 14, fontWeight: 700, color: C.text }}>{smallCount}</div>
+              <div style={{ fontSize: 8, color: C.muted, textTransform: "uppercase", letterSpacing: "0.3px", whiteSpace: "nowrap" }}>{smallLabel}</div>
+            </div>
+          )}
+          <div style={{ background: lightColor, borderRadius: 10, padding: dense ? "5px 9px" : "8px 16px", textAlign: "center", minWidth: dense ? 42 : 60 }}>
+            <div style={{ fontSize: dense ? 22 : 28, fontWeight: 800, color, lineHeight: 1 }}>{mainCount}</div>
+            <div style={{ fontSize: 8, color: C.muted, marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.3px", whiteSpace: "nowrap" }}>{mainLabel}</div>
           </div>
         </div>
-        <Link
-          href="/dashboards/hrms"
-          className="text-sm text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-all"
-        >
-          ← Back to HRMS
-        </Link>
       </div>
 
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
-        {/* Overview */}
-        {activeSection === "overview" && (
-          <>
-            {/* 2x2 Breakdown Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Onboarding */}
-              <button
-                onClick={() => setActiveSection("onboarding")}
-                className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 text-left transition-all hover:shadow-md hover:border-emerald-300 active:scale-[0.98]"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800 uppercase">Onboarding</h3>
-                    <p className="text-[11px] text-slate-400">Today &rarr; +6 months</p>
+      <div style={{ flex: 1, maxHeight: 200, overflowY: "auto", padding: "8px 0" }}>
+        {records.length === 0 ? (
+          <div style={{ color: C.muted, fontSize: 13, padding: 20, textAlign: "center" }}>No records in this period</div>
+        ) : (
+          displayRecords.map((r: any, i: number) => {
+            const within2w = isInRange(r[dateField], 0, 14);
+            const highlight = alertNames || within2w;
+            const days = daysFromNow(r[dateField]);
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 20px", background: highlight ? lightColor : "transparent", borderLeft: highlight ? `3px solid ${color}` : "3px solid transparent" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: highlight ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
+                  <div style={{ fontSize: 10, color: C.muted, display: "flex", gap: 6, marginTop: 1 }}>
+                    <span>{r.position || r.department_branch}</span>
+                    {r.position && r.department_branch && <span>· {r.department_branch}</span>}
+                    {typeField && r[typeField] && <span style={{ fontWeight: 700, color }}>· {r[typeField]}</span>}
+                    {extraField && r[extraField] && <span>· {r[extraField]}</span>}
                   </div>
                 </div>
-                <div className="text-center my-8">
-                  <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Today</p>
-                  <p className="text-[120px] leading-none font-black text-emerald-500">{c.onboardingHighlight}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
-                    <p className="text-[10px] text-emerald-600 font-semibold uppercase">+2 weeks</p>
-                    <p className="text-4xl font-black text-emerald-600">{c.onboarding}</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
-                    <p className="text-[10px] text-slate-500 font-semibold uppercase">+6 months</p>
-                    <p className="text-4xl font-black text-slate-600">{c.onboarding - c.onboardingHighlight}</p>
-                  </div>
-                </div>
-              </button>
-
-              {/* Offboarding */}
-              <button
-                onClick={() => setActiveSection("offboarding")}
-                className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 text-left transition-all hover:shadow-md hover:border-red-300 active:scale-[0.98]"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800 uppercase">Offboarding</h3>
-                    <p className="text-[11px] text-slate-400">Today &rarr; +1 month</p>
-                  </div>
-                </div>
-                <div className="text-center my-8">
-                  <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Today</p>
-                  <p className="text-[120px] leading-none font-black text-red-500">{c.offboardingHighlight}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
-                    <p className="text-[10px] text-emerald-600 font-semibold uppercase">+2 weeks</p>
-                    <p className="text-4xl font-black text-emerald-600">{c.offboarding}</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
-                    <p className="text-[10px] text-slate-500 font-semibold uppercase">+1 month</p>
-                    <p className="text-4xl font-black text-slate-600">{c.offboarding - c.offboardingHighlight}</p>
-                  </div>
-                </div>
-              </button>
-
-              {/* MC */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 transition-all hover:shadow-md hover:border-amber-300">
-                <div className="mb-3">
-                  <h3 className="text-sm font-bold text-slate-800 uppercase">MC</h3>
-                  <p className="text-[11px] text-slate-400">Today</p>
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex flex-col items-center justify-center min-w-[100px] bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                    <p className="text-[10px] text-amber-600 font-semibold uppercase">Today</p>
-                    <p className="text-6xl font-black text-amber-500">{c.mcToday}</p>
-                  </div>
-                  <div className="flex-1 overflow-y-auto max-h-[180px] space-y-1 flex flex-col justify-center">
-                    {data.mcToday.length === 0 ? (
-                      <p className="text-sm text-slate-400 italic py-2">No MC for today</p>
-                    ) : (
-                      data.mcToday.map((row, i) => (
-                        <div key={i} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg bg-amber-50">
-                          <span className="text-slate-700 font-medium truncate mr-2">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" />
-                            {row.name}
-                          </span>
-                          <span className="text-slate-400 whitespace-nowrap text-[11px]">{formatDate(row.date)}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 500 }}>{fmtDate(r[dateField])}</div>
+                  <DaysLabel days={days} />
                 </div>
               </div>
-
-              {/* Annual Leave */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 transition-all hover:shadow-md hover:border-purple-300">
-                <div className="mb-3">
-                  <h3 className="text-sm font-bold text-slate-800 uppercase">Annual Leave</h3>
-                  <p className="text-[11px] text-slate-400">Today</p>
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex flex-col items-center justify-center min-w-[100px] bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
-                    <p className="text-[10px] text-purple-600 font-semibold uppercase">Today</p>
-                    <p className="text-6xl font-black text-purple-500">{c.annualLeaveToday}</p>
-                  </div>
-                  <div className="flex-1 overflow-y-auto max-h-[180px] space-y-1 flex flex-col justify-center">
-                    {data.annualLeaveToday.length === 0 ? (
-                      <p className="text-sm text-slate-400 italic py-2">No Annual Leave for today</p>
-                    ) : (
-                      data.annualLeaveToday.map((row, i) => (
-                        <div key={i} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg bg-purple-50">
-                          <span className="text-slate-700 font-medium truncate mr-2">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-500 mr-1.5" />
-                            {row.name}
-                          </span>
-                          <span className="text-slate-400 whitespace-nowrap text-[11px]">{formatDate(row.date)}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-          </>
+            );
+          })
         )}
-
-        {/* Onboarding Detail */}
-        {activeSection === "onboarding" && (
-          <DetailSection title={`Onboarding (today to +6 months) (${data.onboarding.length})`} subtitle="Green = within 2 weeks" color="emerald" onBack={() => setActiveSection("overview")}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-slate-200">
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">#</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">NAME</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">POSITION</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">DEPT / BRANCH</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">START DATE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.onboarding.length === 0 && (
-                  <tr><td colSpan={5} className="py-8 text-center text-slate-400 italic">No onboarding records found</td></tr>
-                )}
-                {data.onboarding.map((row, i) => (
-                  <tr key={i} className={`border-b border-slate-100 ${row.isHighlight ? "bg-emerald-50" : "hover:bg-slate-50"}`}>
-                    <td className="py-3 px-3 text-slate-500">{i + 1}</td>
-                    <td className="py-3 px-3 text-slate-800 font-medium">
-                      {row.name}
-                      {row.isHighlight && <span className="ml-2 inline-block w-2 h-2 rounded-full bg-emerald-500" />}
-                    </td>
-                    <td className="py-3 px-3 text-slate-600">{row.position}</td>
-                    <td className="py-3 px-3 text-slate-600">{row.dept}</td>
-                    <td className="py-3 px-3 text-slate-600 font-medium">{formatDate(row.date)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </DetailSection>
+        {records.length > (maxItems || 8) && (
+          <div style={{ textAlign: "center", padding: 8 }}>
+            <span style={{ fontSize: 11, color: C.muted }}>+{records.length - (maxItems || 8)} more</span>
+          </div>
         )}
+      </div>
 
-        {/* Offboarding Detail */}
-        {activeSection === "offboarding" && (
-          <DetailSection title={`Offboarding (today to +1 month) (${data.offboarding.length})`} subtitle="Green = within 2 weeks" color="red" onBack={() => setActiveSection("overview")}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-slate-200">
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">#</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">NAME</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">POSITION</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">DEPT / BRANCH</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">END DATE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.offboarding.length === 0 && (
-                  <tr><td colSpan={5} className="py-8 text-center text-slate-400 italic">No offboarding records found</td></tr>
-                )}
-                {data.offboarding.map((row, i) => (
-                  <tr key={i} className={`border-b border-slate-100 ${row.isHighlight ? "bg-emerald-50" : "hover:bg-slate-50"}`}>
-                    <td className="py-3 px-3 text-slate-500">{i + 1}</td>
-                    <td className="py-3 px-3 text-slate-800 font-medium">
-                      {row.name}
-                      {row.isHighlight && <span className="ml-2 inline-block w-2 h-2 rounded-full bg-emerald-500" />}
-                    </td>
-                    <td className="py-3 px-3 text-slate-600">{row.position}</td>
-                    <td className="py-3 px-3 text-slate-600">{row.dept}</td>
-                    <td className="py-3 px-3 text-slate-600 font-medium">{formatDate(row.date)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </DetailSection>
-        )}
+      {onViewAll && records.length > 0 && (
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: "8px 20px", textAlign: "center" }}>
+          <button onClick={onViewAll} style={{ background: "none", border: "none", color, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "4px 12px" }}>
+            View All {records.length} Records →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
-        {/* MC Detail */}
-        {activeSection === "mc" && (
-          <DetailSection title={`MC (-2 weeks to today) (${data.mc.length})`} subtitle="Orange = within last 3 days" color="amber" onBack={() => setActiveSection("overview")}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-slate-200">
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">#</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">NAME</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">POSITION</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">DEPT / BRANCH</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">MC DATE</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">REASON</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.mc.length === 0 && (
-                  <tr><td colSpan={6} className="py-8 text-center text-slate-400 italic">No MC records found</td></tr>
-                )}
-                {data.mc.map((row, i) => (
-                  <tr key={i} className={`border-b border-slate-100 ${row.isHighlight ? "bg-amber-50" : "hover:bg-slate-50"}`}>
-                    <td className="py-3 px-3 text-slate-500">{i + 1}</td>
-                    <td className="py-3 px-3 text-slate-800 font-medium">
-                      {row.name}
-                      {row.isHighlight && <span className="ml-2 inline-block w-2 h-2 rounded-full bg-amber-500" />}
-                    </td>
-                    <td className="py-3 px-3 text-slate-600">{row.position}</td>
-                    <td className="py-3 px-3 text-slate-600">{row.dept}<br /><span className="text-slate-400 text-xs">{row.branch}</span></td>
-                    <td className="py-3 px-3 text-slate-600 font-medium">{formatDate(row.date)}</td>
-                    <td className="py-3 px-3 text-slate-600">{row.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </DetailSection>
-        )}
+const th: React.CSSProperties = { background: C.bg, padding: "12px 16px", textAlign: "left", fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em", color: "#475569", borderBottom: `1px solid ${C.border}` };
+const td: React.CSSProperties = { padding: "12px 16px", borderBottom: "1px solid #f1f5f9", fontSize: 14, color: C.text, verticalAlign: "middle" };
 
-        {/* Annual Leave Detail */}
-        {activeSection === "leave" && (
-          <DetailSection title={`Annual Leave (-1 week to +2 weeks) (${data.annualLeave.length})`} subtitle="Purple = within 1 week" color="purple" onBack={() => setActiveSection("overview")}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-slate-200">
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">#</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">EMPLOYEE CODE</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">LEAVE DATE</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">DAYS</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">REASON</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">STATUS</th>
-                  <th className="text-left py-3 px-3 text-slate-500 font-semibold">REMARK</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.annualLeave.length === 0 && (
-                  <tr><td colSpan={7} className="py-8 text-center text-slate-400 italic">No annual leave records found</td></tr>
-                )}
-                {data.annualLeave.map((row, i) => (
-                  <tr key={i} className={`border-b border-slate-100 ${row.isHighlight ? "bg-purple-50" : "hover:bg-slate-50"}`}>
-                    <td className="py-3 px-3 text-slate-500">{i + 1}</td>
-                    <td className="py-3 px-3 text-slate-800 font-medium font-mono text-xs">
-                      {row.employeeCode}
-                      {row.isHighlight && <span className="ml-2 inline-block w-2 h-2 rounded-full bg-purple-500" />}
-                    </td>
-                    <td className="py-3 px-3 text-slate-600 font-medium">{formatDate(row.date)}</td>
-                    <td className="py-3 px-3 text-slate-600">{row.days}</td>
-                    <td className="py-3 px-3 text-slate-600">{row.reason}</td>
-                    <td className="py-3 px-3">{statusLabel(row.status)}</td>
-                    <td className="py-3 px-3 text-slate-400 text-xs max-w-[200px] truncate">{(row as any).remark || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </DetailSection>
-        )}
+function DetailHeader({ title, color, subtitle, onBack }: any) {
+  return (
+    <div style={{ background: `linear-gradient(135deg, ${color}, color-mix(in srgb, ${color} 70%, black))`, color: "#fff", borderRadius: 12, padding: "20px 24px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}>
+      <div>
+        <div style={{ fontSize: 20, fontWeight: 700 }}>{title}</div>
+        <div style={{ fontSize: 12, opacity: 0.85, marginTop: 4 }}>{subtitle}</div>
+      </div>
+      <button onClick={onBack} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", padding: "7px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>← Back</button>
+    </div>
+  );
+}
+
+function SignedDetailView({ title, color, records, onBack }: any) {
+  const monthLabel = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  return (
+    <div>
+      <DetailHeader title={title} color={color} subtitle={`${records.length} signed in ${monthLabel}`} onBack={onBack} />
+      <div style={{ ...cardStyle, overflowX: "auto", padding: 0 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr><th style={th}>#</th><th style={th}>Name</th><th style={th}>Position</th><th style={th}>Dept / Branch</th><th style={th}>Signed Date</th><th style={th}>Start Date</th></tr></thead>
+          <tbody>
+            {records.length === 0 ? (
+              <tr><td style={{ ...td, textAlign: "center", color: C.muted, padding: 32 }} colSpan={6}>No staff signed in this month for this category</td></tr>
+            ) : records.map((r: any, i: number) => (
+              <tr key={r.id}>
+                <td style={{ ...td, color: C.muted, fontSize: 11 }}>{i + 1}</td>
+                <td style={{ ...td, fontSize: 13 }}><strong>{r.name}</strong></td>
+                <td style={{ ...td, fontSize: 12 }}>{r.position || "—"}</td>
+                <td style={{ ...td, fontSize: 12 }}>{r.department_branch || "—"}</td>
+                <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, fontWeight: 500 }}>{fmtDate(r.signed_date)}</td>
+                <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12 }}>{r.start_date ? fmtDate(r.start_date) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
 
-function DetailSection({
-  title, subtitle, color, onBack, children,
-}: {
-  title: string; subtitle: string; color: string; onBack: () => void; children: React.ReactNode;
-}) {
-  const bgMap: Record<string, string> = {
-    emerald: "bg-emerald-500", red: "bg-red-500", amber: "bg-amber-500", purple: "bg-purple-500",
-  };
+function DetailView({ title, color, lightColor, records, dateField, dateLabel, typeField, typeLabel, alertNames, onBack }: any) {
   return (
-    <div className="space-y-4">
-      <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-700 transition-colors">
-        ← Back to Overview
-      </button>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className={`${bgMap[color] || bgMap.emerald} text-white px-6 py-4`}>
-          <h2 className="text-lg font-bold">{title}</h2>
-          <p className="text-sm opacity-80">{subtitle}</p>
+    <div>
+      <DetailHeader title={title} color={color} subtitle={`${records.length} staff · Highlighted = within 2 weeks`} onBack={onBack} />
+      <div style={{ ...cardStyle, overflowX: "auto", padding: 0 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr><th style={th}>#</th><th style={th}>Name</th><th style={th}>Position</th><th style={th}>Dept / Branch</th>{typeField && <th style={th}>{typeLabel || "Leave Type"}</th>}<th style={th}>{dateLabel}</th><th style={th}></th></tr></thead>
+          <tbody>
+            {records.length === 0 ? (
+              <tr><td style={{ ...td, textAlign: "center", color: C.muted, padding: 32 }} colSpan={typeField ? 7 : 6}>No records</td></tr>
+            ) : records.map((r: any, i: number) => {
+              const within2w = isInRange(r[dateField], 0, 14);
+              const highlight = alertNames || within2w;
+              const days = daysFromNow(r[dateField]);
+              return (
+                <tr key={r.id ?? i} style={highlight ? { background: lightColor } : {}}>
+                  <td style={{ ...td, color: C.muted, fontSize: 11 }}>{i + 1}</td>
+                  <td style={{ ...td, fontSize: 13 }}>
+                    {highlight && <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: color, marginRight: 8 }} />}
+                    <strong>{r.name}</strong>
+                  </td>
+                  <td style={{ ...td, fontSize: 12 }}>{r.position}</td>
+                  <td style={{ ...td, fontSize: 12 }}>{r.department_branch}</td>
+                  {typeField && <td style={{ ...td, fontSize: 12, fontWeight: 700, color }}>{r[typeField] || "—"}</td>}
+                  <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, fontWeight: within2w ? 600 : 400 }}>{fmtDate(r[dateField])}</td>
+                  <td style={td}><DaysLabel days={days} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function currentYearMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function shiftMonth(ym: string, delta: number) {
+  const [yStr, mStr] = ym.split("-");
+  const y = Number(yStr) || 1970; const m = Number(mStr) || 1;
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function formatMonthLabel(ym: string) {
+  const [yStr, mStr] = ym.split("-");
+  const y = Number(yStr) || 1970; const m = Number(mStr) || 1;
+  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+export default function HRDashboardPage() {
+  const [detailView, setDetailView] = useState<string | null>(null);
+  const [signedMonth, setSignedMonth] = useState(currentYearMonth());
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch(`/api/hr-dashboard?month=${signedMonth}`)
+      .then(r => r.ok ? r.json() : r.json().then((j: any) => Promise.reject(new Error(j.error || `HTTP ${r.status}`))))
+      .then(d => { setData(d); setError(""); })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [signedMonth]);
+  useEffect(() => { load(); }, [load]);
+
+  const onboarding = data?.onboarding || [];
+  const offboarding = data?.offboarding || [];
+  const signedCounts = data?.signedCounts || { partTime: 0, fullTime: 0, intern: 0 };
+  const signedStaff = data?.signedStaff || [];
+  const annualLeave = data?.annualLeave || [];
+  const mc = data?.mc || [];
+  const flagged = data?.flagged || [];
+  const mia = data?.mia || [];
+  // MIA card also lists who's missing TODAY (scheduled but not scanned), on top
+  // of the current UL-leave condition. This list naturally changes each new day.
+  const miaMissingDate = data?.miaMissingDate || null;
+  const miaCodes = new Set(mia.map((r: any) => r.code));
+  const miaMissingToday = (data?.miaMissingToday || [])
+    .filter((m: any) => !miaCodes.has(m.code))
+    .map((m: any) => ({ ...m, flag_label: "Missing today", reason: null, last_date: miaMissingDate }));
+  const miaCombined = [...mia, ...miaMissingToday];
+
+  const SIGNED_BUCKETS: Record<string, { title: string; bucket: string }> = {
+    "signed-partTime": { title: "Part Time — Signed This Month", bucket: "partTime" },
+    "signed-fullTime": { title: "Full Time — Signed This Month", bucket: "fullTime" },
+    "signed-intern": { title: "Intern — Signed This Month", bucket: "intern" },
+  };
+
+  const onb2w = onboarding.filter((r: any) => isInRange(r.start_date, 0, 14)).length;
+  const ofb2w = offboarding.filter((r: any) => isInRange(r.end_date, 0, 14)).length;
+  const onbTotal = onboarding.filter((r: any) => { const d = daysFromNow(r.start_date); return d !== null && d >= 0; }).length;
+  const ofbTotal = offboarding.filter((r: any) => { const d = daysFromNow(r.end_date); return d !== null && d >= 0; }).length;
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, padding: "24px 28px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 1280, margin: "0 auto" }}>
+        <div style={{ paddingBottom: 20, borderBottom: `1px solid ${C.border}` }}>
+          <Link href="/dashboards/hrms" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", border: `1px solid ${C.border}`, borderRadius: 10, background: "#fff", fontSize: 13, fontWeight: 600, color: C.text, textDecoration: "none" }}>
+            <span style={{ fontSize: 16 }}>←</span><span>Back to HRMS</span>
+          </Link>
+          <div style={{ marginTop: 16 }}>
+            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.03em", margin: "0 0 6px", color: C.text }}>HR Overview Dashboard</h1>
+            <p style={{ fontSize: 14, color: "#475569", margin: 0 }}>Onboarding · Offboarding · Annual Leave · MC · Flagged · MIA</p>
+          </div>
         </div>
-        <div className="p-4 overflow-x-auto">{children}</div>
+
+        {loading ? (
+          <div style={{ ...cardStyle, padding: 40, textAlign: "center", color: C.muted }}>Loading…</div>
+        ) : error ? (
+          <div style={{ ...cardStyle, padding: 40, textAlign: "center", color: C.brand }}>
+            <div style={{ fontWeight: 700 }}>Failed to load</div>
+            <div style={{ fontSize: 13, marginTop: 6 }}>{error}</div>
+          </div>
+        ) : detailView && detailView in SIGNED_BUCKETS ? (
+          <SignedDetailView title={SIGNED_BUCKETS[detailView].title} color={C.success}
+            records={signedStaff.filter((s: any) => s.bucket === SIGNED_BUCKETS[detailView].bucket)} onBack={() => setDetailView(null)} />
+        ) : detailView === "onboarding" ? (
+          <DetailView title="Onboarding" color={C.success} lightColor={C.successLight} records={onboarding} dateField="start_date" dateLabel="Start Date" onBack={() => setDetailView(null)} />
+        ) : detailView === "offboarding" ? (
+          <DetailView title="Offboarding" color={C.brand} lightColor={C.brandLight} records={offboarding} dateField="end_date" dateLabel="End Date" onBack={() => setDetailView(null)} />
+        ) : detailView === "mc" ? (
+          <DetailView title="MC" color={C.warning} lightColor={C.warningLight} records={mc} dateField="mc_date" dateLabel="MC Date" typeField="leave_type" typeLabel="Leave Type" onBack={() => setDetailView(null)} />
+        ) : detailView === "annual_leave" ? (
+          <DetailView title="Annual Leave" color={C.purple} lightColor={C.purpleLight} records={annualLeave} dateField="al_date" dateLabel="AL Date" onBack={() => setDetailView(null)} />
+        ) : detailView === "flagged" ? (
+          <DetailView title="Flagged — more than 2 SL days this month" color={C.orange} lightColor={C.orangeLight} records={flagged} dateField="last_date" dateLabel="Last SL" typeField="flag_label" typeLabel="SL (this month)" alertNames onBack={() => setDetailView(null)} />
+        ) : detailView === "mia" ? (
+          <DetailView title="MIA — Unpaid Leave (-2 weeks → today) + Missing Today" color={C.red} lightColor={C.redLight} records={miaCombined} dateField="last_date" dateLabel="Last UL / Today" typeField="flag_label" typeLabel="Type" alertNames onBack={() => setDetailView(null)} />
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+            <DashCard title="ONBOARDING" subtitle="-1 week → +6 months" color={C.success} lightColor={C.successLight}
+              records={onboarding} dateField="start_date" mainCount={onb2w} mainLabel="2 Wk" smallCount={onbTotal} smallLabel="6 Mo"
+              monthSelector={{ label: formatMonthLabel(signedMonth), onPrev: () => setSignedMonth(shiftMonth(signedMonth, -1)), onNext: () => setSignedMonth(shiftMonth(signedMonth, +1)) }}
+              extraCounts={[
+                { label: "PT", value: signedCounts.partTime, onClick: () => setDetailView("signed-partTime") },
+                { label: "FT", value: signedCounts.fullTime, onClick: () => setDetailView("signed-fullTime") },
+                { label: "INT", value: signedCounts.intern, onClick: () => setDetailView("signed-intern") },
+              ]}
+              onViewAll={() => setDetailView("onboarding")} />
+            <DashCard title="OFFBOARDING" subtitle="-1 week → +2 months" color={C.brand} lightColor={C.brandLight}
+              records={offboarding} dateField="end_date" mainCount={ofb2w} mainLabel="2 Wk" smallCount={ofbTotal} smallLabel="2 Mo"
+              onViewAll={() => setDetailView("offboarding")} />
+            <DashCard title="ANNUAL LEAVE" subtitle="today → +2 weeks" color={C.purple} lightColor={C.purpleLight}
+              records={annualLeave} dateField="al_date" mainCount={annualLeave.length} mainLabel="Total" extraField="al_duration"
+              onViewAll={() => setDetailView("annual_leave")} />
+            <DashCard title="MC" subtitle="-1 month → today" color={C.warning} lightColor={C.warningLight}
+              records={mc} dateField="mc_date" mainCount={mc.length} mainLabel="Total" typeField="leave_type" extraField="reason"
+              onViewAll={() => setDetailView("mc")} />
+            <DashCard title="FLAGGED" subtitle="SL > 2 · this month" color={C.orange} lightColor={C.orangeLight}
+              records={flagged} dateField="last_date" mainCount={flagged.length} mainLabel="Flagged" typeField="flag_label" extraField="reason" alertNames
+              onViewAll={() => setDetailView("flagged")} />
+            <DashCard title="MIA" subtitle="Unpaid leave · -2 wks → today · + missing today" color={C.red} lightColor={C.redLight}
+              records={miaCombined} dateField="last_date" mainCount={mia.length} mainLabel="UL" smallCount={miaMissingToday.length} smallLabel="Missing" typeField="flag_label" extraField="reason" alertNames
+              onViewAll={() => setDetailView("mia")} />
+          </div>
+        )}
       </div>
     </div>
   );

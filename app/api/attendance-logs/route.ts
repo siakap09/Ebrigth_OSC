@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { hrfsPrisma } from '@/lib/hrfs';
 import { requireSession, canSeeAllBranches } from '@/lib/auth';
 import { isEmployee } from '@/lib/roles';
+import { remapStScan, stSourceFor } from '@/lib/scan-identity';
 
 // GET /api/attendance-logs
 //   ?empNo=44080014&month=4&year=2026                  → exact empNo lookup
@@ -26,6 +27,7 @@ import { isEmployee } from '@/lib/roles';
 interface RawScan {
   person_id: string;
   name: string | null;
+  device_id: string | null;
   kl_date: string;
   kl_time: string;
 }
@@ -110,19 +112,30 @@ export async function GET(req: NextRequest) {
       if (allowedEmpNos !== null && !allowedEmpNos.includes(empNo)) {
         return NextResponse.json([]);
       }
+      // Scanner-ST collision remap (see @/lib/scan-identity): this person's ST
+      // scans may physically sit under a different (HQ) person_id. Pull that
+      // source id too, re-attribute every row, then keep only the rows that
+      // resolve to the requested empNo (their HQ colleague's own rows fall away).
+      const idsToFetch = [empNo];
+      const src = stSourceFor(empNo);
+      if (src) idsToFetch.push(src);
       const rows = await hrfsPrisma.$queryRawUnsafe<RawScan[]>(
-        `SELECT person_id, name,
+        `SELECT person_id, name, device_id,
                 to_char(event_time, 'YYYY-MM-DD') AS kl_date,
                 to_char(event_time, 'HH24:MI:SS') AS kl_time
            FROM public.hikvision_attendance_all
-          WHERE person_id = $1
+          WHERE person_id = ANY($1)
             AND event_time >= $2::date
             AND event_time <  ($2::date + interval '1 month')
             AND person_id IS NOT NULL AND person_id <> '' AND person_id <> '0'
           ORDER BY event_time ASC`,
-        empNo, firstOfMonth,
+        idsToFetch, firstOfMonth,
       );
-      return NextResponse.json(condenseByDay(rows));
+      const remapped = rows
+        .map(r => { const id = remapStScan(r.device_id, r.person_id, r.name);
+                    return { ...r, person_id: id.personId, name: id.name }; })
+        .filter(r => r.person_id === empNo);
+      return NextResponse.json(condenseByDay(remapped));
     }
 
     // ── Name-based lookup (fallback when a staff record has no employeeId) ───────
@@ -145,7 +158,7 @@ export async function GET(req: NextRequest) {
         scopeClause = ph ? ` AND person_id IN (${ph})` : ' AND false';
       }
       const rows = await hrfsPrisma.$queryRawUnsafe<RawScan[]>(
-        `SELECT person_id, name,
+        `SELECT person_id, name, device_id,
                 to_char(event_time, 'YYYY-MM-DD') AS kl_date,
                 to_char(event_time, 'HH24:MI:SS') AS kl_time
            FROM public.hikvision_attendance_all
@@ -156,7 +169,12 @@ export async function GET(req: NextRequest) {
           ORDER BY event_time ASC`,
         ...params,
       );
-      return NextResponse.json(condenseByDay(rows));
+      // Re-attribute ST-device scans for display consistency (see @/lib/scan-identity).
+      const remapped = rows.map(r => {
+        const id = remapStScan(r.device_id, r.person_id, r.name);
+        return { ...r, person_id: id.personId, name: id.name };
+      });
+      return NextResponse.json(condenseByDay(remapped));
     }
 
     return NextResponse.json({ error: 'empNo or staffName is required' }, { status: 400 });
