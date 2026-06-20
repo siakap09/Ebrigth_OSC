@@ -1,17 +1,39 @@
 import { PageHeader } from '../_components/placeholders'
 
-// Placeholder recruitment pipeline. The real stage names/colors will come from
-// the recruitment schema (or the existing hidden "Ebright HR" branch pipeline)
-// once provided — this is a themed PREVIEW of the board's design so the layout,
-// emerald theme, and "same kanban mechanism, different look" are visible now.
+// The real recruitment pipeline (29 stages, confirmed from HR's GHL board). The
+// colours are placeholders for now ("random" per HR) — the live board will read
+// stage colours from the recruitment data once the schema is connected. Shown
+// here so the board's layout + emerald theme are visible against the real flow.
 const PREVIEW_STAGES: Array<{ name: string; code: string; color: string }> = [
-  { name: 'Applied',    code: 'APP', color: 'bg-slate-400' },
-  { name: 'Screening',  code: 'SCR', color: 'bg-sky-400' },
-  { name: 'Interview',  code: 'INT', color: 'bg-indigo-400' },
-  { name: 'Assessment', code: 'ASM', color: 'bg-violet-400' },
-  { name: 'Offer',      code: 'OFR', color: 'bg-amber-400' },
-  { name: 'Hired',      code: 'HIR', color: 'bg-emerald-500' },
-  { name: 'Rejected',   code: 'REJ', color: 'bg-rose-400' },
+  { name: 'Candidate',            code: 'CD',   color: 'bg-slate-400' },
+  { name: 'Intern',               code: 'INT',  color: 'bg-slate-400' },
+  { name: 'Full Time',            code: 'FT',   color: 'bg-slate-400' },
+  { name: 'Part Timer',           code: 'PT',   color: 'bg-slate-400' },
+  { name: 'Buffer Resume',        code: 'BR',   color: 'bg-zinc-400' },
+  { name: 'Resume Submission',    code: 'RS',   color: 'bg-sky-400' },
+  { name: 'Buffer Video',         code: 'BV',   color: 'bg-zinc-400' },
+  { name: 'Complete Submission',  code: 'VS',   color: 'bg-sky-400' },
+  { name: 'Health Declaration',   code: 'HD',   color: 'bg-cyan-400' },
+  { name: 'Google Search',        code: 'GS',   color: 'bg-cyan-400' },
+  { name: 'Interview Date',       code: 'ID',   color: 'bg-indigo-400' },
+  { name: 'Follow Up',            code: 'FUP',  color: 'bg-violet-400' },
+  { name: 'Shortlisted',          code: 'SL',   color: 'bg-violet-400' },
+  { name: 'Reschedule',           code: 'RSD',  color: 'bg-amber-400' },
+  { name: 'Interviewed',          code: 'INT2', color: 'bg-indigo-500' },
+  { name: 'Hired',                code: 'HRD',  color: 'bg-emerald-500' },
+  { name: '1st Day Trial',        code: 'DT1',  color: 'bg-teal-400' },
+  { name: '2nd Day Trial',        code: 'DT2',  color: 'bg-teal-400' },
+  { name: '3rd Day Trial',        code: 'DT3',  color: 'bg-teal-400' },
+  { name: 'Send Agreement Letter',code: 'SAL',  color: 'bg-teal-500' },
+  { name: 'Rejected',             code: 'RJT',  color: 'bg-rose-400' },
+  { name: '1st Training Day',     code: 'TR1',  color: 'bg-green-400' },
+  { name: '2nd Training Day',     code: 'TR2',  color: 'bg-green-400' },
+  { name: '3rd Training Day',     code: 'TR3',  color: 'bg-green-400' },
+  { name: 'Access To Payroll',    code: 'PAY',  color: 'bg-green-500' },
+  { name: 'IOP Sessions 2 week',  code: 'IOP1', color: 'bg-lime-500' },
+  { name: 'IOP Sessions 2nd month',code: 'IOP2',color: 'bg-lime-500' },
+  { name: 'IOP Sessions 3rd month',code: 'IOP3',color: 'bg-lime-600' },
+  { name: 'Buffer (For OD Use)',  code: 'OD',   color: 'bg-slate-400' },
 ]
 
 export default function RecruitmentOpportunityPage() {
