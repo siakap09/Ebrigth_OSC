@@ -36,6 +36,21 @@ if (!url) { console.error('No DATABASE_URL set.'); process.exit(1) }
 const prisma = new PrismaClient({ datasourceUrl: url })
 
 // ─── helpers (shared shape with recruitment-name-crosscheck.mjs) ─────────────
+// Encoding-aware read: GHL/Excel CSV exports are often UTF-16 (with a BOM) or
+// UTF-8-with-BOM. Reading those as plain UTF-8 garbles the header and every
+// column lookup misses (→ 0 rows parsed). Detect the BOM and decode correctly.
+function readText(path) {
+  const buf = readFileSync(path)
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return buf.toString('utf16le').replace(/^﻿/, '')
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    const s = Buffer.alloc(buf.length)            // UTF-16 BE → swap to LE
+    for (let i = 0; i + 1 < buf.length; i += 2) { s[i] = buf[i + 1]; s[i + 1] = buf[i] }
+    return s.toString('utf16le').replace(/^﻿/, '')
+  }
+  let t = buf.toString('utf8')
+  if (t.charCodeAt(0) === 0xfeff) t = t.slice(1)  // strip UTF-8 BOM
+  return t
+}
 function parseCsv(text) {
   const rows = []; let row = [], field = '', q = false
   for (let i = 0; i < text.length; i++) {
@@ -119,8 +134,8 @@ async function main() {
   const stageByName = new Map(stages.map((s) => [s.name.toLowerCase(), s]))
 
   // 2. Parse CSV.
-  const raw = parseCsv(readFileSync(CSV_PATH, 'utf8'))
-  const header = raw[0].map((h) => h.trim())
+  const raw = parseCsv(readText(CSV_PATH))
+  const header = (raw[0] ?? []).map((h) => h.replace(/^﻿/, '').trim())
   const col = (n) => header.findIndex((h) => h.toLowerCase() === n.toLowerCase())
   const I = {
     opp: col('Opportunity name'), name: col('Contact Name'), phone: col('phone'), email: col('email'),
@@ -147,6 +162,18 @@ async function main() {
         nEmail: normEmail(r[I.email]), nPhone: normPhone(r[I.phone]), nName: normName(r[I.name] || r[I.opp]),
       }
     })
+
+  // Diagnostic: if nothing parsed, dump what we saw so the cause is obvious
+  // (wrong delimiter, unexpected header, single-line file, etc.).
+  if (recruits.length === 0) {
+    console.error('\n⚠ Parsed 0 recruits. Diagnostics:')
+    console.error(`  raw rows:        ${raw.length}`)
+    console.error(`  header columns:  ${header.length}`)
+    console.error(`  header:          ${JSON.stringify(header.slice(0, 12))}`)
+    console.error(`  col indices:     ${JSON.stringify(I)}`)
+    console.error(`  first data row:  ${JSON.stringify((raw[1] ?? []).slice(0, 8))}`)
+    process.exit(1)
+  }
 
   // 3. BranchStaff since cutoff → match indexes.
   const sinceDate = new Date(`${SINCE}T00:00:00`)
