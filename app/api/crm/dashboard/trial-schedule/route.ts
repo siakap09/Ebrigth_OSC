@@ -128,6 +128,24 @@ export async function GET(req: NextRequest) {
       to   = new Date(nextMonthStartUtc - KL_OFFSET_MS - 1)
       break
     }
+    case 'custom': {
+      // from/to are YYYY-MM-DD KL calendar days. Build naive-KL midnight then
+      // subtract the offset to get the real-UTC instant — same convention as
+      // the other presets so the +KL_OFFSET appt-window shift below stays valid.
+      const fromStr = sp.get('from')
+      const toStr = sp.get('to')
+      const fp = fromStr?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      const tp = toStr?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (fp && tp) {
+        from = new Date(Date.UTC(+fp[1], +fp[2] - 1, +fp[3]) - KL_OFFSET_MS)
+        to   = new Date(Date.UTC(+tp[1], +tp[2] - 1, +tp[3]) + DAY - 1 - KL_OFFSET_MS)
+      } else {
+        // Malformed/missing dates → fall back to the current week.
+        from = thisMonday
+        to   = new Date(thisMonday.getTime() + WEEK - 1)
+      }
+      break
+    }
     case 'next_7d':
     default:
       from = today

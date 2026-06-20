@@ -46,6 +46,7 @@ type SchedulePreset =
   | 'last_week'
   | 'next_week'
   | 'this_month'
+  | 'custom'
 
 const PRESET_OPTIONS: ReadonlyArray<{ key: SchedulePreset; label: string }> = [
   { key: 'today',      label: 'Today' },
@@ -54,6 +55,7 @@ const PRESET_OPTIONS: ReadonlyArray<{ key: SchedulePreset; label: string }> = [
   { key: 'last_week',  label: 'Last week' },
   { key: 'next_week',  label: 'Next week' },
   { key: 'this_month', label: 'This month' },
+  { key: 'custom',     label: 'Custom' },
 ]
 
 export interface TrialScheduleBranchOption {
@@ -90,7 +92,13 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
   const [activeCell, setActiveCell] = useState<{ day: DayBucket; slot: SlotCell } | null>(null)
   const [drill, setDrill] = useState<{ label: string; students: Student[] } | null>(null)
   const [preset, setPreset] = useState<SchedulePreset>('this_week')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const [pickedBranchId, setPickedBranchId] = useState<string | null>(null)
+
+  // Custom range is "applied" only once both ends are picked; until then the
+  // query falls back to this week so the grid isn't left blank.
+  const customApplied = preset === 'custom' && !!customFrom && !!customTo
 
   // Resolve effective branch: explicit prop wins; otherwise fall back to the
   // internal picker. When the parent passes a branchId but the elevated user
@@ -107,9 +115,17 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
   }, [branchId, branches, pickedBranchId])
 
   const { data, isLoading } = useQuery<TrialScheduleResponse>({
-    queryKey: ['crm', 'dashboard', 'trial-schedule', effectiveBranchId ?? 'none', preset],
+    queryKey: ['crm', 'dashboard', 'trial-schedule', effectiveBranchId ?? 'none', preset, customApplied ? customFrom : '', customApplied ? customTo : ''],
     queryFn: async () => {
-      const params = new URLSearchParams({ preset })
+      // "custom" with both dates → pass from/to; otherwise send the preset (and
+      // fall back to this_week while a custom range is half-entered).
+      const effectivePreset = preset === 'custom' && !customApplied ? 'this_week' : preset
+      const params = new URLSearchParams({ preset: effectivePreset })
+      if (customApplied) {
+        params.set('preset', 'custom')
+        params.set('from', customFrom)
+        params.set('to', customTo)
+      }
       if (effectiveBranchId) params.set('branchId', effectiveBranchId)
       const res = await fetch(`/api/crm/dashboard/trial-schedule?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to load trial schedule')
@@ -169,14 +185,6 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
                 <Lock className="h-2.5 w-2.5" /> Read-only
               </span>
             )}
-            {data && (
-              <span
-                title="Total trials booked in the selected range"
-                className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
-              >
-                {weekTotal} total
-              </span>
-            )}
           </div>
           <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
             Students booked into trial classes for the selected range.{' '}
@@ -184,48 +192,83 @@ export function TrialSchedule({ branchId, branches, readOnly = false }: TrialSch
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {showPicker && (
-            <label className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-1 text-[11px] dark:bg-slate-800">
-              <Building2 className="h-3 w-3 text-slate-400" />
-              <select
-                value={pickedBranchId ?? ''}
-                onChange={(e) => setPickedBranchId(e.target.value || null)}
-                className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-              >
-                <option value="all" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">
-                  All Branches
-                </option>
-                {pickerBranches.map((b) => (
-                  <option
-                    key={b.id}
-                    value={b.id}
-                    className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white"
-                  >
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+        <div className="flex flex-col items-end gap-2">
+          {/* Prominent grand total for the selected range. */}
+          {data && (
+            <div className="flex items-baseline gap-2 rounded-xl bg-indigo-50 px-4 py-2 ring-1 ring-indigo-100 dark:bg-indigo-950/40 dark:ring-indigo-900/50">
+              <span className="text-3xl font-bold leading-none tabular-nums text-indigo-700 dark:text-indigo-300">
+                {weekTotal}
+              </span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">
+                trials total
+              </span>
+            </div>
           )}
 
-          <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 p-0.5 text-[11px] dark:bg-slate-800">
-            <CalendarRange className="ml-1.5 h-3 w-3 text-slate-400" />
-            {PRESET_OPTIONS.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                onClick={() => setPreset(p.key)}
-                className={cn(
-                  'rounded-full px-2.5 py-1 font-medium transition',
-                  preset === p.key
-                    ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-300'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200',
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {showPicker && (
+              <label className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-1 text-[11px] dark:bg-slate-800">
+                <Building2 className="h-3 w-3 text-slate-400" />
+                <select
+                  value={pickedBranchId ?? ''}
+                  onChange={(e) => setPickedBranchId(e.target.value || null)}
+                  className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value="all" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">
+                    All Branches
+                  </option>
+                  {pickerBranches.map((b) => (
+                    <option
+                      key={b.id}
+                      value={b.id}
+                      className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white"
+                    >
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 p-0.5 text-[11px] dark:bg-slate-800">
+              <CalendarRange className="ml-1.5 h-3 w-3 text-slate-400" />
+              {PRESET_OPTIONS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => setPreset(p.key)}
+                  className={cn(
+                    'rounded-full px-2.5 py-1 font-medium transition',
+                    preset === p.key
+                      ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-300'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200',
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom range — shown only when the Custom preset is active. */}
+            {preset === 'custom' && (
+              <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] dark:bg-slate-800">
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                />
+                <span className="text-slate-400">→</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            )}
           </div>
         </div>
       </header>
