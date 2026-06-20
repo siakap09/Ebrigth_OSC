@@ -1684,3 +1684,77 @@ model ShowcaseWaitlist {
   @@index([editionId])
   @@map("showcase_waitlist")
 }
+
+// ============================================================
+// RECRUITMENT MODULE (HR)
+// Additive tables for the HR Recruitment kanban. Mirrors the CRM kanban shape
+// but with its own tables and a 29-stage HR pipeline. Recruits are imported
+// from the GHL "HR Recruitment" export; a recruit that matches a BranchStaff
+// row added since the cutoff is flagged `hired` and carries `branchStaffId`
+// (stored as a plain id — no FK relation, so the existing BranchStaff model is
+// not modified). Lives in this (portal) DB so the hired-match is a same-DB join.
+// ============================================================
+
+model RecStage {
+  id        String   @id @default(uuid())
+  name      String
+  shortCode String   @unique
+  order     Int
+  color     String   @default("slate")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recruits    RecRecruit[]
+  historyFrom RecStageHistory[] @relation("RecFromStage")
+  historyTo   RecStageHistory[] @relation("RecToStage")
+
+  @@index([order])
+  @@map("rec_stage")
+}
+
+model RecRecruit {
+  id               String    @id @default(uuid())
+  name             String
+  email            String?
+  phone            String?
+  source           String?
+  position         String?   // "Working Position Oppo" from the GHL export
+  branch           String?   // branch tag from GHL (e.g. "st", "kd")
+  stageId          String
+  // Hired-match to BranchStaff (added since the import cutoff). Set by the
+  // import's email/phone/name cross-check; null/false until matched.
+  hired            Boolean   @default(false)
+  branchStaffId    Int?
+  // Provenance from the GHL export so re-imports are idempotent.
+  ghlOpportunityId String?   @unique
+  ghlContactId     String?
+  ghlCreatedAt     DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  stage   RecStage          @relation(fields: [stageId], references: [id])
+  history RecStageHistory[]
+
+  @@index([stageId])
+  @@index([hired])
+  @@index([branchStaffId])
+  @@map("rec_recruit")
+}
+
+model RecStageHistory {
+  id          String   @id @default(uuid())
+  recruitId   String
+  fromStageId String?
+  toStageId   String
+  changedBy   String?
+  note        String?
+  changedAt   DateTime @default(now())
+
+  recruit   RecRecruit @relation(fields: [recruitId], references: [id], onDelete: Cascade)
+  fromStage RecStage?  @relation("RecFromStage", fields: [fromStageId], references: [id])
+  toStage   RecStage   @relation("RecToStage", fields: [toStageId], references: [id])
+
+  @@index([recruitId])
+  @@map("rec_stage_history")
+}
