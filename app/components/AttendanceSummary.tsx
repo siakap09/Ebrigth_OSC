@@ -3,8 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, useCallback } from "react";
 
-import { Users, UserCheck, LogOut, UserX, ArrowLeft, MapPin, WifiOff, Loader2, ChevronDown, RefreshCw, CheckCircle2, AlertCircle, Clock, AlertTriangle, Info, Database, Search, X, ArrowUpDown, Wrench, ChevronRight, ChevronLeft, Calendar } from "lucide-react";
+import { Users, UserCheck, LogOut, UserX, ArrowLeft, MapPin, WifiOff, Loader2, ChevronDown, RefreshCw, CheckCircle2, AlertCircle, Clock, AlertTriangle, Info, Database, Search, X, ArrowUpDown, Wrench, ChevronRight, ChevronLeft, Calendar, ShieldCheck, Paperclip, Trash2, Pencil } from "lucide-react";
 import { motion } from "framer-motion";
+import { useSession } from "next-auth/react";
+import { isAdmin, isHOD, isHR, isAcademy } from "@/lib/roles";
 
 import Sidebar from "./Sidebar";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "./ui/Tooltip";
@@ -187,6 +189,17 @@ interface BranchStaffMember {
   workingHours: unknown;
 }
 
+interface Justification {
+  empNo: string;
+  branch: string | null;
+  empName: string | null;
+  date: string;
+  reason: string | null;
+  evidenceUrl: string | null;
+  evidenceName: string | null;
+  justifiedBy: string | null;
+}
+
 export default function AttendanceSummary() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -228,6 +241,22 @@ export default function AttendanceSummary() {
   // all (→ fall back to the single current workingHours). Keeps this dashboard
   // consistent with the Attendance Report, which is also history-aware.
   const [schedulesByDate, setSchedulesByDate] = useState<Record<string, unknown>>({});
+
+  // ── Attendance justifications for the selected date, keyed by empNo ──────────
+  // HR/admin can justify a missing person with a reason and/or uploaded evidence.
+  // A justified person leaves the Missing box and appears in the Justify box.
+  const [justByEmpNo, setJustByEmpNo] = useState<Map<string, Justification>>(new Map());
+  const [justifyTarget, setJustifyTarget] = useState<BranchStaffMember | null>(null);
+  const [justifyReason, setJustifyReason] = useState("");
+  const [justifyFile, setJustifyFile] = useState<File | null>(null);
+  const [justifySaving, setJustifySaving] = useState(false);
+  const [justifyError, setJustifyError] = useState<string | null>(null);
+
+  // Only HR / admin / HOD / academy may record justifications (mirrors the
+  // server-side canSeeAllBranches gate on /api/attendance-justification).
+  const { data: sessionData } = useSession();
+  const role = (sessionData?.user as { role?: unknown } | undefined)?.role;
+  const canJustify = isAdmin(role) || isHOD(role) || isHR(role) || isAcademy(role);
 
   // ── Search + sort ──────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
@@ -316,6 +345,18 @@ export default function AttendanceSummary() {
       .catch(() => setSchedulesByDate({}));
   }, [selectedDate]);
 
+  // ── Load justifications for the selected date ───────────────────────────────
+  const fetchJustifications = useCallback(() => {
+    fetch(`/api/attendance-justification?date=${encodeURIComponent(selectedDate)}`)
+      .then(r => (r.ok ? r.json() : { justifications: [] }))
+      .then((d: { justifications?: Justification[] }) => {
+        const m = new Map<string, Justification>();
+        (d.justifications ?? []).forEach(j => { if (j.empNo) m.set(j.empNo, j); });
+        setJustByEmpNo(m);
+      })
+      .catch(() => setJustByEmpNo(new Map()));
+  }, [selectedDate]);
+
   // Resolve the schedule that applied to an employee on the selected date:
   //   has history → that date's version (or undefined when it predates history)
   //   no history  → the single current workingHours (unchanged behaviour)
@@ -333,6 +374,7 @@ export default function AttendanceSummary() {
   useEffect(() => { fetchAllBranchStaff(); }, [fetchAllBranchStaff]);
   useEffect(() => { fetchLeave(); }, [fetchLeave]);
   useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
+  useEffect(() => { fetchJustifications(); }, [fetchJustifications]);
 
   // Re-pull both staff lists every 30s so employee dashboard edits flow
   // through to the attendance page without a page reload.
@@ -342,9 +384,10 @@ export default function AttendanceSummary() {
       fetchAllBranchStaff();
       fetchLeave();
       fetchSchedules();
+      fetchJustifications();
     }, 30_000);
     return () => clearInterval(id);
-  }, [fetchBranchStaff, fetchAllBranchStaff, fetchLeave, fetchSchedules]);
+  }, [fetchBranchStaff, fetchAllBranchStaff, fetchLeave, fetchSchedules, fetchJustifications]);
 
   // ── Poll /api/attendance-today every 5 seconds (reads from DB, written by office sync script) ──
   const fetchScans = useCallback(async () => {
@@ -465,6 +508,78 @@ export default function AttendanceSummary() {
       setBackfilling(false);
     }
   }, [fetchScans]);
+
+  // ── Justification actions (HR / admin) ──────────────────────────────────────
+  const openJustify = useCallback((s: BranchStaffMember) => {
+    if (!canJustify || !s.employeeId) return;
+    setJustifyTarget(s);
+    setJustifyReason(justByEmpNo.get(s.employeeId)?.reason ?? "");
+    setJustifyFile(null);
+    setJustifyError(null);
+  }, [canJustify, justByEmpNo]);
+
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Could not read the file"));
+      reader.readAsDataURL(file);
+    });
+
+  const saveJustification = useCallback(async () => {
+    if (!justifyTarget?.employeeId) return;
+    if (!justifyReason.trim() && !justifyFile) {
+      setJustifyError("Add a reason or attach evidence.");
+      return;
+    }
+    setJustifySaving(true);
+    setJustifyError(null);
+    try {
+      let evidenceBase64: string | undefined;
+      let evidenceName: string | undefined;
+      let evidenceMime: string | undefined;
+      if (justifyFile) {
+        evidenceBase64 = await fileToBase64(justifyFile);
+        evidenceName = justifyFile.name;
+        evidenceMime = justifyFile.type || "application/octet-stream";
+      }
+      const res = await fetch("/api/attendance-justification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empNo: justifyTarget.employeeId,
+          date: selectedDate,
+          branch: justifyTarget.branch,
+          empName: justifyTarget.name,
+          reason: justifyReason.trim() || null,
+          evidenceBase64, evidenceName, evidenceMime,
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error((e as { error?: string }).error || "Failed to save");
+      }
+      setJustifyTarget(null);
+      setJustifyReason("");
+      setJustifyFile(null);
+      fetchJustifications();
+    } catch (e) {
+      setJustifyError((e as Error).message);
+    } finally {
+      setJustifySaving(false);
+    }
+  }, [justifyTarget, justifyReason, justifyFile, selectedDate, fetchJustifications]);
+
+  const removeJustification = useCallback(async (empNo: string) => {
+    if (!canJustify) return;
+    try {
+      await fetch(
+        `/api/attendance-justification?empNo=${encodeURIComponent(empNo)}&date=${encodeURIComponent(selectedDate)}`,
+        { method: "DELETE" },
+      );
+      fetchJustifications();
+    } catch { /* ignore — list re-pulls on the next poll */ }
+  }, [canJustify, selectedDate, fetchJustifications]);
 
   // ── Filter logs to the selected branch ────────────────────────────────────
   // Show records where the scanner that recorded them is tagged to this location.
@@ -589,12 +704,18 @@ export default function AttendanceSummary() {
     const t = leaveTypeOf(s);
     return !!t && t !== "UL";
   });
-  const miaEmployees = expectedTodayStaff.filter(s => leaveTypeOf(s) === "UL");
+  // Justified: expected staff who would be missing but HR/admin recorded a
+  // reason and/or evidence for the selected date. They move to the Justify box.
+  const justifiedEmployees = expectedTodayStaff.filter(
+    s => s.employeeId && justByEmpNo.has(s.employeeId),
+  );
 
   const missingEmployees = expectedTodayStaff.filter(s => {
     // Anyone with a leave record (any type, incl. UL) is NOT "missing" — they're
-    // accounted for in the On Leave / MIA boxes.
+    // accounted for in the On Leave box.
     if (leaveTypeOf(s)) return false;
+    // A recorded justification moves them to the Justify box, not Missing.
+    if (s.employeeId && justByEmpNo.has(s.employeeId)) return false;
     // Live "today" view: not missing until their scheduled start time passes
     // (e.g. a 09:00 start only counts as missing after 09:00). Past dates are
     // always after start, so this check is skipped for them.
@@ -1160,7 +1281,10 @@ export default function AttendanceSummary() {
                   return (
                     <Tooltip key={`${s.id}-${i}`}>
                       <TooltipTrigger asChild>
-                        <div className="px-4 py-3 flex items-center gap-3 hover:bg-rose-50/30 transition-colors cursor-default">
+                        <div
+                          onClick={() => openJustify(s)}
+                          className={`group px-4 py-3 flex items-center gap-3 hover:bg-rose-50/30 transition-colors ${canJustify ? "cursor-pointer" : "cursor-default"}`}
+                        >
                           <div className={`w-9 h-9 rounded-full ring-2 ${tone} flex items-center justify-center shrink-0 font-semibold text-sm`}>
                             {initial}
                           </div>
@@ -1180,6 +1304,11 @@ export default function AttendanceSummary() {
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200 shrink-0">
                               <Calendar className="w-3 h-3" />
                               {leaveByEmpNo.get(s.employeeId)}
+                            </span>
+                          ) : canJustify ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 ring-1 ring-blue-200 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Pencil className="w-3 h-3" />
+                              Justify
                             </span>
                           ) : (
                             <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
@@ -1256,28 +1385,37 @@ export default function AttendanceSummary() {
             )}
           </div>
 
-          {/* ── MIA (leave type UL) ── */}
+          {/* ── Justify (missing staff with a recorded reason / evidence) ── */}
           <div className="mt-4 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 flex items-center justify-between gap-3 border-b border-gray-200">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="w-1 h-6 bg-amber-500 rounded-full shrink-0" />
-                <h2 className="text-base font-bold text-gray-900 truncate">MIA</h2>
+                <div className="w-1 h-6 bg-emerald-500 rounded-full shrink-0" />
+                <h2 className="text-base font-bold text-gray-900 truncate">Justify</h2>
               </div>
-              {miaEmployees.length > 0 ? (
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200">
-                  <UserX className="w-3.5 h-3.5" />
-                  <span className="text-sm font-bold">{miaEmployees.length}</span>
+              {justifiedEmployees.length > 0 ? (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span className="text-sm font-bold">{justifiedEmployees.length}</span>
                 </div>
               ) : <span className="text-xs text-gray-400">None</span>}
             </div>
-            {miaEmployees.length > 0 && (
-              <div className="max-h-[320px] overflow-y-auto divide-y divide-gray-100">
-                {miaEmployees.map((s, i) => {
+            {justifiedEmployees.length === 0 ? (
+              <div className="px-5 py-4">
+                <p className="text-xs text-gray-400">
+                  {canJustify
+                    ? "Click a name in Missing to record why they're absent (reason and/or evidence)."
+                    : "Missing staff with an HR-recorded reason appear here."}
+                </p>
+              </div>
+            ) : (
+              <div className="max-h-[360px] overflow-y-auto divide-y divide-gray-100">
+                {justifiedEmployees.map((s, i) => {
                   const display = s.name ?? "—";
                   const label = s.branch === "HQ" ? (s.department || s.branch) : s.branch;
+                  const j = s.employeeId ? justByEmpNo.get(s.employeeId) : undefined;
                   return (
-                    <div key={`mia-${s.id}-${i}`} className="px-4 py-2.5 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full ring-2 bg-amber-50 text-amber-600 ring-amber-100 flex items-center justify-center shrink-0 font-semibold text-xs">
+                    <div key={`just-${s.id}-${i}`} className="px-4 py-2.5 flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full ring-2 bg-emerald-50 text-emerald-600 ring-emerald-100 flex items-center justify-center shrink-0 font-semibold text-xs">
                         {display.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1287,10 +1425,41 @@ export default function AttendanceSummary() {
                           {s.role && label && <span className="text-gray-300 text-[11px]">·</span>}
                           {label && <span className="text-[11px] text-gray-400 truncate">{label}</span>}
                         </div>
+                        {j?.reason && (
+                          <p className="text-[11px] text-gray-600 mt-1 line-clamp-2">{j.reason}</p>
+                        )}
+                        <div className="flex items-center gap-3 mt-1">
+                          {j?.evidenceUrl && (
+                            <a
+                              href={j.evidenceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-800"
+                            >
+                              <Paperclip className="w-3 h-3" />
+                              Evidence
+                            </a>
+                          )}
+                          {canJustify && (
+                            <>
+                              <button
+                                onClick={() => openJustify(s)}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-500 hover:text-gray-800"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => s.employeeId && removeJustification(s.employeeId)}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-500 hover:text-rose-700"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                Remove
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200 shrink-0">
-                        UL
-                      </span>
                     </div>
                   );
                 })}
@@ -1447,6 +1616,82 @@ export default function AttendanceSummary() {
           </div>
         </main>
       </div>
+
+      {/* ── Justify absence modal (HR / admin) ── */}
+      {justifyTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => !justifySaving && setJustifyTarget(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-base font-bold text-gray-900">Justify absence</h3>
+              </div>
+              <button
+                onClick={() => !justifySaving && setJustifyTarget(null)}
+                className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div className="text-sm">
+                <p className="font-semibold text-gray-900">{justifyTarget.name}</p>
+                <p className="text-xs text-gray-500">
+                  {justifyTarget.employeeId ?? "—"} · {prettyDateLabel(selectedDate)}
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Reason (optional)</label>
+                <textarea
+                  value={justifyReason}
+                  onChange={e => setJustifyReason(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. Approved WFH, family emergency, scanner error…"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Evidence (optional)</label>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={e => setJustifyFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-xs text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                {justifyFile && <p className="text-[11px] text-gray-500 mt-1 truncate">{justifyFile.name}</p>}
+              </div>
+              <p className="text-[11px] text-gray-400">
+                Provide a reason, evidence, or both. The person then moves from Missing into the Justify box.
+              </p>
+              {justifyError && <p className="text-xs text-rose-600">{justifyError}</p>}
+            </div>
+            <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setJustifyTarget(null)}
+                disabled={justifySaving}
+                className="px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveJustification}
+                disabled={justifySaving}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50"
+              >
+                {justifySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                {justifySaving ? "Saving…" : "Save justification"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </TooltipProvider>
     </div>
   );

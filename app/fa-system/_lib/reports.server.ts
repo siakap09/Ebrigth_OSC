@@ -20,6 +20,7 @@ interface ReportRow {
   prepared_by: string;
   prepared_by_id: string | null;
   video_link: string | null;
+  evidence_photo_link: string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -50,6 +51,7 @@ function rowToReport(r: ReportRow): FAReport {
     preparedBy: r.prepared_by,
     preparedById: r.prepared_by_id ?? undefined,
     videoLink: r.video_link ?? undefined,
+    evidencePhotoLink: r.evidence_photo_link ?? undefined,
     createdAt: isoTs(r.created_at),
     updatedAt: isoTs(r.updated_at),
   };
@@ -58,7 +60,7 @@ function rowToReport(r: ReportRow): FAReport {
 const COLS = `id, invitation_id, student_id, student_name, branch, grade,
               assessment_date, communication_score, analysis_score,
               interaction_score, performance_score, remarks,
-              prepared_by, prepared_by_id, video_link,
+              prepared_by, prepared_by_id, video_link, evidence_photo_link,
               created_at, updated_at`;
 
 // Legacy column set without video_link — used as a fallback on
@@ -86,11 +88,11 @@ export async function fetchAllFaReports(): Promise<FAReport[]> {
     const code = (err as { code?: string }).code;
     if (code === "42P01") return [];
     if (code === "42703") {
-      const { rows } = await pool.query<Omit<ReportRow, "video_link">>(
+      const { rows } = await pool.query<Omit<ReportRow, "video_link" | "evidence_photo_link">>(
         `SELECT ${COLS_LEGACY} FROM fa_assessment_reports WHERE tenant_id = $1 ORDER BY updated_at DESC`,
         [TENANT],
       );
-      return rows.map(r => rowToReport({ ...r, video_link: null }));
+      return rows.map(r => rowToReport({ ...r, video_link: null, evidence_photo_link: null }));
     }
     throw err;
   }
@@ -137,7 +139,7 @@ export async function upsertFaReportRow(
     // upsert without that column so the save still succeeds (videoLink
     // is just silently dropped until migration is applied).
     if ((err as { code?: string }).code !== "42703") throw err;
-    const { rows } = await pool.query<Omit<ReportRow, "video_link">>(
+    const { rows } = await pool.query<Omit<ReportRow, "video_link" | "evidence_photo_link">>(
       `INSERT INTO fa_assessment_reports
         (tenant_id, invitation_id, student_id, student_name, branch, grade,
          assessment_date, communication_score, analysis_score,
@@ -165,10 +167,30 @@ export async function upsertFaReportRow(
         args.preparedBy, args.preparedById ?? null,
       ],
     );
-    return rowToReport({ ...rows[0], video_link: null });
+    return rowToReport({ ...rows[0], video_link: null, evidence_photo_link: null });
   }
 }
 
 export async function deleteFaReportRow(id: string): Promise<void> {
   await pool.query(`DELETE FROM fa_assessment_reports WHERE id = $1 AND tenant_id = $2`, [id, TENANT]);
+}
+
+// Set (or clear, when link is null) the report-delivery evidence photo for one
+// invitation. This is a BRANCH action proving the branch handed the printed
+// report to the student — separate from upsertFaReportRow (which Marketing uses
+// to fill scores) so a photo upload never touches the assessment data, and a
+// report re-save never wipes the photo. Returns null when no report exists yet
+// (the branch can only attach a photo once the report has been filled).
+export async function setFaReportEvidence(
+  invitationId: string,
+  link: string | null,
+): Promise<FAReport | null> {
+  const { rows } = await pool.query<ReportRow>(
+    `UPDATE fa_assessment_reports
+        SET evidence_photo_link = $1, updated_at = now()
+      WHERE invitation_id = $2 AND tenant_id = $3
+      RETURNING ${COLS}`,
+    [link, invitationId, TENANT],
+  );
+  return rows[0] ? rowToReport(rows[0]) : null;
 }

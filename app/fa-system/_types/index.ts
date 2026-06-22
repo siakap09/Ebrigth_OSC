@@ -430,6 +430,10 @@ export interface FAReport {
    *  /Vimeo/YouTube link so parents can watch the student's session.
    *  Shown on the certificate as a clickable link. */
   videoLink?: string;
+  /** Optional Google Drive link to a photo the BRANCH uploads as proof that
+   *  the printed report was handed to the student. Branch uploads (only once
+   *  the report is filled); Marketing/Academy view it read-only. */
+  evidencePhotoLink?: string;
   createdAt: string;
   updatedAt: string;
 }

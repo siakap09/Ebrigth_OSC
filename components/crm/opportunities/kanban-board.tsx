@@ -13,7 +13,7 @@ import {
   Draggable,
   type DropResult,
 } from '@hello-pangea/dnd'
-import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, CalendarDays, AlertTriangle, ArrowRight, MoveRight, PenLine, Settings2, ArrowDownWideNarrow, ArrowUpWideNarrow } from 'lucide-react'
+import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, CalendarDays, AlertTriangle, ArrowRight, MoveRight, PenLine, Settings2, ArrowDownWideNarrow, ArrowUpWideNarrow, Info, ShieldAlert } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CustomiseCardDrawer } from './customise-card-drawer'
 import { loadCardPrefs, saveCardPrefs, type CardPrefs, DEFAULT_CARD_PREFS } from '@/lib/crm/kanban-card-prefs'
@@ -29,6 +29,7 @@ import { KanbanCard } from './kanban-card'
 import { StageChangeModal } from './stage-change-modal'
 import { OpportunityModal } from './opportunity-modal'
 import { DeleteConfirmDialog } from './delete-confirm-dialog'
+import { LeadActionContent } from './lead-action-panel'
 import type { KanbanStage, OpportunityCard } from '@/server/queries/opportunities'
 
 // ─── Lead transition rules ───────────────────────────────────────────────────
@@ -1685,7 +1686,9 @@ export function KanbanBoard({
               order: s.order,
             }))}
             canBypassRules={canBypassRules}
+            isSuperAdmin={canDeleteLeads}
             onChangeStage={(toStageId) => handleStageChangeFromDetail(detailCard.id, toStageId)}
+            onChanged={() => void refetch()}
             onClose={() => setDetailCard(null)}
           />
         )
@@ -1780,7 +1783,9 @@ function OpportunityDetailModal({
   canDelete,
   pipelineStages,
   canBypassRules,
+  isSuperAdmin = false,
   onChangeStage,
+  onChanged,
   onClose,
 }: {
   opportunity: OpportunityCard
@@ -1793,9 +1798,13 @@ function OpportunityDetailModal({
   pipelineStages: StageLite[]
   /** True for admins (canSwitchBranches) and non-lead pipelines (no enforced flow). */
   canBypassRules: boolean
+  /** SUPER_ADMIN only — surfaces the "Admin" action panel (trial/package/week edits). */
+  isSuperAdmin?: boolean
   /** Fires when the user picks a new stage in the dropdown. The parent
    *  handles the optimistic update + popup-or-fire decision. */
   onChangeStage: (toStageId: string) => void
+  /** Fires after an admin edit so the board refetches. */
+  onChanged?: () => void
   onClose: () => void
 }) {
   const { contact } = opportunity
@@ -1882,6 +1891,7 @@ function OpportunityDetailModal({
 
   const deleteMutation = useDeleteOpportunity()
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [adminTab, setAdminTab] = useState<'details' | 'action'>('details')
   const queryClient = useQueryClient()
   const [noteText, setNoteText] = useState('')
   const [savingNote, setSavingNote] = useState(false)
@@ -2008,7 +2018,29 @@ function OpportunityDetailModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-xl bg-white shadow-2xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900">
+      <div className={cn('relative z-10 flex w-full max-h-[85vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900', isSuperAdmin ? 'max-w-3xl' : 'max-w-lg')}>
+        {/* Super-admin sidebar — Details | Action */}
+        {isSuperAdmin && (
+          <nav className="flex w-32 shrink-0 flex-col gap-1 border-r border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+            <div className="mb-1 flex items-center gap-1 px-1 text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              <ShieldAlert className="h-3 w-3" /> Super Admin
+            </div>
+            {([['details', 'Details', Info], ['action', 'Action', Settings2]] as const).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                onClick={() => setAdminTab(key)}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition',
+                  adminTab === key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800',
+                )}
+              >
+                <Icon className="h-4 w-4" /> {label}
+              </button>
+            ))}
+          </nav>
+        )}
+        {/* Content column */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-700 px-5 py-4">
           <div>
@@ -2044,8 +2076,8 @@ function OpportunityDetailModal({
           </button>
         </div>
 
-        {/* Body */}
-        <div className="space-y-4 px-5 py-4 text-sm">
+        {/* Body — Details view (hidden when the Action tab is active) */}
+        <div className={cn('space-y-4 px-5 py-4 text-sm', isSuperAdmin && adminTab === 'action' && 'hidden')}>
           {/* Journey — actual stages this lead has been dragged through */}
           <section>
             <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -2459,6 +2491,13 @@ function OpportunityDetailModal({
           </section>
         </div>
 
+        {/* Action view (super-admin) — re-bucket week, edit trial/package/RSD */}
+        {isSuperAdmin && adminTab === 'action' && (
+          <div className="px-5 py-4">
+            <LeadActionContent opportunityId={opportunity.id} onChanged={() => onChanged?.()} />
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-700 px-5 py-4">
           {canDelete ? (
@@ -2477,6 +2516,7 @@ function OpportunityDetailModal({
           >
             Close
           </button>
+        </div>
         </div>
       </div>
 

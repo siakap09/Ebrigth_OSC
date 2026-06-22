@@ -135,13 +135,28 @@ export async function moveOpportunity(
   // Look up destination stage name so we can branch on semantics
   const toStage = await prisma.crm_stage.findFirst({
     where: { id: toStageId, tenantId },
-    select: { name: true },
+    select: { name: true, shortCode: true },
   })
   const toStageName = toStage?.name?.toLowerCase() ?? ''
+  const toCode = (toStage?.shortCode ?? '').toUpperCase()
 
   const isConfirmedTrial = toStageName === 'confirmed for trial'
   const isEnrolled = toStageName === 'enrolled'
   const isReschedule = toStageName === 'reschedule'
+
+  // Reset a held Trial Class slot when a CONFIRMED lead leaves CT for anywhere
+  // that isn't "past the trial". SU / SNE / CNS / ENR keep the appointment (the
+  // trial happened / is being considered, and the CT dashboard count persists);
+  // every other destination (FU*, CL, DND, NL, RSD, UR_W*, …) frees the slot.
+  const fromStage = await prisma.crm_stage.findFirst({
+    where: { id: fromStageId, tenantId },
+    select: { name: true, shortCode: true },
+  })
+  const fromIsCT =
+    (fromStage?.shortCode ?? '').toUpperCase() === 'CT' ||
+    (fromStage?.name ?? '').toLowerCase() === 'confirmed for trial'
+  const TRIAL_KEEP_CODES = new Set(['SU', 'SNE', 'CNS', 'ENR'])
+  const resetTrialOnLeave = fromIsCT && !isConfirmedTrial && !TRIAL_KEEP_CODES.has(toCode)
 
   // Enforce required stage-specific fields
   if (isConfirmedTrial && (!extras.trialDate || !extras.trialTimeSlot)) {
@@ -229,6 +244,13 @@ export async function moveOpportunity(
     // fire-and-forget deletion in runStageSideEffects raced the refetch, so the
     // card kept showing the stale trial pill.)
     if (isReschedule) {
+      await tx.crm_appointment.deleteMany({
+        where: { tenantId, contactId: opportunity.contactId, title: 'Trial Class' },
+      })
+    }
+
+    // CT → (not SU/SNE/CNS/ENR): free the trial slot the lead was holding.
+    if (resetTrialOnLeave) {
       await tx.crm_appointment.deleteMany({
         where: { tenantId, contactId: opportunity.contactId, title: 'Trial Class' },
       })
@@ -433,6 +455,32 @@ export async function bulkMoveOpportunities(
       changedAt: now,
     })),
   })
+
+  // Free held trial slots for any CT leads bulk-moved to a non-"past-trial"
+  // stage (keep them only for SU / SNE / CNS / ENR) — mirrors moveOpportunity.
+  const toStageRow = await prisma.crm_stage.findFirst({
+    where: { id: toStageId, tenantId },
+    select: { shortCode: true },
+  })
+  const toCode = (toStageRow?.shortCode ?? '').toUpperCase()
+  if (!new Set(['SU', 'SNE', 'CNS', 'ENR']).has(toCode)) {
+    const fromStageIds = Array.from(new Set(opportunities.map((o) => o.stageId)))
+    const ctStages = await prisma.crm_stage.findMany({
+      where: {
+        id: { in: fromStageIds },
+        tenantId,
+        OR: [{ shortCode: 'CT' }, { name: { equals: 'Confirmed for Trial', mode: 'insensitive' } }],
+      },
+      select: { id: true },
+    })
+    const ctStageIds = new Set(ctStages.map((s) => s.id))
+    const ctContactIds = opportunities.filter((o) => ctStageIds.has(o.stageId)).map((o) => o.contactId)
+    if (ctContactIds.length > 0) {
+      await prisma.crm_appointment.deleteMany({
+        where: { tenantId, title: 'Trial Class', contactId: { in: ctContactIds } },
+      })
+    }
+  }
 
   void logAudit({
     tenantId,

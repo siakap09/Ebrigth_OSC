@@ -1,199 +1,381 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { hrfsPrisma } from "@/lib/hrfs";
-import { requireRole, canSeeAllBranches } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { MANAGEMENT_ROLES } from "@/lib/roles";
-import { normalizeLocation } from "@/lib/constants";
+import { remapStScan } from "@/lib/scan-identity";
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+export const dynamic = "force-dynamic";
 
-function isWithinDays(dateStr: string, startDays: number, endDays: number) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const date = new Date(dateStr);
-  date.setHours(0, 0, 0, 0);
-  const diff = (date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
-  return diff >= startDays && diff <= endDays;
+// Autocount Payroll EmployeeCode → real name/role/branch, sourced from
+// ebrightleads_db.public.autocount_employee_map JOINed to hrfs."BranchStaff"
+// (the SAME bridge the internal dashboard uses). Many part-timers' leave comes
+// only through Autocount Payroll, whose API returns no name — so their
+// LeaveTransaction.EmployeeName is NULL and they'd otherwise render as raw codes
+// (e.g. "EBPT216"). This DB is reachable via FA_DATABASE_URL / LEADS_DB_URL.
+interface AutocountEntry { name: string; role: string | null; branch: string | null; status: string | null; }
+let _leadsPool: Pool | null = null;
+function leadsPool(): Pool | null {
+  const url = process.env.FA_DATABASE_URL || process.env.LEADS_DB_URL;
+  if (!url) return null;
+  if (!_leadsPool) _leadsPool = new Pool({ connectionString: url, max: 3 });
+  return _leadsPool;
+}
+async function loadAutocountMap(): Promise<Map<string, AutocountEntry>> {
+  const m = new Map<string, AutocountEntry>();
+  const pool = leadsPool();
+  if (!pool) return m;
+  try {
+    const r = await pool.query(
+      `SELECT m.autocount_code AS code, bs.name, bs.role, bs.branch, bs.status
+         FROM public.autocount_employee_map m
+         JOIN hrfs."BranchStaff" bs ON bs.id = m.branchstaff_id
+        WHERE bs.name IS NOT NULL AND TRIM(bs.name) <> ''`,
+    );
+    for (const row of r.rows) {
+      m.set(String(row.code).trim().toUpperCase(), { name: row.name, role: row.role, branch: row.branch, status: row.status });
+    }
+  } catch (e) {
+    console.warn("[hr-dashboard] autocount map load failed:", (e as Error).message);
+  }
+  return m;
 }
 
-// =============================================================================
-// HARDCODED DATA for Onboarding, Offboarding, MC
-// (will be replaced with database source later)
-// =============================================================================
+// HR Overview Dashboard data — mirrors the internal-dashboard "HR Overview"
+// (Onboarding · Offboarding · Annual Leave · MC · Flagged · MIA) and reads the
+// SAME source of truth: ebright_hrfs public."BranchStaff" + "LeaveTransaction"
+// (via hrfsPrisma). Both tables live in the same DB here, so we can JOIN them
+// directly. We DON'T have the internal app's `autocount_employee_map` bridge,
+// so leave→staff resolution uses LeaveTransaction.EmployeeName (+ a per-code
+// latest-name lookup) name-matched to BranchStaff — the same chain minus the
+// autocount step.
 
-const onboardingRaw = [
-  { name: "MUHAMMAD DENISE HAIQAL BIN SUHAIDI", position: "Full Time", dept: "Optimization", branch: "OD", date: "2026-04-11", employeeId: "440100238" },
-  { name: "MUHAMMAD ALIF HAIQAL BIN ZULKIFLI", position: "Full Time", dept: "Human Resource", branch: "HR", date: "2026-04-11", employeeId: "440100237" },
-  { name: "SHAMOOYA SURESAN", position: "Part Time", dept: "Sri Petaling", branch: "SP", date: "2026-04-11", employeeId: "330900252" },
-  { name: "Amarapreet Saravanan", position: "Part Time", dept: "Tuition Taipan", branch: "TT", date: "2026-04-11", employeeId: "330900253" },
-  { name: "NUR ALYA BINTI MOHD FAUZI", position: "Part Time", dept: "Shah Alam", branch: "SHA", date: "2026-04-11", employeeId: "330900254" },
-  { name: "Gan De Wei", position: "Full Time", dept: "Marketing", branch: "MK", date: "2026-04-18", employeeId: "220100199" },
-  { name: "NUR FELISHA BINTI SHALAHUDIN", position: "Part Time", dept: "Kota Warisan", branch: "KW", date: "2026-04-21", employeeId: "330900255" },
-  { name: "SITI EISYAH BINTI SHEIKH HYLMYE", position: "Part Time", dept: "Damansara Kim", branch: "DK", date: "2026-04-28", employeeId: "330900256" },
-  { name: "SOFIA ADLINA BINTI MOHAMMAD ALI", position: "Intern", dept: "Optimization", branch: "OD", date: "2026-05-05", employeeId: "440100239" },
-  { name: "NURUL AZEYANNA BINTI ZULKIFLI", position: "Full Time", dept: "Optimization", branch: "OD", date: "2026-05-30", employeeId: "44080012" },
-];
+const ISO_DATE = String.raw`^\d{4}-\d{2}-\d{2}$`;
 
-const offboardingRaw = [
-  { name: "SALMAN AL-FARID BIN MOHD ROZI", position: "Intern", dept: "Optimization", branch: "OD", date: "2026-05-14", employeeId: "440100240" },
-  { name: "ASHWIN A/L CHANDRA SAKARAN", position: "Intern", dept: "Optimization", branch: "OD", date: "2026-04-19", employeeId: "330900257" },
-  { name: "FERRIS FABIANSYAH UMAR", position: "Intern", dept: "Optimization", branch: "OD", date: "2026-04-30", employeeId: "330900258" },
-];
+// BranchStaff projection used by onboarding/offboarding.
+const STAFF_COLS = `
+  id, name,
+  role AS position,
+  COALESCE(NULLIF(TRIM(department), ''), branch) AS department_branch,
+  NULLIF(TRIM(start_date), '') AS start_date,
+  NULLIF(TRIM("endDate"), '')  AS end_date
+`;
 
-// MC data is now fetched from the MedicalLeave table (see below)
+// Role → PT / FT / INT bucket (for the "signed this month" counts).
+const BUCKET_SQL = `
+  CASE
+    WHEN role ILIKE 'PT%' OR role ILIKE '%Part Time%'              THEN 'partTime'
+    WHEN role ILIKE 'INT%' OR role ILIKE '%Intern%'                THEN 'intern'
+    WHEN role ILIKE 'FT%' OR role ILIKE '%Full Time%'
+      OR role IN ('BM','CEO','Executive/Coach')                     THEN 'fullTime'
+    ELSE 'other'
+  END`;
 
-export async function GET() {
-  const { session, error } = await requireRole(MANAGEMENT_ROLES);
+// signed_date is free-text in three shapes — parse each, COALESCE.
+const SIGNED_DATE_PARSED = `
+  COALESCE(
+    CASE WHEN signed_date ~ '^\\d{4}-\\d{2}-\\d{2}$'
+         THEN to_date(signed_date, 'YYYY-MM-DD') END,
+    CASE WHEN signed_date ~ '^\\d{1,2}-[A-Za-z]{3}-\\d{2}$'
+         THEN to_date(signed_date, 'FMDD-Mon-YY') END,
+    CASE WHEN signed_date ~* '^\\d{1,2}(st|nd|rd|th)?\\s+[A-Za-z]+\\s+\\d{4}$'
+         THEN to_date(regexp_replace(signed_date, '(?i)(\\d+)(st|nd|rd|th)', '\\1'),
+                      'FMDD FMMonth YYYY') END
+  )`;
+
+// LeaveTransaction → resolved staff name/role/branch (no autocount bridge).
+// Resolution order: BranchStaff name-match → LeaveTransaction.EmployeeName →
+// latest EmployeeName for that code → MedicalLeave.name for that code → raw code.
+// MedicalLeave bridges EmployeeCode → name for many part-timers whose code never
+// carries a name on LeaveTransaction. Rows that still resolve to only the raw
+// code (no name anywhere) are dropped in buildLeaveAlert().
+const RESOLVED_LEAVE_FROM = `
+  FROM "LeaveTransaction" lt
+  LEFT JOIN LATERAL (
+    SELECT "EmployeeName" FROM "LeaveTransaction" x
+    WHERE x."EmployeeCode" = lt."EmployeeCode"
+      AND x."EmployeeName" IS NOT NULL AND TRIM(x."EmployeeName") <> ''
+    ORDER BY x.created_at DESC LIMIT 1
+  ) nl ON true
+  LEFT JOIN LATERAL (
+    SELECT name FROM public."MedicalLeave" m
+    WHERE m."employeeCode" = lt."EmployeeCode"
+      AND m.name IS NOT NULL AND TRIM(m.name) <> ''
+      AND UPPER(TRIM(m.name)) <> UPPER(TRIM(m."employeeCode"))
+    ORDER BY m."createdAt" DESC NULLS LAST LIMIT 1
+  ) ml ON true
+  LEFT JOIN "BranchStaff" bs
+    ON UPPER(TRIM(bs.name)) = UPPER(TRIM(COALESCE(NULLIF(TRIM(lt."EmployeeName"), ''), nl."EmployeeName")))`;
+
+const RESOLVED_NAME = `COALESCE(bs.name, NULLIF(TRIM(lt."EmployeeName"), ''), nl."EmployeeName", ml.name, lt."EmployeeCode")`;
+
+type WeekHours = Record<string, { start?: string; end?: string } | null> | null;
+interface AlertLeaveRow {
+  code: string; name: string; position: string | null; department_branch: string | null;
+  leave_date: string; dow: string; reason: string | null; working_hours: WeekHours;
+}
+interface AlertRecord {
+  code: string; name: string; position: string | null; department_branch: string | null;
+  cnt: number; last_date: string | null; reason: string | null; flag_label: string;
+}
+
+// Group approved leave-days of one type into per-person alert records, counting
+// ONLY days the person is scheduled to work (BranchStaff.workingHours; unknown
+// schedule → count every day). Keep people with >= minCount working leave-days.
+function buildLeaveAlert(rows: AlertLeaveRow[], minCount: number, unit: string): AlertRecord[] {
+  const isWorkingDay = (r: AlertLeaveRow) => {
+    const wh = r.working_hours;
+    if (!wh) return true; // unknown schedule → count it
+    const day = wh[r.dow];
+    return !!(day && typeof day === "object");
+  };
+  const byCode = new Map<string, { r: AlertLeaveRow; days: Set<string>; rows: AlertLeaveRow[] }>();
+  for (const r of rows) {
+    if (!isWorkingDay(r)) continue;
+    let p = byCode.get(r.code);
+    if (!p) { p = { r, days: new Set(), rows: [] }; byCode.set(r.code, p); }
+    p.days.add(r.leave_date);
+    p.rows.push(r);
+  }
+  const out: AlertRecord[] = [];
+  for (const p of byCode.values()) {
+    const cnt = p.days.size;
+    if (cnt < minCount) continue;
+    const sorted = p.rows.slice().sort((a, b) => (a.leave_date < b.leave_date ? 1 : -1));
+    out.push({
+      code: p.r.code, name: p.r.name, position: p.r.position, department_branch: p.r.department_branch,
+      cnt, last_date: sorted[0]?.leave_date ?? null,
+      reason: (sorted.find(x => x.reason) || {}).reason ?? null,
+      flag_label: `${cnt} ${unit} days`,
+    });
+  }
+  out.sort((a, b) => b.cnt - a.cnt || ((a.last_date ?? "") < (b.last_date ?? "") ? 1 : -1));
+  return out;
+}
+
+export async function GET(req: NextRequest) {
+  const { error } = await requireRole(MANAGEMENT_ROLES);
   if (error) return error;
 
-  // Branch Managers see only their own branch's HR activity. Admin/HOD see all.
-  // We normalize both sides to canonical branch names so "KLG" / "Klang" /
-  // "klang" all collapse to the same key.
-  const scopeToBranch = !canSeeAllBranches(session);
-  const bmBranchKey = scopeToBranch
-    ? normalizeLocation((session.user as { branchName?: string | null }).branchName ?? null)
-    : null;
-  const matchesBranch = (raw: string | null | undefined) =>
-    !scopeToBranch || (bmBranchKey !== 'Unknown' && normalizeLocation(raw ?? null) === bmBranchKey);
+  const monthParam = String(req.nextUrl.searchParams.get("month") || "").trim();
+  const useMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(monthParam);
+  const monthExpr = useMonth ? "$1::date" : "CURRENT_DATE";
+  const monthArgs = useMonth ? [`${monthParam}-01`] : [];
 
-  const client = await pool.connect();
   try {
-    // --- Onboarding (hardcoded) ---
-    const onboarding = onboardingRaw
-      .filter((r) => matchesBranch(r.branch))
-      .map((r) => ({
-        ...r,
-        isHighlight: isWithinDays(r.date, 0, 14),
-      }));
+    // Autocount code → name bridge (matches the internal dashboard). Applied to
+    // every leave card below so part-timers whose LeaveTransaction.EmployeeName
+    // is NULL show their real name instead of a raw code (e.g. "EBPT216").
+    const autocountMap = await loadAutocountMap();
+    const resolveRow = <T extends { code?: string | null; name?: string | null; position?: string | null; department_branch?: string | null }>(row: T): T => {
+      const code = row.code ? String(row.code).trim().toUpperCase() : "";
+      if (code && (!row.name || row.name.trim() === "" || row.name === row.code) && autocountMap.has(code)) {
+        const a = autocountMap.get(code)!;
+        row.name = a.name;
+        if (!row.position) row.position = a.role;
+        if (!row.department_branch) row.department_branch = a.branch;
+      }
+      return row;
+    };
 
-    // --- Offboarding (hardcoded) ---
-    const offboarding = offboardingRaw
-      .filter((r) => matchesBranch(r.branch))
-      .map((r) => ({
-        ...r,
-        isHighlight: isWithinDays(r.date, 0, 14),
-      }));
-
-    // --- MC (from MedicalLeave table) ---
-    const twoWeeksAgoMc = new Date();
-    twoWeeksAgoMc.setDate(twoWeeksAgoMc.getDate() - 14);
-    const todayMc = new Date();
-    todayMc.setHours(23, 59, 59, 999);
-
-    const mcRes = await client.query(
-      `SELECT "employeeCode", "name", "position", "dept", "branch", "leaveDate", "reason", "status", "days"
-       FROM "MedicalLeave"
-       WHERE "leaveDate" >= $1 AND "leaveDate" <= $2
-       ORDER BY "leaveDate" DESC`,
-      [twoWeeksAgoMc.toISOString(), todayMc.toISOString()]
+    // ── Onboarding: start_date within -1 month .. +6 months, Active. ──
+    const onboarding = await hrfsPrisma.$queryRawUnsafe<any[]>(
+      `SELECT ${STAFF_COLS}
+         FROM "BranchStaff"
+        WHERE start_date ~ $1
+          AND start_date::date >= CURRENT_DATE - INTERVAL '1 month'
+          AND start_date::date <= CURRENT_DATE + INTERVAL '6 months'
+          AND COALESCE(NULLIF(TRIM(status), ''), 'Active') ILIKE 'Active'
+        ORDER BY (start_date::date < CURRENT_DATE),
+                 CASE WHEN start_date::date >= CURRENT_DATE THEN start_date::date END ASC NULLS LAST,
+                 start_date::date DESC`,
+      ISO_DATE,
     );
 
-    const mc = mcRes.rows
-      .filter((row: any) => matchesBranch(row.branch))
-      .map((row: any) => {
-        const ld = new Date(row.leaveDate);
-        const dateStr = ld.toISOString().split("T")[0];
-        return {
-          employeeCode: row.employeeCode,
-          name: row.name || row.employeeCode,
-          position: row.position || "-",
-          dept: row.dept || "-",
-          branch: row.branch || "-",
-          date: dateStr,
-          reason: (row.reason || "").replace(/\r\n|\r|\n/g, " ").trim(),
-          status: row.status,
-          days: row.days,
-          isHighlight: isWithinDays(dateStr, -3, 0),
-        };
-      });
-
-    // --- Annual Leave (from database) ---
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const twoWeeksLater = new Date();
-    twoWeeksLater.setDate(twoWeeksLater.getDate() + 14);
-    const oneWeekLater = new Date();
-    oneWeekLater.setDate(oneWeekLater.getDate() + 7);
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const alRes = await client.query(
-      `SELECT "EmployeeCode", "LeaveDate", "ApplyDate", "ApplyReason", "ApplyStatus", "Days", "ActionRemark"
-       FROM "LeaveTransaction"
-       WHERE "LeaveTypeCode" = 'AL'
-         AND "LeaveDate" >= $1 AND "LeaveDate" <= $2
-       ORDER BY "LeaveDate" DESC`,
-      [oneWeekAgo.toISOString(), twoWeeksLater.toISOString()]
+    // ── Offboarding: endDate within -1 week .. +2 months (any status). ──
+    const offboarding = await hrfsPrisma.$queryRawUnsafe<any[]>(
+      `SELECT ${STAFF_COLS}
+         FROM "BranchStaff"
+        WHERE "endDate" ~ $1
+          AND "endDate"::date >= CURRENT_DATE - INTERVAL '1 week'
+          AND "endDate"::date <= CURRENT_DATE + INTERVAL '2 months'
+        ORDER BY "endDate"::date ASC`,
+      ISO_DATE,
     );
 
-    // Build the set of EmployeeCodes belonging to the BM's branch so we can
-    // filter Annual Leave (LeaveTransaction has no branch column). Admin/HOD
-    // skip this and see all rows.
-    let allowedEmpCodes: Set<string> | null = null;
-    if (scopeToBranch) {
-      const allStaff = await hrfsPrisma.branchStaff.findMany({
-        select: { employeeId: true, branch: true },
-      });
-      allowedEmpCodes = new Set(
-        allStaff
-          .filter(s => bmBranchKey !== 'Unknown' && normalizeLocation(s.branch ?? null) === bmBranchKey)
-          .map(s => s.employeeId)
-          .filter((id): id is string => !!id)
-      );
+    // ── Signed this month → PT/FT/INT counts + list ──
+    const SIGNED_IN_MONTH = `date_trunc('month', ${SIGNED_DATE_PARSED}) = date_trunc('month', ${monthExpr})
+      AND COALESCE(NULLIF(TRIM(status), ''), 'Active') ILIKE 'Active'`;
+    const bucketRows = await hrfsPrisma.$queryRawUnsafe<any[]>(
+      `SELECT ${BUCKET_SQL} AS bucket, COUNT(*)::int AS n FROM "BranchStaff" WHERE ${SIGNED_IN_MONTH} GROUP BY 1`,
+      ...monthArgs,
+    );
+    const signedCounts = { partTime: 0, fullTime: 0, intern: 0 } as Record<string, number>;
+    for (const r of bucketRows) if (r.bucket in signedCounts) signedCounts[r.bucket] = Number(r.n);
+    const signedStaff = await hrfsPrisma.$queryRawUnsafe<any[]>(
+      `SELECT id, name, role AS position,
+              COALESCE(NULLIF(TRIM(department), ''), branch) AS department_branch,
+              ${SIGNED_DATE_PARSED}::text AS signed_date,
+              NULLIF(TRIM(start_date), '') AS start_date,
+              ${BUCKET_SQL} AS bucket
+         FROM "BranchStaff" WHERE ${SIGNED_IN_MONTH}
+        ORDER BY ${SIGNED_DATE_PARSED} DESC, name ASC`,
+      ...monthArgs,
+    );
+
+    // ── Annual Leave: approved AL, today .. +14 days, deduped per person+date. ──
+    let annualLeave = await hrfsPrisma.$queryRawUnsafe<any[]>(
+      `SELECT id, code, name, position, department_branch, al_date, al_duration FROM (
+         SELECT DISTINCT ON (lt."EmployeeCode", lt."LeaveDate"::date, lt."LeaveTypeCode")
+                lt.id, lt."EmployeeCode" AS code,
+                ${RESOLVED_NAME} AS name,
+                bs.role AS position, bs.branch AS department_branch,
+                lt."LeaveDate"::date AS al_date, lt."Days" AS al_duration
+         ${RESOLVED_LEAVE_FROM}
+         WHERE lt."LeaveTypeCode" = 'AL' AND lt."ApplyStatus" = 'A'
+           AND lt."LeaveDate"::date >= CURRENT_DATE
+           AND lt."LeaveDate"::date <= CURRENT_DATE + INTERVAL '14 days'
+           AND (bs.status IS NULL OR bs.status <> 'Inactive')
+         ORDER BY lt."EmployeeCode", lt."LeaveDate"::date, lt."LeaveTypeCode",
+                  (bs.name IS NOT NULL) DESC, lt.created_at DESC
+       ) d ORDER BY al_date ASC`,
+    );
+
+    // ── MC: every approved NON-AL leave, -1 month .. today, deduped, newest first. ──
+    let mc = await hrfsPrisma.$queryRawUnsafe<any[]>(
+      `SELECT id, code, name, position, department_branch, mc_date, leave_type, reason FROM (
+         SELECT DISTINCT ON (lt."EmployeeCode", lt."LeaveDate"::date, lt."LeaveTypeCode")
+                lt.id, lt."EmployeeCode" AS code,
+                ${RESOLVED_NAME} AS name,
+                bs.role AS position, bs.branch AS department_branch,
+                lt."LeaveDate"::date AS mc_date,
+                lt."LeaveTypeCode" AS leave_type, lt."ApplyReason" AS reason
+         ${RESOLVED_LEAVE_FROM}
+         WHERE lt."LeaveTypeCode" IS NOT NULL AND lt."LeaveTypeCode" <> 'AL' AND lt."ApplyStatus" = 'A'
+           AND lt."LeaveDate"::date >= CURRENT_DATE - INTERVAL '1 month'
+           AND lt."LeaveDate"::date <= CURRENT_DATE
+           AND (bs.status IS NULL OR bs.status <> 'Inactive')
+         ORDER BY lt."EmployeeCode", lt."LeaveDate"::date, lt."LeaveTypeCode",
+                  (bs.name IS NOT NULL) DESC, lt.created_at DESC
+       ) d ORDER BY mc_date DESC`,
+    );
+
+    // ── Flagged (SL>2 this month) + MIA (UL last 2 weeks) — working-day filtered. ──
+    const alertRowsSql = (leaveType: string, dateCond: string) =>
+      `SELECT lt."EmployeeCode" AS code,
+              ${RESOLVED_NAME} AS name,
+              bs.role AS position, bs.branch AS department_branch,
+              to_char(lt."LeaveDate"::date, 'YYYY-MM-DD') AS leave_date,
+              trim(to_char(lt."LeaveDate"::date, 'Dy')) AS dow,
+              NULLIF(TRIM(lt."ApplyReason"), '') AS reason,
+              bs."workingHours" AS working_hours
+       ${RESOLVED_LEAVE_FROM}
+       WHERE lt."LeaveTypeCode" = '${leaveType}' AND lt."ApplyStatus" = 'A'
+         AND ${dateCond}
+         AND (bs.status IS NULL OR bs.status <> 'Inactive')`;
+    const THIS_MONTH = `date_trunc('month', lt."LeaveDate"::date) = date_trunc('month', CURRENT_DATE)`;
+    const LAST_2_WEEKS = `lt."LeaveDate"::date >= CURRENT_DATE - INTERVAL '14 days' AND lt."LeaveDate"::date <= CURRENT_DATE`;
+
+    let slRows = await hrfsPrisma.$queryRawUnsafe<AlertLeaveRow[]>(alertRowsSql("SL", THIS_MONTH));
+    let ulRows = await hrfsPrisma.$queryRawUnsafe<AlertLeaveRow[]>(alertRowsSql("UL", LAST_2_WEEKS));
+    // Exclude staff the autocount map ties to an Inactive BranchStaff — the
+    // internal dashboard drops these via its autocount JOIN + status filter, but
+    // our SQL can't JOIN that cross-DB table, so we apply the same exclusion in
+    // JS. Then resolve Autocount-only codes to real names across every card.
+    const isInactiveCode = (code?: string | null) => {
+      const c = code ? String(code).trim().toUpperCase() : "";
+      return !!c && autocountMap.get(c)?.status === "Inactive";
+    };
+    annualLeave = annualLeave.filter((r: any) => !isInactiveCode(r.code)).map(resolveRow);
+    mc = mc.filter((r: any) => !isInactiveCode(r.code)).map(resolveRow);
+    slRows = slRows.filter(r => !isInactiveCode(r.code)).map(resolveRow);
+    ulRows = ulRows.filter(r => !isInactiveCode(r.code)).map(resolveRow);
+    const flagged = buildLeaveAlert(slRows, 3, "SL");
+    const mia = buildLeaveAlert(ulRows, 1, "UL");
+
+    // ── Missing today: scheduled staff who haven't scanned (changes each day) ──
+    // Appended to the MIA card. "Expected" = active + a working slot today (per
+    // BranchStaff.workingHours) whose start time has passed; minus anyone who
+    // scanned (ST-remapped), is on approved leave, or has a recorded
+    // justification today. All "today" filters use Kuala Lumpur wall-time.
+    const todayKL = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
+    const dowKL = new Date().toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Kuala_Lumpur" });
+    const klTime = new Date().toLocaleTimeString("en-GB", { hour12: false, timeZone: "Asia/Kuala_Lumpur" });
+    const nowSeconds = (() => { const [h, m] = klTime.split(":").map(Number); return (h || 0) * 3600 + (m || 0) * 60; })();
+    const toSeconds = (t?: string) => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return (h || 0) * 3600 + (m || 0) * 60; };
+
+    interface StaffRow {
+      code: string; name: string; position: string | null; department_branch: string | null;
+      working_hours: WeekHours; start_date: string | null; end_date: string | null;
     }
+    const staffRows = await hrfsPrisma.$queryRawUnsafe<StaffRow[]>(
+      `SELECT "employeeId" AS code, name, role AS position,
+              COALESCE(NULLIF(TRIM(department), ''), branch) AS department_branch,
+              "workingHours" AS working_hours,
+              NULLIF(TRIM(start_date), '') AS start_date,
+              NULLIF(TRIM("endDate"), '')  AS end_date
+         FROM "BranchStaff"
+        WHERE COALESCE(NULLIF(TRIM(status), ''), 'Active') ILIKE 'Active'
+          AND "employeeId" IS NOT NULL AND "employeeId" <> ''
+          AND branch IN ('HQ', 'ST')`,
+    );
+    const scanRows = await hrfsPrisma.$queryRawUnsafe<{ person_id: string; device_id: string | null }[]>(
+      `SELECT DISTINCT person_id, device_id
+         FROM public.hikvision_attendance_all
+        WHERE event_time::date = $1::date
+          AND person_id IS NOT NULL AND person_id <> '' AND person_id <> '0'`,
+      todayKL,
+    );
+    const scannedSet = new Set(scanRows.map(r => remapStScan(r.device_id, r.person_id, null).personId));
+    const leaveRows = await hrfsPrisma.$queryRawUnsafe<{ code: string }[]>(
+      `SELECT DISTINCT bs."employeeId" AS code
+         FROM "LeaveTransaction" lt
+         JOIN "BranchStaff" bs ON UPPER(TRIM(bs.name)) = UPPER(TRIM(lt."EmployeeName"))
+        WHERE lt."ApplyStatus" = 'A' AND lt."LeaveDate"::date = $1::date
+          AND bs."employeeId" IS NOT NULL`,
+      todayKL,
+    );
+    const onLeaveSet = new Set(leaveRows.map(r => r.code));
+    const justRows = await hrfsPrisma.$queryRawUnsafe<{ code: string }[]>(
+      `SELECT emp_no AS code FROM public.attendance_justification WHERE just_date = $1::date`,
+      todayKL,
+    );
+    const justifiedSet = new Set(justRows.map(r => r.code));
 
-    const annualLeave = alRes.rows
-      .filter((row: any) => !allowedEmpCodes || allowedEmpCodes.has(String(row.EmployeeCode)))
-      .map((row: any) => {
-        const ld = new Date(row.LeaveDate);
-        // Extract approver/remark name if present
-        const remark = (row.ActionRemark || "").replace(/\r\n|\r|\n/g, " ").trim();
-        return {
-          employeeCode: row.EmployeeCode,
-          name: row.EmployeeCode,
-          position: "-",
-          dept: "-",
-          branch: "-",
-          date: ld.toISOString().split("T")[0],
-          reason: (row.ApplyReason || "").replace(/\r\n|\r|\n/g, " ").trim(),
-          status: row.ApplyStatus,
-          days: row.Days,
-          remark: remark.substring(0, 80),
-          isHighlight: ld >= todayStart && ld <= oneWeekLater,
-        };
-      });
+    const parseDay = (s: string | null): Date | null => {
+      if (!s) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + "T00:00:00");
+      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (m) return new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00`);
+      return null;
+    };
+    const todayDate = new Date(todayKL + "T00:00:00");
 
-    // --- Today-only lists for overview cards ---
-    const todayStr = new Date().toISOString().split("T")[0];
-    const mcToday = mc.filter((r) => r.date === todayStr);
-    const annualLeaveToday = annualLeave.filter((r) => r.date === todayStr);
+    const miaMissingToday = staffRows.filter(s => {
+      // Active window
+      const sd = parseDay(s.start_date); if (sd && sd > todayDate) return false;
+      const ed = parseDay(s.end_date);   if (ed && ed < todayDate) return false;
+      // Must have a working slot today (rest day / no schedule → not flagged here)
+      const wh = s.working_hours;
+      if (!wh || typeof wh !== "object") return false;
+      const day = (wh as Record<string, { start?: string; end?: string } | null>)[dowKL];
+      if (!day || typeof day !== "object") return false;
+      // Not yet "missing" until the scheduled start time has passed
+      if (nowSeconds < toSeconds(day.start)) return false;
+      // Accounted for elsewhere?
+      if (scannedSet.has(s.code) || onLeaveSet.has(s.code) || justifiedSet.has(s.code)) return false;
+      return true;
+    }).map(s => ({
+      code: s.code, name: s.name, position: s.position, department_branch: s.department_branch,
+    }));
 
     return NextResponse.json({
-      onboarding,
-      offboarding,
-      mc,
-      mcToday,
-      annualLeave,
-      annualLeaveToday,
-      counts: {
-        onboarding: onboarding.length,
-        onboardingHighlight: onboarding.filter((r) => r.isHighlight).length,
-        offboarding: offboarding.length,
-        offboardingHighlight: offboarding.filter((r) => r.isHighlight).length,
-        mc: mc.length,
-        mcToday: mcToday.length,
-        mcHighlight: mc.filter((r) => r.isHighlight).length,
-        annualLeave: annualLeave.length,
-        annualLeaveToday: annualLeaveToday.length,
-        annualLeaveHighlight: annualLeave.filter((r) => r.isHighlight).length,
-      },
+      onboarding, offboarding, signedCounts, signedStaff,
+      signedMonth: useMonth ? monthParam : new Date().toISOString().slice(0, 7),
+      annualLeave, mc, flagged, mia, miaMissingToday, miaMissingDate: todayKL,
     });
   } catch (err: any) {
     console.error("HR Dashboard API error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  } finally {
-    client.release();
+    return NextResponse.json({ error: err?.message || "Failed to load HR dashboard" }, { status: 500 });
   }
 }

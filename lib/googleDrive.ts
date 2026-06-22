@@ -33,19 +33,25 @@ function getDrive() {
   return { drive: driveClient({ version: "v3", auth: authObj }), folderId: folderId.trim() };
 }
 
-/** Upload a base64 JPEG, make it link-viewable, return the shareable link. */
+/**
+ * Upload a base64 file, make it link-viewable, return the shareable link.
+ * `mimeType` defaults to image/jpeg (proof-photo callers) but accepts any type
+ * (e.g. application/pdf, image/png) for justification evidence. Any
+ * `data:<type>;base64,` prefix is stripped regardless of the declared type.
+ */
 export async function uploadToGoogleDrive(
   base64Data: string,
   fileName: string,
+  mimeType: string = "image/jpeg",
 ): Promise<{ fileId: string; webViewLink: string }> {
   const { drive, folderId } = getDrive();
-  const cleaned = base64Data.replace(/^data:image\/\w+;base64,/, "");
+  const cleaned = base64Data.replace(/^data:[^;]+;base64,/, "");
   const buffer = Buffer.from(cleaned, "base64");
   const stream = Readable.from(buffer);
 
   const response = await drive.files.create({
     requestBody: { name: fileName, parents: [folderId] },
-    media: { mimeType: "image/jpeg", body: stream },
+    media: { mimeType, body: stream },
     fields: "id, webViewLink",
     supportsAllDrives: true,
   });

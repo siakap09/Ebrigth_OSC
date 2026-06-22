@@ -104,8 +104,8 @@ export function TicketForm() {
   function handleAttachmentChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) { setAttachment(null); return }
-    if (!['image/jpeg', 'image/png'].includes(f.type)) {
-      toast.error('Only JPG, JPEG or PNG images are allowed')
+    if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(f.type)) {
+      toast.error('Only JPG, JPEG, PNG or WebP images are allowed')
       e.target.value = ''
       return
     }
@@ -117,32 +117,22 @@ export function TicketForm() {
     setAttachment(f)
   }
 
-  // Upload a single image to a freshly-created ticket: presign → PUT to S3 →
-  // register the attachment row. Throws on any step so the caller can warn.
+  // Upload a single image to a freshly-created ticket via the server-side proxy
+  // route (one request: the server streams it to S3 and registers the row).
+  // This replaces the old presign + browser-direct-PUT flow, which failed with
+  // "Failed to fetch" when the S3 bucket's CORS blocked cross-origin PUTs.
   async function uploadLeadAttachment(ticketId: string, file: File) {
-    const presignRes = await fetch(`/api/crm/tickets/${ticketId}/attachments/presign`, {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('fileType', 'general')
+    const res = await fetch(`/api/crm/tickets/${ticketId}/attachments/upload`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: file.name, mimeType: file.type, sizeBytes: file.size }),
+      body: fd,
     })
-    if (!presignRes.ok) throw new Error('Could not get an upload URL')
-    const { url, s3Key } = (await presignRes.json()) as { url: string; s3Key: string }
-
-    const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
-    if (!put.ok) throw new Error('Upload to storage failed')
-
-    const reg = await fetch(`/api/crm/tickets/${ticketId}/attachments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        s3Key,
-        originalName: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
-        fileType: 'general',
-      }),
-    })
-    if (!reg.ok) throw new Error('Could not register the attachment')
+    if (!res.ok) {
+      const msg = await res.json().catch(() => null)
+      throw new Error(msg?.error || 'Upload failed')
+    }
   }
 
   const { control, handleSubmit, watch, setValue, getValues, formState: { errors } } = useForm<FormValues>({
@@ -402,7 +392,7 @@ export function TicketForm() {
             {platformSlug === 'lead' && (
               <div>
                 <Label htmlFor="lead-attachment">
-                  Attachment <span className="font-normal text-slate-400">(optional — JPG / JPEG / PNG)</span>
+                  Attachment <span className="font-normal text-slate-400">(optional — JPG / JPEG / PNG / WebP)</span>
                 </Label>
                 {attachment ? (
                   <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
@@ -434,7 +424,7 @@ export function TicketForm() {
                 <input
                   id="lead-attachment"
                   type="file"
-                  accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                  accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                   onChange={handleAttachmentChange}
                   className="hidden"
                 />
