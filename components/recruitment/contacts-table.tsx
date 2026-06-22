@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Search, UserRoundCheck } from "lucide-react";
+import { RecruitDetailModal } from "@/components/recruitment/recruit-detail-modal";
 
 export interface ContactRow {
   id: string;
@@ -17,6 +18,7 @@ export interface ContactRow {
 
 export function ContactsTable({ rows }: { rows: ContactRow[] }) {
   const [q, setQ] = useState("");
+  const [detailId, setDetailId] = useState<string | null>(null);
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return rows;
@@ -52,7 +54,11 @@ export function ContactsTable({ rows }: { rows: ContactRow[] }) {
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {filtered.map((r) => (
-              <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <tr
+                key={r.id}
+                onClick={() => setDetailId(r.id)}
+                className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40"
+              >
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-1.5">
                     <span className="font-medium text-slate-900 dark:text-white">{r.name}</span>
@@ -76,6 +82,8 @@ export function ContactsTable({ rows }: { rows: ContactRow[] }) {
           </tbody>
         </table>
       </div>
+
+      <RecruitDetailModal recruitId={detailId} onClose={() => setDetailId(null)} />
     </div>
   );
 }

@@ -1,3 +1,6 @@
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/nextauth";
+import { ROLES, normalizeRole } from "@/lib/roles";
 import { getKanban } from "@/lib/recruitment/data";
 import { RecruitmentBoard } from "@/components/recruitment/board";
 import { PageHeader } from "../_components/placeholders";
@@ -6,7 +9,14 @@ import { PageHeader } from "../_components/placeholders";
 export const dynamic = "force-dynamic";
 
 export default async function RecruitmentOpportunityPage() {
-  const data = await getKanban();
+  const [data, session] = await Promise.all([
+    getKanban(),
+    getServerSession(authOptions),
+  ]);
+  // Only SUPER_ADMIN may bulk-delete recruits (mirrors the CRM rule).
+  const canDelete =
+    normalizeRole((session?.user as { role?: string } | undefined)?.role) === ROLES.SUPER_ADMIN;
+
   const columns = data.map((c) => ({
     id: c.id,
     name: c.name,
@@ -14,19 +24,21 @@ export default async function RecruitmentOpportunityPage() {
     color: c.color,
     recruits: c.recruits.map((r) => ({
       id: r.id, name: r.name, source: r.source, position: r.position, branch: r.branch, hired: r.hired,
+      createdAt: r.createdAt.toISOString(),
+      ghlCreatedAt: r.ghlCreatedAt ? r.ghlCreatedAt.toISOString() : null,
     })),
   }));
   const total = columns.reduce((s, c) => s + c.recruits.length, 0);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-6 pt-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 pt-10">
         <PageHeader title="Opportunity" subtitle="Drag recruit cards across the hiring pipeline" />
         <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
           {total} recruits
         </span>
       </div>
-      <RecruitmentBoard columns={columns} />
+      <RecruitmentBoard columns={columns} canDelete={canDelete} />
     </div>
   );
 }
