@@ -978,6 +978,7 @@ export default function StaffDirectory({
                 selectedId={selectedId}
                 onSelect={(id) => setSelectedId(id === selectedId ? null : id)}
                 groupBy={filterType}
+                canEdit={canEdit}
               />
             ) : (
               <TimelineView
@@ -1867,17 +1868,59 @@ function CardGridView({
   );
 }
 
+function defaultShiftHours(branchName: string | null, day: string): { start: string; end: string } {
+  if (!branchName) {
+    // HQ defaults
+    if (day === "Sat") return { start: "09:00", end: "19:00" };
+    return { start: "09:00", end: "18:00" };
+  }
+  // Branch defaults
+  if (day === "Thu" || day === "Fri") return { start: "13:00", end: "22:00" };
+  if (day === "Sat" || day === "Sun") return { start: "08:45", end: "19:15" };
+  return { start: "09:00", end: "18:00" }; // Wed + Mon/Tue fallback
+}
+
 function TableView({
   people,
   selectedId,
   onSelect,
   groupBy,
+  canEdit,
 }: {
   people: DirectoryPerson[];
   selectedId: number | null;
   onSelect: (id: number) => void;
   groupBy: "branch" | "dept" | "all";
+  canEdit: (p: DirectoryPerson) => boolean;
 }) {
+  const [localHours, setLocalHours] = useState<Record<number, unknown>>({});
+  const [toggling, setToggling] = useState<Set<string>>(new Set());
+
+  async function handleDayToggle(person: DirectoryPerson, day: string) {
+    const cellKey = `${person.id}-${day}`;
+    if (toggling.has(cellKey)) return;
+    const baseRaw = (localHours[person.id] ?? person.workingHoursRaw) as Record<string, unknown> | null | undefined;
+    const newSchedule: Record<string, unknown> = {};
+    for (const d of DAYS_ORDER) {
+      newSchedule[d] = (baseRaw as Record<string, unknown>)?.[d] ?? null;
+    }
+    const currentSlot = newSchedule[day];
+    const isOn = Boolean(currentSlot) && typeof currentSlot === "object" && "start" in (currentSlot as object);
+    newSchedule[day] = isOn ? null : defaultShiftHours(person.branchName, day);
+    setLocalHours(prev => ({ ...prev, [person.id]: newSchedule }));
+    setToggling(prev => new Set([...prev, cellKey]));
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await saveWorkingHours(person.id, newSchedule, today);
+      if (!result.ok) {
+        setLocalHours(prev => { const n = { ...prev }; delete n[person.id]; return n; });
+      }
+    } catch {
+      setLocalHours(prev => { const n = { ...prev }; delete n[person.id]; return n; });
+    } finally {
+      setToggling(prev => { const n = new Set(prev); n.delete(cellKey); return n; });
+    }
+  }
   // Header label per filter mode. "all" shows a combined column (real branch
   // for branch staff, department for HQ staff who have no branch), so it reads
   // "Branch / Department". "dept" → Department, "branch" → Branch.
@@ -1923,7 +1966,8 @@ function TableView({
           <tbody>
             {sorted.map(p => {
               const active = selectedId === p.id;
-              const schedule = parseWorkingHoursStrict(p.workingHoursRaw);
+              const schedule = parseWorkingHoursStrict(localHours[p.id] ?? p.workingHoursRaw);
+              const editable = canEdit(p);
               const avatarBg = tableAvatarColor(p.id);
               return (
                 <tr
@@ -1964,9 +2008,29 @@ function TableView({
                   </td>
                   {DAYS_ORDER.map(d => {
                     const works = Boolean(schedule?.[d]);
+                    const cellKey = `${p.id}-${d}`;
+                    const isToggling = toggling.has(cellKey);
                     return (
                       <td key={d} className="px-1.5 py-2.5 text-center">
-                        {works ? (
+                        {editable ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); void handleDayToggle(p, d); }}
+                            disabled={isToggling}
+                            title={works ? `Click to remove ${DAY_LABEL[d]}` : `Click to add ${DAY_LABEL[d]}`}
+                            className={[
+                              "inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors",
+                              works ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "text-slate-300 hover:bg-slate-100 hover:text-slate-500",
+                              isToggling ? "opacity-50 cursor-wait" : "cursor-pointer",
+                            ].join(" ")}
+                          >
+                            {isToggling
+                              ? <span className="block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                              : works
+                                ? <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                                : <span aria-label={`Off ${DAY_LABEL[d]}`}>—</span>
+                            }
+                          </button>
+                        ) : works ? (
                           <span
                             className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-emerald-100 text-emerald-700"
                             title={`Works ${DAY_LABEL[d]}`}
