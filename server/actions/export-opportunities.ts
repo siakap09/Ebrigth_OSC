@@ -19,12 +19,14 @@ export interface OppExportRow {
 }
 
 /**
- * Detailed opportunities export for the kanban 3-dot menu. Scoped to the
- * caller's branch access (SUPER_ADMIN / AGENCY_ADMIN → all branches; branch
- * roles → their own). Returns rows; the client turns them into a CSV download.
+ * Detailed opportunities export for the kanban 3-dot menu. Exports EXACTLY the
+ * cards currently shown on the board (the client passes the post-filter
+ * opportunity IDs), so date / lead-source / age / search filters are honoured.
+ * Still constrained to the caller's tenant + branch scope server-side so a
+ * tampered request can't reach other branches' data.
  */
 export async function exportOpportunities(
-  branchId?: string,
+  ids: string[],
 ): Promise<{ ok: boolean; rows?: OppExportRow[]; error?: string }> {
   try {
     const session = await auth.api.getSession({ headers: await headers() })
@@ -34,13 +36,15 @@ export async function exportOpportunities(
     if (!access) return { ok: false, error: 'No access' }
     const { tenantId, elevated, branchIds } = access
 
+    if (!ids || ids.length === 0) return { ok: true, rows: [] }
+
     const where: Prisma.crm_opportunityWhereInput = {
       tenantId,
       deletedAt: null,
       contact: { deletedAt: null },
+      id: { in: ids },
     }
-    if (branchId && (elevated || branchIds.includes(branchId))) where.branchId = branchId
-    else if (!elevated) where.branchId = { in: branchIds }
+    if (!elevated) where.branchId = { in: branchIds }
 
     const opps = await prisma.crm_opportunity.findMany({
       where,

@@ -799,13 +799,13 @@ function downloadOpportunitiesCsv(rows: OppExportRow[]) {
 }
 
 // 3-dot menu next to "New Opportunity": Export (detailed CSV) + Reset card layout.
-function KanbanActionsMenu({ onResetCard }: { onResetCard: () => void }) {
+function KanbanActionsMenu({ onResetCard, shownIds }: { onResetCard: () => void; shownIds: string[] }) {
   const [open, setOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
 
   async function doExport() {
     setExporting(true)
-    const res = await exportOpportunities()
+    const res = await exportOpportunities(shownIds)
     setExporting(false)
     setOpen(false)
     if (!res.ok || !res.rows) { toast.error(res.error ?? 'Export failed'); return }
@@ -1592,6 +1592,7 @@ export function KanbanBoard({
             </button>
           )}
           <KanbanActionsMenu
+            shownIds={filteredStages.flatMap((s) => s.opportunities.map((o) => o.id))}
             onResetCard={() => { setCardPrefs(DEFAULT_CARD_PREFS); saveCardPrefs(DEFAULT_CARD_PREFS) }}
           />
         </div>
