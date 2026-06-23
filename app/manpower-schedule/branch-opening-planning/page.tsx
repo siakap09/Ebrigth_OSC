@@ -52,6 +52,12 @@ const AVATAR_COLORS = [
 
 const DEFAULT_TARGET = 5;
 
+const REGIONS: Record<"A" | "B" | "C", string[]> = {
+  A: ["RBY", "KLG", "SHA", "SA", "DA", "EGR", "ST"],
+  B: ["DK", "KD", "AMP", "SP", "BTHO", "KTG", "TSG", "TSB"],
+  C: ["PJY", "KW", "BBB", "CJY", "BSP", "DPU", "PJU", "ONL"],
+};
+
 function apiBranchToBranch(api: ApiBranch, idx: number): Branch {
   return {
     id: api.code,
@@ -97,7 +103,7 @@ export default function BranchOpeningPlanning() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [region, setRegion] = useState<"all" | "A" | "B" | "C">("all");
   const [tooltip, setTooltip] = useState<Tooltip>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [staffStats, setStaffStats] = useState<StaffStats | null>(null);
@@ -129,10 +135,9 @@ export default function BranchOpeningPlanning() {
     DAYS.some(d => { const day = b.days[d.key]; return !day.closed && getFillPct(day.current, day.target) < 70; })
   ).length;
 
-  const q = search.trim().toLowerCase();
-  const filteredBranches = q
-    ? branches.filter(b => b.name.toLowerCase().includes(q) || b.code.toLowerCase().includes(q))
-    : branches;
+  const filteredBranches = region === "all"
+    ? branches
+    : branches.filter(b => REGIONS[region].includes(b.code));
 
   function openEdit(branch: Branch) {
     setModal({
@@ -258,14 +263,22 @@ export default function BranchOpeningPlanning() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/60">
-                    <th className="text-left px-5 py-3.5 w-52">
-                      <input
-                        type="text"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        placeholder="Search branch…"
-                        className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400 w-full"
-                      />
+                    <th className="text-left px-4 py-3 w-64">
+                      <div className="flex gap-1.5">
+                        {(["all", "A", "B", "C"] as const).map(r => (
+                          <button
+                            key={r}
+                            onClick={() => setRegion(r)}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                              region === r
+                                ? "bg-teal-500 text-white shadow-sm"
+                                : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                            }`}
+                          >
+                            {r === "all" ? "All" : `Region ${r}`}
+                          </button>
+                        ))}
+                      </div>
                     </th>
                     {DAYS.map(d => (
                       <th key={d.key} className="text-center px-4 py-3.5 text-slate-500 font-semibold text-xs uppercase tracking-wide">{d.label}</th>
@@ -342,7 +355,7 @@ export default function BranchOpeningPlanning() {
                   {filteredBranches.length === 0 && (
                     <tr>
                       <td colSpan={8} className="py-14 text-center text-slate-400 text-sm">
-                        No branches match the current filter.
+                        No branches found for this region.
                       </td>
                     </tr>
                   )}

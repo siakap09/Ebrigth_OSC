@@ -1212,6 +1212,23 @@ model tkt_counter {
 }
 
 // ============================================================
+// BRANCH OPERATION DAYS — configurable per-branch operating day flags
+// ============================================================
+
+model BranchOperationDays {
+  id        Int      @id @default(autoincrement())
+  branch    String   @unique
+  wed       Boolean  @default(true)
+  thu       Boolean  @default(true)
+  fri       Boolean  @default(true)
+  sat       Boolean  @default(true)
+  sun       Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@map("branch_operation_days")
+}
+
+// ============================================================
 // BURNLIST — weekly snapshots of expired+active students from
 // ebrightleads_db.studentrecords, with editable cta/remarks/done.
 // Each Wednesday a new BurnlistWeek is created and a row is
