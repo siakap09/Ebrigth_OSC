@@ -15,7 +15,7 @@ import { ArchiveRow } from "@fa/_components/fa/ArchiveRow";
 import { MultiGradeManagerModal } from "@fa/_components/fa/MultiGradeManagerModal";
 import { DuplicateEventModal } from "@fa/_components/fa/DuplicateEventModal";
 import { Z } from "@fa/_lib/zIndex";
-import { EventStatus, FAEvent } from "@fa/_types";
+import { EventStatus, FAEvent, countsAsConfirmed } from "@fa/_types";
 
 export default function MarketingEventsPage() {
   const user = useCurrentUser();
@@ -74,9 +74,9 @@ export default function MarketingEventsPage() {
 
   const sessionCount  = (id: string) => sessions.filter(s => s.eventId === id).length;
   const invitationCount = (id: string) => invitations.filter(i => i.eventId === id).length;
-  // Confirmed = parent confirmed attendance (attended students were confirmed too).
+  // Confirmed = everyone who confirmed (attended + no_show both confirmed first).
   const confirmedCount = (id: string) =>
-    invitations.filter(i => i.eventId === id && (i.status === "confirmed" || i.status === "attended")).length;
+    invitations.filter(i => i.eventId === id && countsAsConfirmed(i.status)).length;
   // Attended = students who actually showed up (marked attended on the day).
   const attendedCount = (id: string) =>
     invitations.filter(i => i.eventId === id && i.status === "attended").length;

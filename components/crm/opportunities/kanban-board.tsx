@@ -13,7 +13,8 @@ import {
   Draggable,
   type DropResult,
 } from '@hello-pangea/dnd'
-import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, CalendarDays, AlertTriangle, ArrowRight, MoveRight, PenLine, Settings2, ArrowDownWideNarrow, ArrowUpWideNarrow, Info, ShieldAlert } from 'lucide-react'
+import { Plus, Search, X, Loader2, ChevronDown, Users, CalendarRange, CalendarDays, AlertTriangle, ArrowRight, MoveRight, PenLine, Settings2, ArrowDownWideNarrow, ArrowUpWideNarrow, Info, ShieldAlert, MoreHorizontal, Download, RotateCcw } from 'lucide-react'
+import { exportOpportunities, type OppExportRow } from '@/server/actions/export-opportunities'
 import { useQueryClient } from '@tanstack/react-query'
 import { CustomiseCardDrawer } from './customise-card-drawer'
 import { loadCardPrefs, saveCardPrefs, type CardPrefs, DEFAULT_CARD_PREFS } from '@/lib/crm/kanban-card-prefs'
@@ -780,6 +781,76 @@ interface KanbanBoardProps {
   canDeleteLeads?: boolean
 }
 
+// CSV download for the opportunities export (BOM so Excel reads UTF-8 right).
+function downloadOpportunitiesCsv(rows: OppExportRow[]) {
+  const esc = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`
+  const header = ['Name', 'Parent', 'Phone', 'Email', 'Date Created', 'Date Updated', 'Current Stage', 'Lead Source', 'Remarks']
+  const lines = [
+    header.join(','),
+    ...rows.map((r) => [r.name, r.parent, r.phone, r.email, r.createdAt, r.updatedAt, r.stage, r.leadSource, r.remarks].map(esc).join(',')),
+  ]
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `opportunities-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// 3-dot menu next to "New Opportunity": Export (detailed CSV) + Reset card layout.
+function KanbanActionsMenu({ onResetCard, shownIds }: { onResetCard: () => void; shownIds: string[] }) {
+  const [open, setOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  async function doExport() {
+    setExporting(true)
+    const res = await exportOpportunities(shownIds)
+    setExporting(false)
+    setOpen(false)
+    if (!res.ok || !res.rows) { toast.error(res.error ?? 'Export failed'); return }
+    if (res.rows.length === 0) { toast.info('No opportunities to export'); return }
+    downloadOpportunitiesCsv(res.rows)
+    toast.success(`Exported ${res.rows.length} opportunities`)
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="More actions"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+            <button
+              type="button"
+              onClick={doExport}
+              disabled={exporting}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Export to CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => { onResetCard(); setOpen(false); toast.success('Card layout reset to default') }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              <RotateCcw className="h-4 w-4" /> Reset card to default
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export function KanbanBoard({
   initialPipelineId,
   pipelines,
@@ -1507,17 +1578,24 @@ export function KanbanBoard({
               not the raw `data` from the API. */}
           {filteredStages.reduce((acc, s) => acc + s.opportunities.length, 0)} opportunities
         </span>
-        {/* Creating a lead is read-only for AGENCY_ADMIN. */}
-        {canEditLeads && (
-          <button
-            type="button"
-            onClick={() => setShowNewOpportunity(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition"
-          >
-            <Plus className="h-4 w-4" />
-            New Opportunity
-          </button>
-        )}
+        {/* Creating a lead is read-only for AGENCY_ADMIN; the 3-dot menu
+            (Export / Reset card) is available to everyone. */}
+        <div className="flex items-center gap-2">
+          {canEditLeads && (
+            <button
+              type="button"
+              onClick={() => setShowNewOpportunity(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition"
+            >
+              <Plus className="h-4 w-4" />
+              New Opportunity
+            </button>
+          )}
+          <KanbanActionsMenu
+            shownIds={filteredStages.flatMap((s) => s.opportunities.map((o) => o.id))}
+            onResetCard={() => { setCardPrefs(DEFAULT_CARD_PREFS); saveCardPrefs(DEFAULT_CARD_PREFS) }}
+          />
+        </div>
       </div>
 
       {/* Filters */}

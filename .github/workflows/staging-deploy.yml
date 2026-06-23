@@ -22,6 +22,28 @@ jobs:
           # cleanup — npm ci has to redownload all deps from scratch.
           command_timeout: 90m
           script: |
+            # Harden the working copy BEFORE deploy.sh runs. deploy.sh uses
+            # `git pull`, which silently leaves STALE code when the on-server
+            # tree is dirty — the bug behind the manual host rebuilds. Reset to
+            # the exact pushed commit first (mirrors prod-deploy.yml). After
+            # this, deploy.sh's own pull is a clean no-op and the docker build
+            # picks up fresh source.
+            for CANDIDATE in /home/deploy/ebright-osc /home/deploy/osc /home/deploy/Ebrigth_OSC; do
+              if [ -f "$CANDIDATE/docker-compose.yml" ]; then PROJECT_DIR="$CANDIDATE"; break; fi
+            done
+            if [ -z "$PROJECT_DIR" ]; then
+              PROJECT_DIR=$(find /home/deploy -maxdepth 4 -type d -name ".git" 2>/dev/null | head -1 | xargs -r dirname)
+            fi
+            if [ -n "$PROJECT_DIR" ]; then
+              echo "Resetting $PROJECT_DIR to origin/staging"
+              cd "$PROJECT_DIR"
+              git fetch origin
+              git reset --hard origin/staging
+              echo "Source now at: $(git log --oneline -1)"
+            else
+              echo "WARNING: staging project dir not found; deploy.sh will manage code"
+            fi
+
             # Force-remove any leftover containers from a prior compose run.
             # `docker compose up -d --build` inside deploy.sh otherwise
             # fails with "container name already in use" when its image-
