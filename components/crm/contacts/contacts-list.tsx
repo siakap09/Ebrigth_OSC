@@ -105,6 +105,8 @@ interface ContactsListProps {
   tags?: Tag[]
   branches?: Branch[]
   currentUserId: string
+  /** SUPER_ADMIN only — gates the Delete action (server also re-checks). */
+  canDelete?: boolean
 }
 
 // ─── Column helper ────────────────────────────────────────────────────────────
@@ -214,6 +216,7 @@ export function ContactsList({
   tags = [],
   branches = [],
   currentUserId,
+  canDelete = false,
 }: ContactsListProps) {
   const [filter, setFilter] = useState<ContactsFilter>({
     page: 1,
@@ -405,7 +408,7 @@ export function ContactsList({
           return (
             <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
               <Mail className="h-3 w-3 shrink-0 text-slate-400" />
-              <span className="truncate max-w-[200px]">{v}</span>
+              <span className="truncate max-w-50">{v}</span>
             </span>
           )
         },
@@ -528,7 +531,7 @@ export function ContactsList({
         )}
 
         {/* Search */}
-        <div className="relative flex-1 min-w-[220px]">
+        <div className="relative flex-1 min-w-55">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
             className="pl-8"
@@ -546,7 +549,7 @@ export function ContactsList({
               setFilter((f) => ({ ...f, stageId: v === '__all__' ? undefined : v, page: 1 }))
             }
           >
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-35">
               <SelectValue placeholder="All stages" />
             </SelectTrigger>
             <SelectContent>
@@ -568,7 +571,7 @@ export function ContactsList({
               setFilter((f) => ({ ...f, leadSourceId: v === '__all__' ? undefined : v, page: 1 }))
             }
           >
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-37.5">
               <SelectValue placeholder="All sources" />
             </SelectTrigger>
             <SelectContent>
@@ -590,7 +593,7 @@ export function ContactsList({
               setFilter((f) => ({ ...f, assignedUserId: v === '__all__' ? undefined : v, page: 1 }))
             }
           >
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-37.5">
               <SelectValue placeholder="All users" />
             </SelectTrigger>
             <SelectContent>
@@ -662,14 +665,16 @@ export function ContactsList({
               <UserPlus className="h-4 w-4" />
               Assign to...
             </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </Button>
+            {canDelete && (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -779,7 +784,7 @@ export function ContactsList({
                   setFilter((f) => ({ ...f, pageSize: Number(v), page: 1 }))
                 }
               >
-                <SelectTrigger className="h-8 w-[80px]">
+                <SelectTrigger className="h-8 w-20">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
