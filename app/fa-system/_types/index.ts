@@ -336,6 +336,16 @@ export type InvitationStatus =
   | "attended"      // Student showed up on the day
   | "no_show";      // Student did not show up
 
+/** Statuses that count toward the "confirmed" HEADCOUNT metric on dashboards:
+ *  everyone who confirmed they'd join — whether they then attended, didn't show
+ *  (no_show), or are still pending on the day. A no_show confirmed first, so it
+ *  counts here. This is intentionally broader than operational "active" checks
+ *  (certificates, inventory gifts, session-slot capacity, attendance roster),
+ *  which exclude no_show and keep using an explicit confirmed/attended filter. */
+export function countsAsConfirmed(status: InvitationStatus): boolean {
+  return status === "confirmed" || status === "attended" || status === "no_show";
+}
+
 export interface Invitation {
   id: string;
   eventId: string;

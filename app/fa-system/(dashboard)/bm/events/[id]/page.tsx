@@ -16,7 +16,7 @@ import { EmptyState } from "@fa/_components/shared/EmptyState";
 import { BMEventStatCard } from "@fa/_components/fa/BMEventStatCard";
 import { SessionInvitesPanel } from "@fa/_components/fa/SessionInvitesPanel";
 import { InviteStudentsModal } from "@fa/_components/fa/InviteStudentsModal";
-import { BRANCHES, Invitation } from "@fa/_types";
+import { BRANCHES, Invitation, countsAsConfirmed } from "@fa/_types";
 import { addDays, parseISO } from "date-fns";
 import { formatDateRange } from "@fa/_lib/date";
 
@@ -129,7 +129,7 @@ export default function BMEventDetailPage() {
   const totalBranchConfirmed = invitations.filter(
     i => i.branch === user.branch
       && bmSessionIds.has(i.sessionId)
-      && (i.status === "confirmed" || i.status === "attended")
+      && countsAsConfirmed(i.status)
   ).length;
 
   const canInvite = event.status === "open";

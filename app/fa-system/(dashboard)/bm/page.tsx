@@ -8,7 +8,7 @@ import { AppShell } from "@fa/_components/shared/AppShell";
 import { EventStatusPill } from "@fa/_components/fa/StatusPill";
 import { EmptyState } from "@fa/_components/shared/EmptyState";
 import { CalendarDays, MapPin, Search, AlertCircle } from "lucide-react";
-import { BRANCHES, EventStatus, allowedBranchCodes } from "@fa/_types";
+import { BRANCHES, EventStatus, allowedBranchCodes, countsAsConfirmed } from "@fa/_types";
 
 import { MONTHS } from "@fa/_lib/constants";
 import { formatDateRange } from "@fa/_lib/date";
@@ -52,7 +52,7 @@ export default function BMEventsPage() {
         i.eventId === event.id && inScope(i.branch)
       );
       const confirmedCount = scopedInvitations.filter(
-        i => i.status === "confirmed" || i.status === "attended"
+        i => countsAsConfirmed(i.status)
       ).length;
       return {
         event,
