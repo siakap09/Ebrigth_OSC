@@ -4,6 +4,7 @@ import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
 import { getTktSession } from '@/lib/crm/tkt-auth'
+import { departmentNameForSubType } from '@/lib/crm/departments'
 import { TicketKanbanBoard, type TicketCard, type PlatformOption } from '@/components/crm/tickets/TicketKanbanBoard'
 
 export const dynamic = 'force-dynamic'
@@ -26,10 +27,11 @@ export const dynamic = 'force-dynamic'
 export default async function TicketKanbanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ branch?: string }>
+  searchParams: Promise<{ branch?: string; dept?: string }>
 }) {
   const sp = await searchParams
   const branchNumber = sp.branch ?? null
+  const deptFilter = sp.dept ?? null
   const hdrs = await headers()
   const session = await auth.api.getSession({ headers: hdrs })
   if (!session?.user?.id) redirect('/login')
@@ -57,7 +59,7 @@ export default async function TicketKanbanPage({
   // directed to its department (by sub_type); any other platform_admin sees
   // its assigned platform(s).
   const ticketScope = isSuper
-    ? {}
+    ? (deptFilter ? { sub_type: deptFilter } : {})
     : tkt?.departmentSubType
       ? { sub_type: tkt.departmentSubType }
       : { platform_id: { in: tkt?.platformIds.length ? tkt.platformIds : ['__none__'] } }
@@ -141,7 +143,13 @@ export default async function TicketKanbanPage({
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Ticket System</h1>
+          <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
+            {(() => {
+              const sub = isSuper ? deptFilter : tkt?.departmentSubType
+              const name = sub ? departmentNameForSubType(sub) : null
+              return name ? `${name} — Tickets` : 'Ticket System'
+            })()}
+          </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             {tickets.length.toLocaleString()} tickets in view
           </p>
