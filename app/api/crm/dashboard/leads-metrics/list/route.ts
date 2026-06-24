@@ -25,6 +25,7 @@ import {
   STAGE_PATTERN,
   KL_OFFSET_MS,
   parseDateRange,
+  ctKeepStageIds,
 } from '@/lib/crm/dashboard-metrics'
 
 const MAX_ROWS = 1000
@@ -154,20 +155,25 @@ export async function GET(req: NextRequest) {
         return toRow(o.contact, name, BRANCH_CODES[name] ?? '')
       })
     } else if (metric === 'CT') {
-      // CT = every trial happening this period, mirroring the headline card AND
-      // the Trial Class Schedule exactly: naive-KL bounds (startAt is stored
-      // naive-KL-as-UTC) + only `contact.deletedAt: null`. No current-stage
-      // filter — a lead that already showed up / enrolled / rescheduled still
-      // had a trial this period, so it stays in the list (matches the count).
+      // CT = every trial this period for a lead still somewhere it counts
+      // (CT/SU/SNE/CNS/ENR/RSD), mirroring the headline card: naive-KL bounds
+      // (startAt is stored naive-KL-as-UTC). A lead that backed out before the
+      // trial (FU*, CL, DND, NL, …) is excluded — matches the count.
       const apptFrom = new Date(from.getTime() + KL_OFFSET_MS)
       const apptTo = new Date(to.getTime() + KL_OFFSET_MS)
+      const ctKeepIds = ctKeepStageIds(
+        await prisma.crm_stage.findMany({ where: { tenantId }, select: { id: true, shortCode: true, name: true } }),
+      )
       const appts = await prisma.crm_appointment.findMany({
         where: {
           tenantId,
           title: 'Trial Class',
           branchId: { in: branchIds },
           startAt: { gte: apptFrom, lte: apptTo },
-          contact: { deletedAt: null },
+          contact: {
+            deletedAt: null,
+            opportunities: { some: { deletedAt: null, stageId: { in: ctKeepIds } } },
+          },
         },
         select: { branchId: true, startAt: true, contactId: true, contact: { select: CONTACT_SELECT } },
         orderBy: { startAt: 'desc' },

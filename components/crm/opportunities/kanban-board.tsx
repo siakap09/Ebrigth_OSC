@@ -1028,23 +1028,18 @@ export function KanbanBoard({
   }, [stages])
 
   // Filter by date range + lead source + age class + tag (client-side).
-  // For "Confirmed for Trial" the date that matters is the TRIAL date, not the
-  // lead's creation date — a lead created weeks ago with a trial booked this
-  // week must appear under the "this week" filter. All other stages filter by
-  // createdAt (when the lead came in).
+  // Every card — CT included — matches by its CREATION date, so a date filter
+  // always shows exactly the leads that came in during the period (mirrors the
+  // dashboard's New Leads count).
   const filteredStages = useMemo(() => {
     const range = resolveRange(weekFilter, customFrom, customTo)
     return stages.map((stage) => {
-      const ctStage = isConfirmedTrialStage(stage.shortCode, stage.name)
       return {
       ...stage,
       opportunities: stage.opportunities.filter((o) => {
-        // Date range
+        // Date range — match on creation date for every stage.
         if (range) {
-          const trialAt = ctStage ? o.contact.appointments?.[0]?.startAt : undefined
-          // CT cards key off the booked trial date; cards with no trial yet
-          // (data anomaly) and every other stage fall back to createdAt.
-          const when = trialAt ? trialWallClock(trialAt) : new Date(o.createdAt)
+          const when = new Date(o.createdAt)
           if (when < range.from || when > range.to) return false
         }
         // Lead source / platform

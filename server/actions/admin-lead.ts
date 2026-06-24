@@ -103,8 +103,25 @@ async function replaceTrial(
   await tx.crm_appointment.deleteMany({
     where: { tenantId: p.tenantId, contactId: p.contactId, title: 'Trial Class' },
   })
+  // Only live CT seats occupy the slot — retained records for leads who moved on
+  // (SU/ENR/RSD/…) must not count toward capacity.
+  const ctSeatStageIds = (
+    await tx.crm_stage.findMany({
+      where: {
+        tenantId: p.tenantId,
+        OR: [{ shortCode: 'CT' }, { name: { equals: 'Confirmed for Trial', mode: 'insensitive' } }],
+      },
+      select: { id: true },
+    })
+  ).map((s) => s.id)
   const booked = await tx.crm_appointment.count({
-    where: { tenantId: p.tenantId, branchId: p.branchId, title: 'Trial Class', startAt },
+    where: {
+      tenantId: p.tenantId,
+      branchId: p.branchId,
+      title: 'Trial Class',
+      startAt,
+      contact: { opportunities: { some: { stageId: { in: ctSeatStageIds } } } },
+    },
   })
   if (booked >= TRIAL_CAPACITY) throw new Error(`That slot is fully booked (${booked}/${TRIAL_CAPACITY}). Pick another.`)
   await tx.crm_appointment.create({

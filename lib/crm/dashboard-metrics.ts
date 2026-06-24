@@ -108,6 +108,44 @@ export const STAGE_PATTERN = {
 
 export type StageCategory = keyof typeof STAGE_PATTERN
 
+// ─── Trial-record stage scoping ─────────────────────────────────────────────
+// The dashboard CT headline counts a lead's Trial Class record (by trial date)
+// only while the lead is somewhere the trial still "counts": CT (booked), SU
+// (showed up), SNE / CNS (showed-no-enrol / confirmed-no-show), ENR (enrolled)
+// and RSD (rescheduling). A lead that backed out before the trial (FU*, CL,
+// DND, NL, UR_W*, …) is NOT counted. The Trial Class Schedule grid is stricter:
+// a lead only occupies a live slot while it's in CT or SU.
+export const CT_DASHBOARD_KEEP_CODES = new Set(['CT', 'SU', 'SNE', 'CNS', 'ENR', 'RSD'])
+export const TRIAL_SCHEDULE_KEEP_CODES = new Set(['CT', 'SU'])
+
+type StageRow = { id: string; shortCode: string | null; name: string }
+const normCode = (s: StageRow): string => (s.shortCode ?? '').toUpperCase().replace(/_/g, '')
+
+/** Stage IDs whose lead's Trial Class record counts toward the CT headline. */
+export function ctKeepStageIds(stages: StageRow[]): string[] {
+  return stages
+    .filter(
+      (s) =>
+        CT_DASHBOARD_KEEP_CODES.has(normCode(s)) ||
+        /^confirmed for trial$/i.test(s.name) ||
+        /^show[- ]up$/i.test(s.name) ||
+        /^enrolled$/i.test(s.name),
+    )
+    .map((s) => s.id)
+}
+
+/** Stage IDs whose lead still occupies a live Trial Class schedule slot. */
+export function scheduleKeepStageIds(stages: StageRow[]): string[] {
+  return stages
+    .filter(
+      (s) =>
+        TRIAL_SCHEDULE_KEEP_CODES.has(normCode(s)) ||
+        /^confirmed for trial$/i.test(s.name) ||
+        /^show[- ]up$/i.test(s.name),
+    )
+    .map((s) => s.id)
+}
+
 /** Resolve a branch name → region letter using REGIONS. */
 export function regionFor(branchName: string): 'A' | 'B' | 'C' | null {
   if (REGIONS.A.includes(branchName)) return 'A'
