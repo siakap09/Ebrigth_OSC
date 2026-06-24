@@ -34,6 +34,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/crm/utils'
 import { isOperationAccount, isHiddenForOperation } from '@/lib/crm/operation-accounts'
 import { useBranchContext, type BranchInfo } from './branch-context'
+import { DEPARTMENTS } from '@/lib/crm/departments'
 import { authClient } from '@/lib/crm/auth-client'
 import { useUnreadCount, useNotifications, useMarkNotificationRead, useMarkAllRead } from '@/hooks/crm/useNotifications'
 import type { SessionUser } from './providers'
@@ -320,6 +321,27 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
                     className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/40"
                   >
                     Region {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Departments — admins only. Jumps to the ticket triage board
+              filtered to one department's directed tickets (by sub_type). */}
+          {isAdmin && (
+            <div className="border-t border-slate-100 dark:border-slate-700">
+              <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Departments
+              </div>
+              <div className="flex flex-wrap gap-1.5 px-3 pb-2">
+                {DEPARTMENTS.map((d) => (
+                  <button
+                    key={d.subType}
+                    onClick={() => { router.push(`/crm/tickets/kanban?dept=${d.subType}`); setOpen(false); setQuery('') }}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/40"
+                  >
+                    {d.name}
                   </button>
                 ))}
               </div>

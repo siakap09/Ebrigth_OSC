@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
 import { isOperationAccount } from '@/lib/crm/operation-accounts'
+import { scopedDepartmentForEmail } from '@/lib/crm/departments'
 import { NavItem } from './nav-item'
 import { authClient } from '@/lib/crm/auth-client'
 import { signOut as nextAuthSignOut } from 'next-auth/react'
@@ -111,7 +112,7 @@ const TICKET_NAV_ITEMS: NavItemDef[] = [
   // Earlier the href pointed at a non-existent route, causing the [id] dynamic
   // route to catch "dashboard" as a UUID and return "Ticket not found".
   { href: '/crm/tickets/dashboard', label: 'Dashboard',     icon: LayoutDashboard },
-  { href: '/crm/tickets/kanban',    label: 'Opportunities', icon: Kanban,    roles: ['super_admin'], hideInBranchView: true },
+  { href: '/crm/tickets/kanban',    label: 'Opportunities', icon: Kanban,    roles: ['super_admin', 'platform_admin'], hideInBranchView: true },
   { href: '/crm/tickets',           label: 'My Tickets',    icon: Ticket },
   { href: '/crm/tickets/new',       label: 'New Ticket',    icon: Plus },
   { href: '/crm/tkt-platforms',     label: 'Platforms',     icon: Layout,    roles: ['super_admin'], hideInBranchView: true },
@@ -154,8 +155,10 @@ function filterNav(
   inBranchView: boolean,
   userEmail: string | null | undefined,
 ): NavItemDef[] {
-  // Operation accounts get a fixed allowlist regardless of role/branch-view.
-  if (isOperationAccount(userEmail)) {
+  // Operation accounts get a fixed lead-oversight allowlist — EXCEPT department
+  // accounts (operation@ is both a department and an operation account), which
+  // need their ticket module too and so fall through to normal role filtering.
+  if (!scopedDepartmentForEmail(userEmail) && isOperationAccount(userEmail)) {
     return items.filter((item) => OPERATION_ALLOWED_LABELS.has(item.label))
   }
   // Treat unknown / null role as 'user'
@@ -278,7 +281,12 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
     }
   }, [pathname])
 
-  const navItems = filterNav(pickNavForPath(pathname, stickyModule), user.tktRole, inBranchView, user.email)
+  // Tickets-only departments (HR / Finance / Academy / CEO) never see the Lead
+  // module — force the ticket nav. Marketing / Operation keep the lead module.
+  const dept = scopedDepartmentForEmail(user.email)
+  const isTicketsOnlyDept = !!dept && !dept.hasLeadSystem
+  const baseNav = isTicketsOnlyDept ? TICKET_NAV_ITEMS : pickNavForPath(pathname, stickyModule)
+  const navItems = filterNav(baseNav, user.tktRole, inBranchView, user.email)
   // Settings is admin-only. Regional managers (and basic users) work like a
   // branch manager — branch/region data + the Region view — without the
   // tenant settings tree, so they don't see the Settings accordion.
@@ -286,6 +294,7 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
   const canSeeSettings =
     !inBranchView &&
     !isOperationAccount(user.email) &&
+    !dept &&
     (user.tktRole === 'super_admin' || user.tktRole === 'platform_admin')
 
   return (

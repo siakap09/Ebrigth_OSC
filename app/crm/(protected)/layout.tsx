@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { isPreviewMode } from '@/lib/crm/preview-mode'
+import { scopedDepartmentForEmail } from '@/lib/crm/departments'
 import { CrmProviders } from '@/components/crm/providers'
 import { CrmShell } from '@/components/crm/shell'
 
@@ -78,6 +79,13 @@ export default async function CrmProtectedLayout({
       console.warn('[CRM layout] Failed to load admin link:', (e as Error).message)
     }
 
+    // Scoped department accounts are department-level ticket admins — never
+    // elevate them to ticket super_admin even if they hold a CRM admin role
+    // (marketing@ / operation@ are CRM SUPER_ADMIN but must stay dept-scoped).
+    if (scopedDepartmentForEmail(session.user.email)) {
+      tktRole = 'platform_admin'
+    }
+
     // Awaiting-access gate: a real (non-preview) user with no branch link
     // can't be safely scoped to a tenant. Send them to the splash so they
     // know to ask an admin instead of seeing empty-state pages everywhere.
@@ -98,7 +106,10 @@ export default async function CrmProtectedLayout({
       hasBranchLink = true
     }
 
-    if (!hasBranchLink && !previewMode) {
+    // Department accounts (ticket platform_admins) may legitimately have no CRM
+    // branch link — they live in the ticket module only. Don't bounce them to
+    // awaiting-access; their ticket profile is their access.
+    if (!hasBranchLink && tktRole !== 'platform_admin' && !previewMode) {
       redirect('/crm/awaiting-access')
     }
   }
