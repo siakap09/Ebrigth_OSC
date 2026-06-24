@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "@pcm/_components/shared/Modal";
 import { useFAStore } from "@pcm/_lib/store";
-import { BRANCHES, Invitation, resolveStudentById } from "@pcm/_types";
+import { BRANCHES, Invitation, resolveStudentById, ArrivalWindow, arrivalLabel } from "@pcm/_types";
 import { CalendarClock, CheckCircle2, XCircle, DollarSign, Video, Send, Clock } from "lucide-react";
 
 interface Coach {
@@ -33,6 +33,7 @@ export function InvitationDetailModal({
   const updateInviteType = useFAStore(s => s.updateInviteType);
   const assignCoach = useFAStore(s => s.assignCoachToInvitation);
   const setVideoLink = useFAStore(s => s.setInvitationVideoLink);
+  const setArrival = useFAStore(s => s.setInvitationArrival);
 
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [linkDraft, setLinkDraft] = useState("");
@@ -171,6 +172,45 @@ export function InvitationDetailModal({
           </select>
         ) : (
           <span className="text-sm text-ink-800">{inv.coachName ?? "—"}</span>
+        )}
+      </div>
+
+      {/* Arrival — when the parent comes to the branch, so responders can
+          schedule without phoning the branch. Branch sets it; academy reads it. */}
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <span className="text-sm text-ink-500">Arrival</span>
+        {editable ? (
+          <div className="flex items-center gap-2">
+            <select
+              className="fa-input text-xs"
+              style={{ minWidth: "130px", paddingTop: "0.35rem", paddingBottom: "0.35rem" }}
+              value={inv.arrivalWindow ?? ""}
+              onChange={(e) => {
+                const w = (e.target.value || null) as ArrivalWindow | null;
+                void setArrival(inv.id, w, inv.arrivalTime ?? null);
+              }}
+            >
+              <option value="">— Not set —</option>
+              <option value="before_class">Before class</option>
+              <option value="after_class">After class</option>
+              <option value="during_class">During class</option>
+            </select>
+            <input
+              type="text"
+              defaultValue={inv.arrivalTime ?? ""}
+              placeholder="e.g. 3:30 PM"
+              onBlur={(e) => {
+                const t = e.target.value.trim();
+                if (t !== (inv.arrivalTime ?? "")) {
+                  void setArrival(inv.id, inv.arrivalWindow ?? null, t === "" ? null : t);
+                }
+              }}
+              className="fa-input text-xs"
+              style={{ width: "110px", paddingTop: "0.35rem", paddingBottom: "0.35rem" }}
+            />
+          </div>
+        ) : (
+          <span className="text-sm text-ink-800">{arrivalLabel(inv.arrivalWindow, inv.arrivalTime) || "—"}</span>
         )}
       </div>
 

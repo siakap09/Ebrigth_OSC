@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { AppShell } from "@pcm/_components/shared/AppShell";
-import { BranchCode, FAEvent, Invitation } from "@pcm/_types";
+import { BranchCode, FAEvent, Invitation, arrivalLabel } from "@pcm/_types";
 import {
   Users, Download, Copy, Check, ListOrdered, Search,
   CalendarDays,
@@ -170,8 +170,10 @@ export default function InvitationsListPage() {
       const grade = `G${inv.targetGrade ?? student?.grade ?? inv.studentGrade ?? "?"}`;
       const tpe = inv.inviteType === "renewal" ? "RENEW" : "PROG";
       const coach = inv.coachName ? ` · Coach ${inv.coachName}` : "";
+      const arr = arrivalLabel(inv.arrivalWindow, inv.arrivalTime);
+      const arrival = arr ? ` · ⏰ ${arr}` : "";
       const name = student?.name ?? inv.studentName ?? `#${inv.studentId} (not in roster)`;
-      lines.push(`  ${idx}. ${name} (${grade}, ${tpe})${coach}`);
+      lines.push(`  ${idx}. ${name} (${grade}, ${tpe})${coach}${arrival}`);
     }
     if (rows.length === 0) lines.push("(no invitations match these filters)");
     return lines.join("\n");
@@ -180,7 +182,7 @@ export default function InvitationsListPage() {
   function buildCsv(): string {
     const header = [
       "Event", "Branch", "Day", "Session", "Start", "End",
-      "Student ID", "Student Name", "Grade", "Type", "Status", "Coach",
+      "Student ID", "Student Name", "Grade", "Type", "Status", "Coach", "Arrival",
     ];
     const escape = (s: string) => {
       const needsQuote = /[",\n]/.test(s);
@@ -206,6 +208,7 @@ export default function InvitationsListPage() {
         inv.inviteType,
         inv.status,
         inv.coachName ?? "",
+        arrivalLabel(inv.arrivalWindow, inv.arrivalTime),
       ].map(escape).join(","));
     }
     return lines.join("\n");

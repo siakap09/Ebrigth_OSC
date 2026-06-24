@@ -4,6 +4,7 @@ import {
   BranchCode,
   DayPolicy,
   EventBranchOverride,
+  ArrivalWindow,
   EventStatus,
   FAEvent,
   Invitation,
@@ -83,6 +84,8 @@ interface InvitationRow {
   paid: boolean;
   video_sent_to_parent: boolean;
   video_link: string | null;
+  arrival_window: string | null;
+  arrival_time: string | null;
   // LEFT-JOINed from studentrecords so the UI can render a row's name even
   // when /api/pcm/students drops the student for strict-validation reasons
   // (missing branch/grade/etc).
@@ -205,6 +208,8 @@ function rowToInvitation(r: InvitationRow): Invitation {
     paid: r.paid === true,
     videoSentToParent: r.video_sent_to_parent === true,
     videoLink: r.video_link ?? null,
+    arrivalWindow: (r.arrival_window as ArrivalWindow | null) ?? undefined,
+    arrivalTime: r.arrival_time ?? undefined,
     invitedBy: r.invited_by ?? "",
     invitedAt: isoTimestamp(r.invited_at) ?? new Date().toISOString(),
     confirmedAt: isoTimestamp(r.confirmed_at),
@@ -261,6 +266,7 @@ export async function fetchAllEventData(): Promise<{
               i.status, i.invited_by, i.invited_at, i.confirmed_at,
               i.attendance_marked_at, i.attendance_marked_by, i.notes, i.invite_type,
               i.coach_id, i.coach_name, i.paid, i.video_sent_to_parent, i.video_link,
+              i.arrival_window, i.arrival_time,
               -- Name resolution, best first: the live studentrecords name, else
               -- the snapshot saved at invite time, else the archived_students
               -- record (recovers students removed from studentrecords).
@@ -286,6 +292,7 @@ export async function fetchAllEventData(): Promise<{
         `SELECT id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
                 invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes,
                 invite_type, coach_id, coach_name, paid, video_sent_to_parent, video_link,
+                arrival_window, arrival_time,
                 student_name_snapshot AS student_name,
                 NULL::text AS student_grade_chapter,
                 NULL::text AS student_parent_name,
@@ -771,6 +778,9 @@ export async function updateInvitationRow(
     videoSentToParent?: boolean;
     /** Absence make-up video link (null clears it). */
     videoLink?: string | null;
+    /** Expected arrival window/time the parent comes to the branch (null clears). */
+    arrivalWindow?: ArrivalWindow | null;
+    arrivalTime?: string | null;
   }
 ): Promise<Invitation | null> {
   const fields: string[] = [];
@@ -829,6 +839,14 @@ export async function updateInvitationRow(
     fields.push(`video_link = $${i++}`);
     values.push(patch.videoLink);
   }
+  if (patch.arrivalWindow !== undefined) {
+    fields.push(`arrival_window = $${i++}`);
+    values.push(patch.arrivalWindow);
+  }
+  if (patch.arrivalTime !== undefined) {
+    fields.push(`arrival_time = $${i++}`);
+    values.push(patch.arrivalTime);
+  }
 
   // Reschedule = the slot moves (sessionId/eventId in the patch) WITHOUT an
   // explicit status change. When that happens, a prior attendance verdict
@@ -852,7 +870,7 @@ export async function updateInvitationRow(
   const { rows } = await pool.query<InvitationRow>(
     `UPDATE pcm_invitations SET ${fields.join(", ")} WHERE id = $${i++} AND tenant_id = $${i}
      RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
-               invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name, paid, video_sent_to_parent`,
+               invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes, invite_type, coach_id, coach_name, paid, video_sent_to_parent, video_link, arrival_window, arrival_time`,
     values
   );
   if (!rows[0]) return null;

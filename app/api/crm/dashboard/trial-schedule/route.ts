@@ -13,7 +13,7 @@ import { headers } from 'next/headers'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
-import { regionFor } from '@/lib/crm/dashboard-metrics'
+import { regionFor, scheduleKeepStageIds } from '@/lib/crm/dashboard-metrics'
 import {
   TRIAL_DAY_ORDER,
   TRIAL_ALL_SLOTS,
@@ -153,6 +153,17 @@ export async function GET(req: NextRequest) {
       break
   }
 
+  // Only show a trial while its lead still occupies a live slot — i.e. current
+  // stage is CT (booked) or SU (showed up). A lead that moved past the trial
+  // (SNE/CNS/ENR), rescheduled (RSD), or backed out leaves the grid even if its
+  // trial record lingers.
+  const scheduleStageIds = scheduleKeepStageIds(
+    await prisma.crm_stage.findMany({
+      where: { tenantId: access.tenantId },
+      select: { id: true, shortCode: true, name: true },
+    }),
+  )
+
   const appointments = await prisma.crm_appointment.findMany({
     where: {
       tenantId: access.tenantId,
@@ -167,8 +178,12 @@ export async function GET(req: NextRequest) {
         gte: new Date(from.getTime() + KL_OFFSET_MS),
         lte: new Date(to.getTime() + KL_OFFSET_MS),
       },
-      // Exclude appointments whose lead (contact) was soft-deleted.
-      contact: { deletedAt: null },
+      // Exclude soft-deleted leads, and scope to leads currently in CT / SU so
+      // moved-on / rescheduled trials drop off the grid (see scheduleStageIds).
+      contact: {
+        deletedAt: null,
+        opportunities: { some: { deletedAt: null, stageId: { in: scheduleStageIds } } },
+      },
     },
     select: {
       id: true,

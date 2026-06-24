@@ -9,7 +9,7 @@ import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { StatusPill } from "@pcm/_components/fa/StatusPill";
 import { InvitationDetailModal } from "@pcm/_components/fa/InvitationDetailModal";
 import { RescheduleModal } from "@pcm/_components/fa/RescheduleModal";
-import { BRANCHES, Invitation, Student, resolveStudentById } from "@pcm/_types";
+import { BRANCHES, Invitation, Student, resolveStudentById, arrivalLabel } from "@pcm/_types";
 
 export function AttendanceRoster({
   session, orderedInvitations, pendingConfirmationsCount, canEdit, canDrag, academyView = false,
@@ -249,6 +249,12 @@ function SortableInvitationRow({
       <td>
         <div className="font-medium text-ink-900">{student.name}</div>
         <div className="text-xs text-ink-400">#{student.id}</div>
+        {arrivalLabel(inv.arrivalWindow, inv.arrivalTime) && (
+          <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-violet-700" title="Expected arrival">
+            <Clock className="w-3 h-3" />
+            {arrivalLabel(inv.arrivalWindow, inv.arrivalTime)}
+          </div>
+        )}
       </td>
       <td>
         <span className="font-mono text-xs font-semibold text-ink-700 bg-ivory-200 px-2 py-0.5 rounded" title={branchInfo?.name}>

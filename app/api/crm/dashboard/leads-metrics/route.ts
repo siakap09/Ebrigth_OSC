@@ -21,6 +21,7 @@ import {
   regionFor,
   KL_OFFSET_MS,
   parseDateRange,
+  ctKeepStageIds,
 } from '@/lib/crm/dashboard-metrics'
 
 interface BranchMetrics {
@@ -119,6 +120,10 @@ export async function GET(req: NextRequest) {
       where: { tenantId },
       select: { id: true, name: true, shortCode: true, order: true, pipelineId: true },
     })
+    // Stage IDs whose lead still counts toward the CT headline (CT/SU/SNE/CNS/
+    // ENR/RSD). A lead that backed out before the trial (FU*, CL, DND, NL, …) is
+    // excluded even though its old trial record may linger.
+    const ctKeepIds = ctKeepStageIds(stages)
 
     // Map stage.id → { pipelineId, order, category }
     interface StageInfo {
@@ -253,7 +258,12 @@ export async function GET(req: NextRequest) {
         title: 'Trial Class',
         branchId: { in: branches.map((b) => b.id) },
         startAt: { gte: apptFrom, lte: apptTo },
-        contact: { deletedAt: null },
+        // Only count the trial if the lead is still somewhere it counts (CT/SU/
+        // SNE/CNS/ENR/RSD) — excludes stale records for leads who backed out.
+        contact: {
+          deletedAt: null,
+          opportunities: { some: { deletedAt: null, stageId: { in: ctKeepIds } } },
+        },
       },
       select: { branchId: true, contactId: true },
     })
@@ -466,7 +476,10 @@ export async function GET(req: NextRequest) {
           title: 'Trial Class',
           branchId: { in: branches.map((b) => b.id) },
           startAt: { gte: trendApptFrom, lte: trendApptTo },
-          contact: { deletedAt: null, opportunities: { some: { deletedAt: null } } },
+          contact: {
+            deletedAt: null,
+            opportunities: { some: { deletedAt: null, stageId: { in: ctKeepIds } } },
+          },
         },
         select: { contactId: true, startAt: true },
       })
