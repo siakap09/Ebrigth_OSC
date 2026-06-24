@@ -98,7 +98,10 @@ export default async function CrmProtectedLayout({
       hasBranchLink = true
     }
 
-    if (!hasBranchLink && !previewMode) {
+    // Department accounts (ticket platform_admins) may legitimately have no CRM
+    // branch link — they live in the ticket module only. Don't bounce them to
+    // awaiting-access; their ticket profile is their access.
+    if (!hasBranchLink && tktRole !== 'platform_admin' && !previewMode) {
       redirect('/crm/awaiting-access')
     }
   }

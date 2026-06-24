@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { resolveBranchAccess } from '@/lib/crm/branch-access'
+import { getTktSession } from '@/lib/crm/tkt-auth'
 import { TicketKanbanBoard, type TicketCard, type PlatformOption } from '@/components/crm/tickets/TicketKanbanBoard'
 
 export const dynamic = 'force-dynamic'
@@ -29,21 +30,32 @@ export default async function TicketKanbanPage({
 }) {
   const sp = await searchParams
   const branchNumber = sp.branch ?? null
-  const session = await auth.api.getSession({ headers: await headers() })
+  const hdrs = await headers()
+  const session = await auth.api.getSession({ headers: hdrs })
   if (!session?.user?.id) redirect('/login')
 
   const access = await resolveBranchAccess(session.user.id)
-  if (!access) redirect('/login')
+  const tkt = await getTktSession(hdrs)
 
-  // Hard role gate — only elevated CRM roles see the board.
+  // Who sees the board:
+  //   • Super admins (CRM elevated / HRMS super/agency / tkt super_admin) → ALL tickets.
+  //   • Department platform_admins → ONLY their own platform(s)' tickets.
   const hrmsRole = (session.user as { role?: string } | undefined)?.role
-  const adminViaCrm = access.elevated
-  const adminViaHrms = hrmsRole === 'SUPER_ADMIN' || hrmsRole === 'AGENCY_ADMIN'
-  if (!adminViaCrm && !adminViaHrms) {
+  const isSuper =
+    (access?.elevated ?? false) ||
+    hrmsRole === 'SUPER_ADMIN' || hrmsRole === 'AGENCY_ADMIN' ||
+    tkt?.role === 'super_admin'
+  const isDeptAdmin = !isSuper && tkt?.role === 'platform_admin'
+  if (!isSuper && !isDeptAdmin) {
     redirect('/crm/tickets')
   }
 
-  const { tenantId } = access
+  const tenantId = access?.tenantId ?? tkt?.tenantId
+  if (!tenantId) redirect('/login')
+
+  // Department admins are scoped to their assigned platforms; supers see all.
+  const platformScope =
+    isSuper ? {} : { platform_id: { in: tkt?.platformIds.length ? tkt.platformIds : ['__none__'] } }
 
   // Pull every active ticket. The "Finish" column can have thousands; we cap
   // it at 200 most-recent here and rely on the kanban's virtualization for
@@ -54,7 +66,7 @@ export default async function TicketKanbanPage({
 
   const [open, finished, platformsRaw] = await Promise.all([
     prisma.tkt_ticket.findMany({
-      where: { tenant_id: tenantId, status: { not: 'complete' }, ...branchFilter },
+      where: { tenant_id: tenantId, status: { not: 'complete' }, ...branchFilter, ...platformScope },
       orderBy: { created_at: 'desc' },
       take: 1000,
       select: {
@@ -68,7 +80,7 @@ export default async function TicketKanbanPage({
       },
     }),
     prisma.tkt_ticket.findMany({
-      where: { tenant_id: tenantId, status: 'complete', ...branchFilter },
+      where: { tenant_id: tenantId, status: 'complete', ...branchFilter, ...platformScope },
       orderBy: { completed_at: 'desc' },
       take: 200,
       select: {
@@ -82,7 +94,10 @@ export default async function TicketKanbanPage({
       },
     }),
     prisma.tkt_platform.findMany({
-      where: { tenant_id: tenantId },
+      where: {
+        tenant_id: tenantId,
+        ...(isSuper ? {} : { id: { in: tkt?.platformIds.length ? tkt.platformIds : ['__none__'] } }),
+      },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, slug: true, code: true, accent_color: true },
     }),
