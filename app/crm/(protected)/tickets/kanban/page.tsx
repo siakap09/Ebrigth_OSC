@@ -43,10 +43,14 @@ export default async function TicketKanbanPage({
   //   • Super admins (CRM elevated / HRMS super/agency / tkt super_admin) → ALL tickets.
   //   • Department platform_admins → ONLY their own platform(s)' tickets.
   const hrmsRole = (session.user as { role?: string } | undefined)?.role
+  // A scoped DEPARTMENT account is never a super-viewer here, even if it holds
+  // an elevated CRM role (the CEO is AGENCY_ADMIN for leads but stays scoped to
+  // its own department's tickets).
   const isSuper =
-    (access?.elevated ?? false) ||
-    hrmsRole === 'SUPER_ADMIN' || hrmsRole === 'AGENCY_ADMIN' ||
-    tkt?.role === 'super_admin'
+    !tkt?.departmentSubType &&
+    ((access?.elevated ?? false) ||
+      hrmsRole === 'SUPER_ADMIN' || hrmsRole === 'AGENCY_ADMIN' ||
+      tkt?.role === 'super_admin')
   const isDeptAdmin = !isSuper && tkt?.role === 'platform_admin'
   if (!isSuper && !isDeptAdmin) {
     redirect('/crm/tickets')

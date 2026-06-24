@@ -21,6 +21,21 @@ export function isOperationAccount(email: string | null | undefined): boolean {
 }
 
 /**
+ * "Agency view" accounts — elevated, all-branches, but READ-ONLY (treated as
+ * AGENCY_ADMIN regardless of their DB role) and shown ONLY the Agency View in
+ * the top-left switcher (never Super Admin View). For the CEO etc. — view the
+ * whole CNS lead system without super-admin write powers. Applies to the LEAD
+ * system only; their ticket role/scope is unaffected.
+ */
+export const AGENCY_VIEW_EMAILS = new Set<string>([
+  'kevinkhoo@ebright.my',
+])
+
+export function isAgencyViewAccount(email: string | null | undefined): boolean {
+  return !!email && AGENCY_VIEW_EMAILS.has(email.trim().toLowerCase())
+}
+
+/**
  * Branch names hidden from operation accounts everywhere a branch list is shown
  * (topbar switcher, Day Distribution, etc.) — the internal OD + Marketing
  * branches, which aren't part of lead operations.

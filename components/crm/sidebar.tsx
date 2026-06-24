@@ -29,7 +29,7 @@ import {
   BarChart3,
 } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
-import { isOperationAccount } from '@/lib/crm/operation-accounts'
+import { isOperationAccount, isAgencyViewAccount } from '@/lib/crm/operation-accounts'
 import { scopedDepartmentForEmail } from '@/lib/crm/departments'
 import { NavItem } from './nav-item'
 import { authClient } from '@/lib/crm/auth-client'
@@ -163,7 +163,13 @@ function filterNav(
   }
   // Treat unknown / null role as 'user'
   const r = (role ?? 'user') as 'super_admin' | 'platform_admin' | 'user' | 'regional_manager'
+  // Scoped department accounts (incl. the agency-view CEO, who runs at
+  // super-level nav) are department ticket triagers — never tenant ticket
+  // admins — so hide the ticket super-management pages from them.
+  const scopedDept = scopedDepartmentForEmail(userEmail)
+  const TICKET_SUPER_ONLY = new Set(['/crm/tkt-platforms', '/crm/tkt-branches', '/crm/tkt-users'])
   return items.filter((item) => {
+    if (scopedDept && TICKET_SUPER_ONLY.has(item.href)) return false
     if (item.roles && !item.roles.includes(r)) return false
     if (inBranchView && item.hideInBranchView) return false
     return true
@@ -284,7 +290,9 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
   // Tickets-only departments (HR / Finance / Academy / CEO) never see the Lead
   // module — force the ticket nav. Marketing / Operation keep the lead module.
   const dept = scopedDepartmentForEmail(user.email)
-  const isTicketsOnlyDept = !!dept && !dept.hasLeadSystem
+  // Agency-view accounts (e.g. the CEO) keep the full Lead module even though
+  // they're also a scoped ticket department.
+  const isTicketsOnlyDept = !!dept && !dept.hasLeadSystem && !isAgencyViewAccount(user.email)
   const baseNav = isTicketsOnlyDept ? TICKET_NAV_ITEMS : pickNavForPath(pathname, stickyModule)
   const navItems = filterNav(baseNav, user.tktRole, inBranchView, user.email)
   // Settings is admin-only. Regional managers (and basic users) work like a
@@ -294,7 +302,7 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
   const canSeeSettings =
     !inBranchView &&
     !isOperationAccount(user.email) &&
-    !dept &&
+    (!dept || isAgencyViewAccount(user.email)) &&
     (user.tktRole === 'super_admin' || user.tktRole === 'platform_admin')
 
   return (

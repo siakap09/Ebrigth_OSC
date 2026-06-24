@@ -4,6 +4,7 @@ import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { isPreviewMode } from '@/lib/crm/preview-mode'
 import { scopedDepartmentForEmail } from '@/lib/crm/departments'
+import { isAgencyViewAccount } from '@/lib/crm/operation-accounts'
 import { CrmProviders } from '@/components/crm/providers'
 import { CrmShell } from '@/components/crm/shell'
 
@@ -84,6 +85,14 @@ export default async function CrmProtectedLayout({
     // (marketing@ / operation@ are CRM SUPER_ADMIN but must stay dept-scoped).
     if (scopedDepartmentForEmail(session.user.email)) {
       tktRole = 'platform_admin'
+    }
+
+    // Agency-view accounts (CEO) get the full agency sidebar (super-level nav),
+    // read-only via their AGENCY_ADMIN permissions — overrides the dept force
+    // above. Their ticket DATA stays dept-scoped (handled in tkt-auth + the
+    // ticket routes); only the nav breadth is widened here.
+    if (isAgencyViewAccount(session.user.email)) {
+      tktRole = 'super_admin'
     }
 
     // Awaiting-access gate: a real (non-preview) user with no branch link

@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/crm/db'
+import { isAgencyViewAccount } from '@/lib/crm/operation-accounts'
 
 /**
  * Returns the list of branch IDs a user can view, plus whether they're an
@@ -36,16 +37,37 @@ export async function resolveBranchAccess(userId: string): Promise<{
    */
   isSuperAdmin: boolean
 } | null> {
-  const links = await prisma.crm_user_branch.findMany({
-    where: { userId },
-    select: {
-      tenantId: true,
-      branchId: true,
-      role: true,
-      createdAt: true,
-    },
-    orderBy: { createdAt: 'asc' },
-  })
+  const [links, authUser] = await Promise.all([
+    prisma.crm_user_branch.findMany({
+      where: { userId },
+      select: { tenantId: true, branchId: true, role: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.crm_auth_user.findUnique({ where: { id: userId }, select: { email: true } }),
+  ])
+
+  // Agency-view override (CEO etc.): elevated, all-branches, READ-ONLY
+  // (AGENCY_ADMIN, never super). Applies even if they hold a different/no CRM
+  // role. Falls back to the default tenant if they have no branch link yet.
+  if (isAgencyViewAccount(authUser?.email)) {
+    let tenantId = links[0]?.tenantId
+    if (!tenantId) {
+      const t =
+        (await prisma.crm_tenant.findFirst({ where: { slug: { in: ['ebright', 'ebright-demo'] } }, select: { id: true } })) ??
+        (await prisma.crm_tenant.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } }))
+      if (!t) return null
+      tenantId = t.id
+    }
+    return {
+      tenantId,
+      primaryBranchId: links[0]?.branchId ?? '',
+      branchIds: Array.from(new Set(links.map((l) => l.branchId))),
+      elevated: true,
+      isSuperAdmin: false,
+      role: 'AGENCY_ADMIN',
+    }
+  }
+
   if (links.length === 0) return null
 
   const tenantId = links[0].tenantId

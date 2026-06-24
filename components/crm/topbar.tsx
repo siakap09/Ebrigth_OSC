@@ -115,11 +115,18 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
   // "Operation View" — NO Agency-View toggle, NO super-admin tooling — and the
   // internal OD + Marketing branches are hidden from their branch list.
   const isOperation = isOperationAccount(user.email)
+  // Only a real SUPER_ADMIN may use "Super Admin View". AGENCY_ADMIN accounts
+  // (incl. the CEO / agency-view accounts) get Agency View only.
+  const isRealSuper = viewerRole === 'SUPER_ADMIN'
   // The Super↔Agency toggle and agency-only tooling are for real admins only.
   const showViewToggle = isAdmin && !isOperation
-  // Force super (all-branches) semantics for operation regardless of any
-  // leftover localStorage view-mode from a prior admin session on this browser.
-  const effectiveViewMode: 'super' | 'agency' = isOperation ? 'super' : viewMode
+  // Force super (all-branches) semantics for operation; force agency for any
+  // elevated non-super (agency admins) so they never land in Super Admin View.
+  const effectiveViewMode: 'super' | 'agency' = isOperation
+    ? 'super'
+    : !isRealSuper
+      ? 'agency'
+      : viewMode
 
   useEffect(() => {
     setMounted(true)
@@ -226,17 +233,19 @@ function BranchSwitcher({ user }: { user: SessionUser }) {
               Operation accounts don't get this — they have a single view. */}
           {showViewToggle && (
             <div className="flex items-center gap-1 border-b border-slate-100 bg-slate-50 p-1.5 dark:border-slate-700 dark:bg-slate-900">
-              <button
-                onClick={() => setMode('super')}
-                className={cn(
-                  'flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition',
-                  viewMode === 'super'
-                    ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300'
-                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200',
-                )}
-              >
-                Super Admin View
-              </button>
+              {isRealSuper && (
+                <button
+                  onClick={() => setMode('super')}
+                  className={cn(
+                    'flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition',
+                    viewMode === 'super'
+                      ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800 dark:text-indigo-300'
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200',
+                  )}
+                >
+                  Super Admin View
+                </button>
+              )}
               <button
                 onClick={() => setMode('agency')}
                 className={cn(
