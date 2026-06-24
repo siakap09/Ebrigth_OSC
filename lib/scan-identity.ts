@@ -34,15 +34,29 @@ const ST_PERSON_REMAP: Readonly<Record<string, StIdentity>> = {
   '44040097': { empNo: '77020087', name: 'HAYTHAM TAREK QUMHIYEH' },
 };
 
-// Reverse: real empNo → the ST source person_id that carries their scans.
-const ST_REVERSE: Readonly<Record<string, string>> =
-  Object.fromEntries(Object.entries(ST_PERSON_REMAP).map(([src, v]) => [v.empNo, src]));
+// Device-AGNOSTIC remap: short/wrong scanner enrolment ids that mean the same
+// person on EVERY scanner (e.g. a temporary id the device assigned). Unlike the
+// ST map above, these apply regardless of which scanner emitted the scan.
+//   60 → ASMA AQHILAH BINTI MOHD KAMAL ARIFFIN (HQ FT EXEC), scanning at HQ main.
+const GENERAL_PERSON_REMAP: Readonly<Record<string, StIdentity>> = {
+  '60': { empNo: '33040106', name: 'ASMA AQHILAH BINTI MOHD KAMAL ARIFFIN' },
+};
+
+// Reverse: real empNo → the source person_id that carries their scans (both maps).
+const REVERSE: Readonly<Record<string, string>> = Object.fromEntries([
+  ...Object.entries(ST_PERSON_REMAP).map(([src, v]) => [v.empNo, src] as const),
+  ...Object.entries(GENERAL_PERSON_REMAP).map(([src, v]) => [v.empNo, src] as const),
+]);
 
 // Re-attribute one scan. On device ST a collided person_id becomes the real
 // person's empNo + name; on every other device the scan is returned unchanged.
 export function remapStScan(
   deviceId: string | null, personId: string, name: string | null,
 ): { personId: string; name: string | null } {
+  // Device-agnostic fixes first (apply on any scanner)…
+  const g = GENERAL_PERSON_REMAP[personId];
+  if (g) return { personId: g.empNo, name: g.name };
+  // …then the ST-only collision remap.
   if (deviceId === ST_DEVICE_ID) {
     const m = ST_PERSON_REMAP[personId];
     if (m) return { personId: m.empNo, name: m.name };
@@ -50,8 +64,8 @@ export function remapStScan(
   return { personId, name };
 }
 
-// Given a real empNo, the extra ST source person_id (if any) whose scans belong
-// to them — used by the monthly report and by branch-scoped queries.
+// Given a real empNo, the extra source person_id (if any) whose scans belong to
+// them — used by the monthly report and by branch-scoped queries.
 export function stSourceFor(empNo: string): string | undefined {
-  return ST_REVERSE[empNo];
+  return REVERSE[empNo];
 }
