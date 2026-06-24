@@ -123,16 +123,19 @@ async function loadOrCreateProfile(
   // branch dropdown and either couldn't submit, or — under the previous
   // unscoped behaviour — would auto-default to the wrong branch (Online).
   if (branchIds.length === 0 && (profile.role === 'user' || !profile.role)) {
-    const crmLinks = await prisma.crm_user_branch.findMany({
+    // Only the user's OWN / home branch (their oldest crm_user_branch link)
+    // confers ticket access. A cross-branch LEAD grant from an agency admin
+    // must NOT leak into the ticket system — extra ticket branches are
+    // provisioned explicitly via the superadmin ticket Users page.
+    const homeLink = await prisma.crm_user_branch.findFirst({
       where: { userId, tenantId },
+      orderBy: { createdAt: 'asc' },
       select: { branch: { select: { name: true } } },
     })
-    const branchNumbers = crmLinks
-      .map((l) => crmBranchToTktBranchNumber(l.branch?.name))
-      .filter((n): n is string => !!n)
-    if (branchNumbers.length > 0) {
+    const homeNumber = crmBranchToTktBranchNumber(homeLink?.branch?.name)
+    if (homeNumber) {
       const tktBranches = await prisma.tkt_branch.findMany({
-        where: { tenant_id: tenantId, branch_number: { in: branchNumbers } },
+        where: { tenant_id: tenantId, branch_number: homeNumber },
         select: { id: true },
       })
       branchIds = tktBranches.map((b) => b.id)
