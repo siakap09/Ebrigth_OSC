@@ -29,11 +29,14 @@ interface StudentRecord {
  * Re-syncs the CURRENT week's burnlist with live studentrecords.
  * SUPER_ADMIN only, Wednesdays only (Malaysia time).
  *
- * Smart merge logic:
+ * HARD mirror of AONE — per user request 2026-06-18:
  *   - Students in AONE but not in burnlist → INSERT (new expired students)
- *   - Students in burnlist but not in AONE → DELETE (processed/renewed)
+ *   - Students in burnlist but not in AONE → DELETE — ALWAYS, even if the
+ *     entry has cta / remarks / done filled in. The burnlist must match
+ *     AONE exactly after sync. (We used to keep edited rows as "history"
+ *     but that confused users who expected a clean refresh.)
  *   - Students in BOTH → KEEP existing entry (preserve cta/remarks/done),
- *     only update studentName / branch / expiryDate to match AONE
+ *     only update studentName / branch / expiryDate to match AONE.
  */
 export async function POST() {
   const auth = await requireRole([ROLES.SUPER_ADMIN]);
@@ -114,18 +117,13 @@ export async function POST() {
       }
     }
 
-    // 2) Remove entries no longer in live source — but ONLY ones the user
-    // hasn't touched (no cta, remarks, or done). Touched entries stay as
-    // "history" so the user keeps the record of what they actioned.
-    const toMaybeRemove = existing.filter((e) => !srcByStudentId.has(e.studentRecordId));
-    if (toMaybeRemove.length > 0) {
+    // 2) Remove every entry that no longer matches the live AONE source.
+    // Unconditional — cta / remarks / done get wiped along with the row.
+    // Sync = mirror AONE; the burnlist must look like AONE after this runs.
+    const toRemove = existing.filter((e) => !srcByStudentId.has(e.studentRecordId));
+    if (toRemove.length > 0) {
       const deleted = await prisma.burnlistEntry.deleteMany({
-        where: {
-          id: { in: toMaybeRemove.map((e) => e.id) },
-          cta: "",
-          remarks: "",
-          done: false,
-        },
+        where: { id: { in: toRemove.map((e) => e.id) } },
       });
       removed = deleted.count;
     }
@@ -138,7 +136,6 @@ export async function POST() {
         added,
         updated,
         removed,
-        keptAsHistory: toMaybeRemove.length - removed,
       },
     });
   } catch (err) {

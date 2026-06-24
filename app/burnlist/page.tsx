@@ -1262,7 +1262,7 @@ function SyncButton({ disabled, onSynced, onError, askConfirm }: SyncButtonProps
     askConfirm({
       title: "Sync with AONE?",
       message:
-        "This refreshes the current week from the live student records. New expired students get added, processed ones get removed. Edits you've already made (CTA / remarks / done) are KEPT.",
+        "This mirrors the current week against the live AONE student records. New expired students get added; students no longer in AONE get REMOVED — including any CTA, remarks, or done marks they had. The burnlist will look exactly like AONE after sync.",
       confirmLabel: "Sync now",
       tone: "warning",
       onConfirm: () => {
