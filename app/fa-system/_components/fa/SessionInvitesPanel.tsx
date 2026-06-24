@@ -5,7 +5,7 @@ import { useFAStore } from "@fa/_lib/store";
 import { EmptyState } from "@fa/_components/shared/EmptyState";
 import { StatusPill } from "@fa/_components/fa/StatusPill";
 import { InvitationStatusSelector } from "@fa/_components/fa/InvitationStatusSelector";
-import { Invitation, InvitationStatus, Session, Student, hasBacklog } from "@fa/_types";
+import { Invitation, InvitationStatus, Session, Student, hasBacklog, resolveStudentById, countsAsAttended } from "@fa/_types";
 
 export function SessionInvitesPanel({
   session, quota, invitations, canInvite, onOpenInvite, onStatusChange, onRemove,
@@ -22,10 +22,10 @@ export function SessionInvitesPanel({
   // `quota` from the page is marketing's confirm target. Invite cap is 3× that.
   const inviteCap = quota * 3;
   const remaining = inviteCap - invitations.length;
-  const confirmed = invitations.filter(i => i.status === "confirmed" || i.status === "attended").length;
+  const confirmed = invitations.filter(i => i.status === "confirmed" || countsAsAttended(i.status)).length;
 
   function getStudent(id: string): Student | undefined {
-    return students.find(s => s.id === id);
+    return resolveStudentById(students, id);
   }
 
   return (

@@ -24,7 +24,7 @@ import { AttendanceRoster } from "@fa/_components/fa/AttendanceRoster";
 import { ConfirmDialog } from "@fa/_components/shared/ConfirmDialog";
 import { WalkInModal } from "@fa/_components/fa/WalkInModal";
 import { getDisplayOrder, mergeFilteredReorder } from "@fa/_lib/sessionOrder";
-import { BRANCHES, BranchCode, Session } from "@fa/_types";
+import { BRANCHES, BranchCode, Session, resolveStudentById, countsAsAttended } from "@fa/_types";
 import { downloadCSV } from "@fa/_lib/csv";
 import { buildEventAttendanceCsv } from "@fa/_lib/eventAttendanceCsv";
 
@@ -117,8 +117,8 @@ export default function AttendancePage() {
       .filter(i => !seen.has(i.id))
       .sort((a, b) => {
         if (a.branch !== b.branch) return a.branch.localeCompare(b.branch);
-        const sa = students.find(s => s.id === a.studentId);
-        const sb = students.find(s => s.id === b.studentId);
+        const sa = resolveStudentById(students, a.studentId);
+        const sb = resolveStudentById(students, b.studentId);
         return (sa?.name || "").localeCompare(sb?.name || "");
       });
     return [...out, ...newcomers];
@@ -137,7 +137,7 @@ export default function AttendancePage() {
     ? invitations.find(i => i.id === activeDragId) ?? null
     : null;
   const activeStudent = activeInvitation
-    ? students.find(s => s.id === activeInvitation.studentId) ?? null
+    ? resolveStudentById(students, activeInvitation.studentId) ?? null
     : null;
 
   function handleDragStart(event: DragStartEvent) {
@@ -161,7 +161,7 @@ export default function AttendancePage() {
       const inv = invitations.find(i => i.id === activeId);
       if (!inv || inv.sessionId === targetSessionId) return;
       const target = sessions.find(s => s.id === targetSessionId);
-      const student = students.find(s => s.id === inv.studentId);
+      const student = resolveStudentById(students, inv.studentId);
       if (!target || !student) return;
       setPendingTransfer({
         invitationId: activeId,
@@ -353,12 +353,12 @@ export default function AttendancePage() {
                       onSelect={() => setSelectedSessionId(session.id)}
                       attended={invitations.filter(i =>
                         i.sessionId === session.id &&
-                        i.status === "attended" &&
+                        countsAsAttended(i.status) &&
                         (visibleBranchFilter === "all" || i.branch === visibleBranchFilter)
                       ).length}
                       confirmed={invitations.filter(i =>
                         i.sessionId === session.id &&
-                        (i.status === "confirmed" || i.status === "attended") &&
+                        (i.status === "confirmed" || countsAsAttended(i.status)) &&
                         (visibleBranchFilter === "all" || i.branch === visibleBranchFilter)
                       ).length}
                       inviteCount={invitations.filter(i =>

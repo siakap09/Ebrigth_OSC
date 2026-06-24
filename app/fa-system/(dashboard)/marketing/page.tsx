@@ -15,7 +15,7 @@ import { ArchiveRow } from "@fa/_components/fa/ArchiveRow";
 import { MultiGradeManagerModal } from "@fa/_components/fa/MultiGradeManagerModal";
 import { DuplicateEventModal } from "@fa/_components/fa/DuplicateEventModal";
 import { Z } from "@fa/_lib/zIndex";
-import { EventStatus, FAEvent, countsAsConfirmed } from "@fa/_types";
+import { EventStatus, FAEvent, countsAsConfirmed, countsAsAttended } from "@fa/_types";
 
 export default function MarketingEventsPage() {
   const user = useCurrentUser();
@@ -77,9 +77,9 @@ export default function MarketingEventsPage() {
   // Confirmed = everyone who confirmed (attended + no_show both confirmed first).
   const confirmedCount = (id: string) =>
     invitations.filter(i => i.eventId === id && countsAsConfirmed(i.status)).length;
-  // Attended = students who actually showed up (marked attended on the day).
+  // Attended = students who actually showed up (marked attended, or walked in).
   const attendedCount = (id: string) =>
-    invitations.filter(i => i.eventId === id && i.status === "attended").length;
+    invitations.filter(i => i.eventId === id && countsAsAttended(i.status)).length;
   const quotaTotal = (id: string) => {
     const sessionIds = new Set(sessions.filter(s => s.eventId === id).map(s => s.id));
     return quotas.filter(q => sessionIds.has(q.sessionId)).reduce((sum, q) => sum + q.quota, 0);

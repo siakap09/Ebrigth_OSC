@@ -336,25 +336,36 @@ export function hasBacklog(student: Student): boolean {
   return false;
 }
 
-/** Chapter at which a student becomes eligible for their CURRENT-grade FA.
- *  The classroom rule: a student must have progressed to C9 within their
- *  current grade before they can sit for that grade's Pro-Class Mastery.
- *  Grades they've already completed (i.e., grades below current) are always
- *  available — they've moved past, so the tickbox is just recording history. */
+/** Retained for display/labels only — no longer gates eligibility.
+ *  The classroom rule used to require reaching chapter C9 of the current grade
+ *  before a student could be invited to appraise it. That threshold changed too
+ *  often, so eligibility now simply follows the database: every student can be
+ *  invited for any grade up to and including their current grade, regardless of
+ *  chapter. (See invitableGradesFor below.) */
 export const FA_CURRENT_GRADE_MIN_CHAPTER = 9;
 
 /** The list of grades a student can be invited to appraise right now.
- *    - All grades below current grade are always returned (past grades).
- *    - The current grade is only returned if student.credit >= 9
- *      (the C9 threshold for current-grade FA eligibility).
- *  Returned in ascending order. */
+ *  Eligibility follows the database with NO chapter condition: every grade from
+ *  1 up to and including the student's current grade is invitable. Past grades
+ *  are history; the current grade is always available (the old C9 gate was
+ *  removed because the rule kept changing). Returned in ascending order. */
 export function invitableGradesFor(student: Student): number[] {
   const grades: number[] = [];
-  for (let g = 1; g < student.grade; g++) grades.push(g);
-  if (student.credit >= FA_CURRENT_GRADE_MIN_CHAPTER) {
-    grades.push(student.grade);
-  }
+  for (let g = 1; g <= student.grade; g++) grades.push(g);
   return grades;
+}
+
+/** Resolve the Student an invitation points at, tolerant of archived-id drift.
+ *  Active students are keyed by their raw id; archived students load as
+ *  `arch-<no>`. A few legacy/backfilled invitations stored the bare number for
+ *  an archived student, so when an exact match fails we retry with the `arch-`
+ *  prefix. Returns undefined only when the id exists in neither form (a
+ *  genuinely orphaned invitation — no student record anywhere). */
+export function resolveStudentById<T extends { id: string }>(students: T[], studentId: string): T | undefined {
+  const exact = students.find(s => s.id === studentId);
+  if (exact) return exact;
+  if (/^\d+$/.test(studentId)) return students.find(s => s.id === `arch-${studentId}`);
+  return undefined;
 }
 
 /** Render a numeric grade back to its curriculum label. The ladder runs

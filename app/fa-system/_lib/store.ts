@@ -509,7 +509,7 @@ export const useFAStore = create<FAStore>()(
           const invitations = s.invitations.map((i) => (i.id === id ? updated : i));
           // When attendance is marked, persist the picked grade onto the
           // student's faHistory so the FA tick stays after the event.
-          if (status === "attended" && updated.targetGrade != null) {
+          if ((status === "attended" || status === "walk_in") && updated.targetGrade != null) {
             const students = s.students.map((st) =>
               st.id === updated.studentId
                 ? {

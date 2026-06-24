@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "@pcm/_components/shared/Modal";
 import { useFAStore } from "@pcm/_lib/store";
-import { BRANCHES, Invitation } from "@pcm/_types";
+import { BRANCHES, Invitation, resolveStudentById } from "@pcm/_types";
 import { CalendarClock, CheckCircle2, XCircle, DollarSign, Video, Send, Clock } from "lucide-react";
 
 interface Coach {
@@ -66,7 +66,7 @@ export function InvitationDetailModal({
   if (!invitation) return null;
   const inv = invitation;
 
-  const student = students.find(s => s.id === inv.studentId);
+  const student = resolveStudentById(students, inv.studentId);
   const name = student?.name ?? inv.studentName ?? `#${inv.studentId}`;
   const grade = inv.targetGrade || student?.grade || 0;
   const parentName = student?.parentName ?? inv.studentParentName ?? "—";

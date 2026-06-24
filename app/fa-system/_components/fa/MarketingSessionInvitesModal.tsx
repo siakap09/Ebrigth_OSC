@@ -10,6 +10,7 @@ import {
   Invitation,
   InvitationStatus,
   Session,
+  countsAsAttended,
 } from "@fa/_types";
 
 const STATUS_TONE: Record<InvitationStatus, "neutral" | "info" | "success" | "warning" | "danger"> = {
@@ -18,6 +19,7 @@ const STATUS_TONE: Record<InvitationStatus, "neutral" | "info" | "success" | "wa
   attended: "success",
   declined: "danger",
   no_show: "warning",
+  walk_in: "success",
 };
 
 const STATUS_LABEL: Record<InvitationStatus, string> = {
@@ -26,6 +28,7 @@ const STATUS_LABEL: Record<InvitationStatus, string> = {
   attended: "Attended",
   declined: "Declined",
   no_show: "No show",
+  walk_in: "Walk-in",
 };
 
 export function MarketingSessionInvitesModal({
@@ -95,7 +98,7 @@ export function MarketingSessionInvitesModal({
   const totals = {
     quota: sessionQuotas.reduce((sum, q) => sum + q.quota, 0),
     invited: sessionInvites.length,
-    confirmed: sessionInvites.filter(i => i.status === "confirmed" || i.status === "attended").length,
+    confirmed: sessionInvites.filter(i => i.status === "confirmed" || countsAsAttended(i.status)).length,
   };
 
   function studentLabel(invitation: Invitation) {

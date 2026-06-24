@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Users, Search, Download } from "lucide-react";
 import { useFAStore } from "@fa/_lib/store";
 import { StatusPill } from "@fa/_components/fa/StatusPill";
-import { BRANCHES, FAEvent, InvitationStatus } from "@fa/_types";
+import { BRANCHES, FAEvent, InvitationStatus, countsAsAttended } from "@fa/_types";
 import { downloadCSV } from "@fa/_lib/csv";
 
 const STATUS_TONE: Record<InvitationStatus, "neutral" | "info" | "success" | "warning" | "danger"> = {
@@ -13,6 +13,7 @@ const STATUS_TONE: Record<InvitationStatus, "neutral" | "info" | "success" | "wa
   attended: "success",
   declined: "danger",
   no_show: "warning",
+  walk_in: "success",
 };
 
 const STATUS_LABEL: Record<InvitationStatus, string> = {
@@ -21,6 +22,7 @@ const STATUS_LABEL: Record<InvitationStatus, string> = {
   attended: "Attended",
   declined: "Declined",
   no_show: "Absent",
+  walk_in: "Walk-in",
 };
 
 type StatusGroup = "confirmed" | "all";
@@ -57,7 +59,7 @@ export function EventInvitationListCard({ event }: EventInvitationListCardProps)
       .filter(i => i.eventId === event.id)
       .filter(i => {
         if (filter === "confirmed") {
-          return i.status === "confirmed" || i.status === "attended";
+          return i.status === "confirmed" || countsAsAttended(i.status);
         }
         return true;
       })
@@ -95,7 +97,7 @@ export function EventInvitationListCard({ event }: EventInvitationListCardProps)
     [allInvitations, event.id]
   );
   const confirmedCount = allEventInvites.filter(
-    i => i.status === "confirmed" || i.status === "attended"
+    i => i.status === "confirmed" || countsAsAttended(i.status)
   ).length;
 
   // Unique branches present in this event (so the dropdown isn't 20 long).

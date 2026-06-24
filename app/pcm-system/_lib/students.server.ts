@@ -132,6 +132,7 @@ function rowToStudent(row: StudentRow): { student: Student } | { skip: SkipReaso
  *  is often a placeholder ("—"), so we namespace the PCM id off `no`. */
 interface ArchivedStudentRow {
   no: number;
+  student_id: string | null;
   name: string | null;
   status: string | null;
   branch: string | null;
@@ -151,6 +152,16 @@ export function archivedStudentId(no: number): string {
   return `arch-${no}`;
 }
 
+/** The portal id for an archived student. Prefer the `student_id` column — it's
+ *  `arch-<original studentrecords id>`, which stays correct even for archives
+ *  created after `no` became a fresh sequence (where `no` no longer equals the
+ *  original id). Fall back to `arch-<no>` only for rows still missing student_id.
+ *  This is what makes a tolerant lookup of `arch-<original id>` find new archives. */
+function archivedRowId(row: { student_id: string | null; no: number }): string {
+  const sid = (row.student_id ?? "").trim();
+  return /^arch-\d+$/i.test(sid) ? sid : archivedStudentId(row.no);
+}
+
 function archivedRowToStudent(row: ArchivedStudentRow): { student: Student } | { skip: SkipReason } {
   if (!row.branch) return { skip: "missing_branch" };
   const branch = normaliseBranch(row.branch);
@@ -163,7 +174,7 @@ function archivedRowToStudent(row: ArchivedStudentRow): { student: Student } | {
 
   return {
     student: {
-      id: archivedStudentId(row.no),
+      id: archivedRowId(row),
       name: row.name ?? "",
       branch,
       grade: gc.grade,
@@ -185,7 +196,7 @@ function archivedRowToStudent(row: ArchivedStudentRow): { student: Student } | {
 async function fetchArchivedStudents(): Promise<Student[]> {
   try {
     const { rows } = await pool.query<ArchivedStudentRow>(
-      `SELECT no, name, status, branch, enrollment_date, grade_chapter,
+      `SELECT no, student_id, name, status, branch, enrollment_date, grade_chapter,
               pcm_progress_json, guardian_name, guardian_mobile, age_group
          FROM archived_students`
     );

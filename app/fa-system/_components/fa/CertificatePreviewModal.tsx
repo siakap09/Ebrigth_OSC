@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { ArrowLeft, Award, ChevronRight, Clock, Printer, Download } from "lucide-react";
 import { Modal } from "@fa/_components/shared/Modal";
 import { useFAStore } from "@fa/_lib/store";
-import { BRANCHES, FAEvent, Invitation, Session, Student } from "@fa/_types";
+import { BRANCHES, FAEvent, Invitation, Session, Student, countsAsAttended } from "@fa/_types";
 import { formatDateRange } from "@fa/_lib/date";
 import { downloadCSV } from "@fa/_lib/csv";
 
@@ -65,7 +65,7 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
 
   function printAllForSession(sessId: string) {
     const invs = allInvitations.filter(
-      i => i.sessionId === sessId && (i.status === "confirmed" || i.status === "attended")
+      i => i.sessionId === sessId && (i.status === "confirmed" || countsAsAttended(i.status))
     );
     if (invs.length === 0) return;
     setBulk(buildBatch(invs));
@@ -73,7 +73,7 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
 
   function printAllForEvent() {
     const invs = allInvitations.filter(
-      i => i.eventId === event.id && (i.status === "confirmed" || i.status === "attended")
+      i => i.eventId === event.id && (i.status === "confirmed" || countsAsAttended(i.status))
     );
     if (invs.length === 0) return;
     setBulk(buildBatch(invs));
@@ -130,7 +130,7 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
 
   function exportCanvaForSession(sessId: string) {
     const invs = allInvitations.filter(
-      i => i.sessionId === sessId && (i.status === "confirmed" || i.status === "attended")
+      i => i.sessionId === sessId && (i.status === "confirmed" || countsAsAttended(i.status))
     );
     const sess = allSessions.find(s => s.id === sessId);
     const suffix = sess ? `D${sess.dayNumber}S${sess.sessionNumber}` : "session";
@@ -139,7 +139,7 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
 
   function exportCanvaForEvent() {
     const invs = allInvitations.filter(
-      i => i.eventId === event.id && (i.status === "confirmed" || i.status === "attended")
+      i => i.eventId === event.id && (i.status === "confirmed" || countsAsAttended(i.status))
     );
     exportCanvaCSV(invs, "all");
   }
@@ -147,7 +147,7 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
   function printAllForDay(day: number) {
     const dayInvs = allInvitations.filter(i => {
       if (i.eventId !== event.id) return false;
-      if (i.status !== "confirmed" && i.status !== "attended") return false;
+      if (i.status !== "confirmed" && !countsAsAttended(i.status)) return false;
       const sess = allSessions.find(s => s.id === i.sessionId);
       return sess?.dayNumber === day;
     });
@@ -158,7 +158,7 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
   function exportCanvaForDay(day: number) {
     const dayInvs = allInvitations.filter(i => {
       if (i.eventId !== event.id) return false;
-      if (i.status !== "confirmed" && i.status !== "attended") return false;
+      if (i.status !== "confirmed" && !countsAsAttended(i.status)) return false;
       const sess = allSessions.find(s => s.id === i.sessionId);
       return sess?.dayNumber === day;
     });
@@ -183,7 +183,7 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
     const counts: Record<string, number> = {};
     for (const s of eventSessions) {
       counts[s.id] = allInvitations.filter(
-        i => i.sessionId === s.id && (i.status === "confirmed" || i.status === "attended")
+        i => i.sessionId === s.id && (i.status === "confirmed" || countsAsAttended(i.status))
       ).length;
     }
     return counts;
@@ -197,7 +197,7 @@ export function CertificatePreviewModal({ open, onClose, event, initialSessionId
   const sessionAttendees = useMemo(() => {
     if (!selectedSession) return [];
     return allInvitations
-      .filter(i => i.sessionId === selectedSession.id && (i.status === "confirmed" || i.status === "attended"))
+      .filter(i => i.sessionId === selectedSession.id && (i.status === "confirmed" || countsAsAttended(i.status)))
       .map(i => ({ inv: i, student: allStudents.find(s => s.id === i.studentId) ?? null }))
       .filter((x): x is { inv: Invitation; student: Student } => x.student !== null)
       .sort((a, b) => a.student.name.localeCompare(b.student.name));

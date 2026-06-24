@@ -6,7 +6,7 @@ import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
 import { AppShell } from "@fa/_components/shared/AppShell";
 import {
-  BRANCHES, BranchCode, FA_REPORT_MAX_PER_CRITERION, faReportTotal,
+  BRANCHES, BranchCode, FA_REPORT_MAX_PER_CRITERION, faReportTotal, countsAsAttended,
 } from "@fa/_types";
 import {
   ClipboardCheck, Search, Printer, Pencil, FileText, Users,
@@ -61,7 +61,7 @@ export default function FaReportsListPage() {
   // still pending. We don't anchor on "reports only" because then a
   // not-yet-filled student would disappear from the list.
   const rows = useMemo(() => {
-    const attended = invitations.filter(i => i.status === "attended");
+    const attended = invitations.filter(i => countsAsAttended(i.status));
     const list = attended.map(inv => {
       const student = studentsById.get(inv.studentId);
       const report  = reportByInvId.get(inv.id);

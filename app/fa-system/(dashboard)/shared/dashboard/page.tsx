@@ -11,7 +11,7 @@ import {
   CalendarDays, MapPin, Users, CheckCircle2, XCircle,
   Filter, BarChart3
 } from "lucide-react";
-import { BRANCHES, BranchCode, countsAsConfirmed } from "@fa/_types";
+import { BRANCHES, BranchCode, countsAsConfirmed, countsAsAttended } from "@fa/_types";
 
 export default function DashboardPage() {
   const user = useCurrentUser();
@@ -68,7 +68,7 @@ export default function DashboardPage() {
         const confirmed = relevantInvs.filter(
           i => countsAsConfirmed(i.status)
         ).length;
-        const attended = relevantInvs.filter(i => i.status === "attended").length;
+        const attended = relevantInvs.filter(i => countsAsAttended(i.status)).length;
         const noShow = relevantInvs.filter(i => i.status === "no_show").length;
         const declined = relevantInvs.filter(i => i.status === "declined").length;
         return {
@@ -137,7 +137,7 @@ export default function DashboardPage() {
         const confirmed = bInvs.filter(
           i => countsAsConfirmed(i.status)
         ).length;
-        const attended = bInvs.filter(i => i.status === "attended").length;
+        const attended = bInvs.filter(i => countsAsAttended(i.status)).length;
         const absent = bInvs.filter(i => i.status === "no_show").length;
         const attendanceMarked = attended + absent;
         const attendanceRate = attendanceMarked > 0 ? attended / attendanceMarked : 0;
@@ -164,7 +164,7 @@ export default function DashboardPage() {
       const totalQuota = bQuotas.reduce((sum, q) => sum + q.quota, 0);
       const invited = bInvs.length;
       const confirmed = bInvs.filter(i => countsAsConfirmed(i.status)).length;
-      const attended = bInvs.filter(i => i.status === "attended").length;
+      const attended = bInvs.filter(i => countsAsAttended(i.status)).length;
       return {
         branch: b,
         totalQuota,

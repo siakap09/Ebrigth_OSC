@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useFAStore } from "@pcm/_lib/store";
 import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { AppShell } from "@pcm/_components/shared/AppShell";
-import { BRANCHES, BranchCode } from "@pcm/_types";
+import { BRANCHES, BranchCode, resolveStudentById } from "@pcm/_types";
 import { ArrowLeft, ClipboardCheck, Printer, AlertCircle, CheckCircle2, Upload, Trash2, UserPlus } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -81,7 +81,7 @@ export default function CoachReportFormPage() {
   );
   const event     = useMemo(() => events.find(e => e.id === invitation?.eventId), [events, invitation]);
   const session   = useMemo(() => sessions.find(s => s.id === invitation?.sessionId), [sessions, invitation]);
-  const student   = useMemo(() => students.find(s => s.id === invitation?.studentId), [students, invitation]);
+  const student   = useMemo(() => invitation ? resolveStudentById(students, invitation.studentId) : undefined, [students, invitation]);
 
   // Seed form state from the existing report (if any) or sane defaults.
   const [scores, setScores] = useState<Scores>({ confidence: 0, voice: 0, eyeContact: 0, ideaExpression: 0 });

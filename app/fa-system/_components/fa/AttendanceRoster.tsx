@@ -6,7 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
 import { StatusPill } from "@fa/_components/fa/StatusPill";
-import { BRANCHES, Invitation, Student } from "@fa/_types";
+import { BRANCHES, Invitation, Student, resolveStudentById, countsAsAttended } from "@fa/_types";
 
 export function AttendanceRoster({
   session, orderedInvitations, pendingConfirmationsCount, canEdit, canDrag,
@@ -25,7 +25,7 @@ export function AttendanceRoster({
   const students = useFAStore(s => s.students);
   const updateStatus = useFAStore(s => s.updateInvitationStatus);
 
-  const attended = orderedInvitations.filter(i => i.status === "attended").length;
+  const attended = orderedInvitations.filter(i => countsAsAttended(i.status)).length;
   const noShow = orderedInvitations.filter(i => i.status === "no_show").length;
   const awaiting = orderedInvitations.filter(i => i.status === "confirmed").length;
 
@@ -101,7 +101,7 @@ export function AttendanceRoster({
             <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
               <tbody>
                 {orderedInvitations.map((inv, idx) => {
-                  const looked = students.find(s => s.id === inv.studentId);
+                  const looked = resolveStudentById(students, inv.studentId);
                   // Orphaned invitation (student removed from Heidi after invite):
                   // show a placeholder row instead of dropping it, so the roster
                   // count matches the visible rows and it stays actionable.
@@ -208,41 +208,51 @@ function SortableInvitationRow({
         )}
       </td>
       <td>
-        <div className="flex items-center gap-1 justify-end">
-          <button
-            onClick={onAttended}
-            disabled={!canEdit}
-            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-              inv.status === "attended"
-                ? "bg-success-soft text-success ring-1 ring-success/30"
-                : "text-ink-500 hover:bg-ivory-200"
-            } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />
-            Present
-          </button>
-          <button
-            onClick={onNoShow}
-            disabled={!canEdit}
-            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-              inv.status === "no_show"
-                ? "bg-danger-soft text-danger ring-1 ring-danger/30"
-                : "text-ink-500 hover:bg-ivory-200"
-            } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
-          >
-            <XCircle className="w-3.5 h-3.5 inline mr-1" />
-            Absent
-          </button>
-          {(inv.status === "attended" || inv.status === "no_show") && canEdit && (
+        {inv.status === "walk_in" ? (
+          // Walk-ins are present by definition — no Present/Absent toggle.
+          <div className="flex items-center justify-end">
+            <StatusPill tone="walk_in" showDot={false}>
+              <CheckCircle2 className="w-3 h-3 inline mr-1" />
+              Walk-in
+            </StatusPill>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 justify-end">
             <button
-              onClick={onReset}
-              className="text-xs text-ink-400 hover:text-ink-700 px-2"
-              title="Reset to awaiting"
+              onClick={onAttended}
+              disabled={!canEdit}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                inv.status === "attended"
+                  ? "bg-success-soft text-success ring-1 ring-success/30"
+                  : "text-ink-500 hover:bg-ivory-200"
+              } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
             >
-              Reset
+              <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />
+              Present
             </button>
-          )}
-        </div>
+            <button
+              onClick={onNoShow}
+              disabled={!canEdit}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                inv.status === "no_show"
+                  ? "bg-danger-soft text-danger ring-1 ring-danger/30"
+                  : "text-ink-500 hover:bg-ivory-200"
+              } ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}
+            >
+              <XCircle className="w-3.5 h-3.5 inline mr-1" />
+              Absent
+            </button>
+            {(inv.status === "attended" || inv.status === "no_show") && canEdit && (
+              <button
+                onClick={onReset}
+                className="text-xs text-ink-400 hover:text-ink-700 px-2"
+                title="Reset to awaiting"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        )}
       </td>
     </tr>
   );

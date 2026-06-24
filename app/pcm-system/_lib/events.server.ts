@@ -272,7 +272,9 @@ export async function fetchAllEventData(): Promise<{
          LEFT JOIN studentrecords s
                 ON s.id::text = i.student_id
          LEFT JOIN archived_students a
-                ON a.no::text = i.student_id
+                ON a.student_id = i.student_id
+                OR a.no::text = i.student_id
+                OR a.student_id = 'arch-' || i.student_id
         WHERE i.tenant_id = $1`,
       [TENANT]
     ).catch((err) => {
@@ -584,6 +586,37 @@ export async function upsertQuotaRow(
 // Invitations
 // ----------------------------------------------------------------------------
 
+// Guard: the studentId MUST resolve to a real student before we create an
+// invitation — otherwise we manufacture an orphan that later renders as
+// "(not in records)". Active students live in studentrecords (numeric id);
+// archived students in archived_students (`arch-<no>`). Throws InvitationRejected
+// when the student definitively doesn't exist. Fails OPEN (allows the invite)
+// only if the lookup query itself can't run, so an infra hiccup never blocks
+// legitimate invites.
+async function assertStudentExists(studentId: string): Promise<void> {
+  try {
+    if (studentId.startsWith("arch-")) {
+      // Match on student_id (the loaded id) first; `no` only as a legacy fallback
+      // since it no longer equals the original id for newer archives.
+      const no = Number(studentId.slice("arch-".length));
+      const hasNo = Number.isFinite(no);
+      const r = await pool.query(
+        `SELECT 1 FROM archived_students WHERE student_id = $1${hasNo ? " OR no = $2" : ""} LIMIT 1`,
+        hasNo ? [studentId, no] : [studentId],
+      );
+      if (r.rowCount === 0) throw new InvitationRejected("Student not found in records — cannot invite an unknown student.");
+    } else {
+      const id = Number(studentId);
+      if (!Number.isFinite(id)) throw new InvitationRejected("Invalid student id — cannot invite an unknown student.");
+      const r = await pool.query(`SELECT 1 FROM studentrecords WHERE id = $1 LIMIT 1`, [id]);
+      if (r.rowCount === 0) throw new InvitationRejected("Student not found in records — cannot invite an unknown student.");
+    }
+  } catch (err) {
+    if (err instanceof InvitationRejected) throw err;
+    console.warn("[pcm] student-exists check skipped (lookup failed):", (err as Error).message);
+  }
+}
+
 export async function createInvitationRow(args: {
   eventId: string;
   sessionId: string;
@@ -595,6 +628,9 @@ export async function createInvitationRow(args: {
   /** "progress" (default) or "renewal". Set by the BM at invite time. */
   inviteType?: InviteType;
 }): Promise<Invitation> {
+  // 0. The student must exist (active or archived) — never create an orphan.
+  await assertStudentExists(args.studentId);
+
   // Multi-step business-rule check, run as one logical transaction:
   //   1. Is this (event, branch) opted into multi-grade invites, and under
   //      which day-policy (SAME_DAY / DIFF_DAY / BOTH)?
@@ -869,11 +905,16 @@ export async function markPcmProgressForStudent(
 /** PCM-progress writeback for an archived student (id "arch-<no>") — mirrors
  *  markPcmProgressForStudent but targets archived_students keyed on `no`. */
 async function markArchivedPcmProgress(studentId: string, grade: number): Promise<void> {
-  const no = Number(studentId.slice("arch-".length));
-  if (!Number.isFinite(no) || grade < 1) return;
-  const { rows } = await pool.query<{ pcm_progress_json: unknown }>(
-    `SELECT pcm_progress_json FROM archived_students WHERE no = $1`,
-    [no]
+  if (grade < 1) return;
+  // Resolve the archived row by `student_id` (= the loaded PCM id) first, falling
+  // back to `no` for legacy rows. `no` no longer equals the original id for newer
+  // archives, so student_id is the reliable key.
+  const parsedNo = Number(studentId.slice("arch-".length));
+  const hasNo = Number.isFinite(parsedNo);
+  const { rows } = await pool.query<{ no: number; pcm_progress_json: unknown }>(
+    `SELECT no, pcm_progress_json FROM archived_students
+      WHERE student_id = $1${hasNo ? " OR no = $2" : ""} LIMIT 1`,
+    hasNo ? [studentId, parsedNo] : [studentId]
   );
   if (!rows[0]) return;
   const arr: boolean[] = Array.isArray(rows[0].pcm_progress_json)
@@ -883,7 +924,7 @@ async function markArchivedPcmProgress(studentId: string, grade: number): Promis
   arr[grade - 1] = true;
   await pool.query(
     `UPDATE archived_students SET pcm_progress_json = $1::jsonb WHERE no = $2`,
-    [JSON.stringify(arr), no]
+    [JSON.stringify(arr), rows[0].no]
   );
 }
 

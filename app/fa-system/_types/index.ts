@@ -334,16 +334,35 @@ export type InvitationStatus =
   | "confirmed"     // Parent confirmed attendance
   | "declined"      // Parent declined
   | "attended"      // Student showed up on the day
-  | "no_show";      // Student did not show up
+  | "no_show"       // Student did not show up
+  | "walk_in";      // Student walked in WITHOUT an invitation — already attending.
+                    // Tracked as its own status, but counts as attended everywhere.
+
+/** Statuses that mean the student was PRESENT at the event. A walk-in is present
+ *  by definition (they walked in), so it counts as attended in every metric and
+ *  certificate/inventory check — it's only a distinct status for tracking. */
+export function countsAsAttended(status: InvitationStatus): boolean {
+  return status === "attended" || status === "walk_in";
+}
 
 /** Statuses that count toward the "confirmed" HEADCOUNT metric on dashboards:
- *  everyone who confirmed they'd join — whether they then attended, didn't show
- *  (no_show), or are still pending on the day. A no_show confirmed first, so it
- *  counts here. This is intentionally broader than operational "active" checks
- *  (certificates, inventory gifts, session-slot capacity, attendance roster),
- *  which exclude no_show and keep using an explicit confirmed/attended filter. */
+ *  everyone who confirmed they'd join — whether they then attended, walked in,
+ *  didn't show (no_show), or are still pending on the day. */
 export function countsAsConfirmed(status: InvitationStatus): boolean {
-  return status === "confirmed" || status === "attended" || status === "no_show";
+  return status === "confirmed" || status === "no_show" || countsAsAttended(status);
+}
+
+/** Resolve the Student an invitation points at, tolerant of archived-id drift.
+ *  Active students are keyed by their raw id; archived students load as
+ *  `arch-<no>`. A few legacy/backfilled invitations stored the bare number for
+ *  an archived student, so when an exact match fails we retry with the `arch-`
+ *  prefix. Returns undefined only when the id exists in neither form (a
+ *  genuinely orphaned invitation — no student record anywhere). */
+export function resolveStudentById<T extends { id: string }>(students: T[], studentId: string): T | undefined {
+  const exact = students.find(s => s.id === studentId);
+  if (exact) return exact;
+  if (/^\d+$/.test(studentId)) return students.find(s => s.id === `arch-${studentId}`);
+  return undefined;
 }
 
 export interface Invitation {

@@ -21,7 +21,7 @@ import { EventStatusPill } from "@pcm/_components/fa/StatusPill";
 import { AttendanceRoster } from "@pcm/_components/fa/AttendanceRoster";
 import { WalkInModal } from "@pcm/_components/fa/WalkInModal";
 import { getDisplayOrder, mergeFilteredReorder } from "@pcm/_lib/sessionOrder";
-import { BRANCHES, BranchCode, Invitation, Session } from "@pcm/_types";
+import { BRANCHES, BranchCode, Invitation, Session, resolveStudentById } from "@pcm/_types";
 import { downloadCSV } from "@pcm/_lib/csv";
 import { buildEventAttendanceCsv } from "@pcm/_lib/eventAttendanceCsv";
 
@@ -113,7 +113,7 @@ export default function AttendancePage() {
           (visibleBranchFilter === "all" || i.branch === visibleBranchFilter) &&
           (statusFilter === "all" || i.status === statusFilter) &&
           (q === "" || (() => {
-            const st = students.find(s => s.id === i.studentId);
+            const st = resolveStudentById(students, i.studentId);
             const name = (st?.name ?? i.studentName ?? "").toLowerCase();
             return name.includes(q) || i.studentId.toLowerCase().includes(q);
           })())
@@ -130,8 +130,8 @@ export default function AttendancePage() {
       .filter(i => !seen.has(i.id))
       .sort((a, b) => {
         if (a.branch !== b.branch) return a.branch.localeCompare(b.branch);
-        const sa = students.find(s => s.id === a.studentId);
-        const sb = students.find(s => s.id === b.studentId);
+        const sa = resolveStudentById(students, a.studentId);
+        const sb = resolveStudentById(students, b.studentId);
         return (sa?.name || "").localeCompare(sb?.name || "");
       });
     return [...out, ...newcomers];
@@ -162,7 +162,7 @@ export default function AttendancePage() {
   })();
 
   const activeInvitation = activeDragId ? invitations.find(i => i.id === activeDragId) ?? null : null;
-  const activeStudent = activeInvitation ? students.find(s => s.id === activeInvitation.studentId) ?? null : null;
+  const activeStudent = activeInvitation ? resolveStudentById(students, activeInvitation.studentId) ?? null : null;
 
   function handleDragStart(event: DragStartEvent) { setActiveDragId(String(event.active.id)); }
   function handleDragCancel() { setActiveDragId(null); }

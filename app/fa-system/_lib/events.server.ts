@@ -485,6 +485,37 @@ export async function upsertQuotaRow(
 // Invitations
 // ----------------------------------------------------------------------------
 
+// Guard: the studentId MUST resolve to a real student before we create an
+// invitation — otherwise we manufacture an orphan that later renders as
+// "(not in records)". Active students live in studentrecords (numeric id);
+// archived students in archived_students (`arch-<no>`). Throws InvitationRejected
+// when the student definitively doesn't exist. Fails OPEN (allows the invite)
+// only if the lookup query itself can't run, so an infra hiccup never blocks
+// legitimate invites.
+async function assertStudentExists(studentId: string): Promise<void> {
+  try {
+    if (studentId.startsWith("arch-")) {
+      // Match on student_id (the loaded id) first; `no` only as a legacy fallback
+      // since it no longer equals the original id for newer archives.
+      const no = Number(studentId.slice("arch-".length));
+      const hasNo = Number.isFinite(no);
+      const r = await pool.query(
+        `SELECT 1 FROM archived_students WHERE student_id = $1${hasNo ? " OR no = $2" : ""} LIMIT 1`,
+        hasNo ? [studentId, no] : [studentId],
+      );
+      if (r.rowCount === 0) throw new InvitationRejected("Student not found in records — cannot invite an unknown student.");
+    } else {
+      const id = Number(studentId);
+      if (!Number.isFinite(id)) throw new InvitationRejected("Invalid student id — cannot invite an unknown student.");
+      const r = await pool.query(`SELECT 1 FROM studentrecords WHERE id = $1 LIMIT 1`, [id]);
+      if (r.rowCount === 0) throw new InvitationRejected("Student not found in records — cannot invite an unknown student.");
+    }
+  } catch (err) {
+    if (err instanceof InvitationRejected) throw err;
+    console.warn("[fa] student-exists check skipped (lookup failed):", (err as Error).message);
+  }
+}
+
 export async function createInvitationRow(args: {
   eventId: string;
   sessionId: string;
@@ -494,6 +525,9 @@ export async function createInvitationRow(args: {
   status: InvitationStatus;
   invitedBy: string;
 }): Promise<Invitation> {
+  // 0. The student must exist (active or archived) — never create an orphan.
+  await assertStudentExists(args.studentId);
+
   // Multi-step business-rule check, run as one logical transaction:
   //   1. Is this (event, branch) opted into multi-grade invites, and under
   //      which day-policy (SAME_DAY / DIFF_DAY / BOTH)?
@@ -594,7 +628,7 @@ export async function createInvitationRow(args: {
     const { rows } = await pool.query<InvitationRow>(
       `INSERT INTO fa_invitations
          (tenant_id, event_id, session_id, student_id, branch, target_grade, status, invited_by, invited_at, confirmed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $7 = 'confirmed' THEN now() ELSE NULL END)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $7 IN ('confirmed', 'walk_in') THEN now() ELSE NULL END)
        RETURNING id, event_id, session_id, student_id, branch, target_grade, status, invited_by,
                  invited_at, confirmed_at, attendance_marked_at, attendance_marked_by, notes`,
       [TENANT, args.eventId, args.sessionId, args.studentId, args.branch, args.targetGrade, args.status, args.invitedBy]
@@ -623,7 +657,7 @@ export async function updateInvitationRow(
     if (patch.status === "confirmed") {
       fields.push(`confirmed_at = now()`);
     }
-    if (patch.status === "attended" || patch.status === "no_show") {
+    if (patch.status === "attended" || patch.status === "no_show" || patch.status === "walk_in") {
       fields.push(`attendance_marked_at = now()`);
       if (patch.markedBy) {
         fields.push(`attendance_marked_by = $${i++}`);
@@ -648,7 +682,7 @@ export async function updateInvitationRow(
   const invitation = rowToInvitation(rows[0]);
   // When attendance is marked, persist the picked grade onto the student's
   // fa_progress_json so the FA tick stays after the event.
-  if (patch.status === "attended" && invitation.targetGrade > 0) {
+  if ((patch.status === "attended" || patch.status === "walk_in") && invitation.targetGrade > 0) {
     await markFaProgressForStudent(invitation.studentId, invitation.targetGrade);
   }
   return invitation;
@@ -691,11 +725,16 @@ export async function markFaProgressForStudent(
  *  markFaProgressForStudent but targets the `archived_students` table keyed on
  *  its `no` column. */
 async function markArchivedFaProgress(studentId: string, grade: number): Promise<void> {
-  const no = Number(studentId.slice("arch-".length));
-  if (!Number.isFinite(no) || grade < 1) return;
-  const { rows } = await pool.query<{ fa_progress_json: unknown }>(
-    `SELECT fa_progress_json FROM archived_students WHERE no = $1`,
-    [no]
+  if (grade < 1) return;
+  // Resolve the archived row by `student_id` (= the loaded FA id) first, falling
+  // back to `no` for legacy rows. `no` is a fresh sequence for archives created
+  // after it stopped equalling the original id, so student_id is the reliable key.
+  const parsedNo = Number(studentId.slice("arch-".length));
+  const hasNo = Number.isFinite(parsedNo);
+  const { rows } = await pool.query<{ no: number; fa_progress_json: unknown }>(
+    `SELECT no, fa_progress_json FROM archived_students
+      WHERE student_id = $1${hasNo ? " OR no = $2" : ""} LIMIT 1`,
+    hasNo ? [studentId, parsedNo] : [studentId]
   );
   if (!rows[0]) return;
   const arr: boolean[] = Array.isArray(rows[0].fa_progress_json)
@@ -705,7 +744,7 @@ async function markArchivedFaProgress(studentId: string, grade: number): Promise
   arr[grade - 1] = true;
   await pool.query(
     `UPDATE archived_students SET fa_progress_json = $1::jsonb WHERE no = $2`,
-    [JSON.stringify(arr), no]
+    [JSON.stringify(arr), rows[0].no]
   );
 }
 

@@ -7,7 +7,7 @@ import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
 import { AppShell } from "@fa/_components/shared/AppShell";
 import {
-  BRANCHES, BranchCode, FA_REPORT_MAX_PER_CRITERION,
+  BRANCHES, BranchCode, FA_REPORT_MAX_PER_CRITERION, resolveStudentById, countsAsAttended,
 } from "@fa/_types";
 import {
   ArrowLeft, ClipboardCheck, Printer, AlertCircle, CheckCircle2,
@@ -96,7 +96,7 @@ export default function FaReportFormPage() {
 
   const studentFromStore = useMemo(() => {
     if (!invitation) return undefined;
-    return students.find(s => s.id === invitation.studentId);
+    return resolveStudentById(students, invitation.studentId);
   }, [students, invitation]);
 
   // Resolve student identity from the loaded roster first, then any
@@ -209,7 +209,7 @@ export default function FaReportFormPage() {
     );
   }
 
-  if (invitation.status !== "attended") {
+  if (!countsAsAttended(invitation.status)) {
     return (
       <AppShell>
         <div className="rounded-2xl bg-amber-50 border border-amber-200 p-6 max-w-2xl">

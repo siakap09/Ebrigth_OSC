@@ -9,7 +9,7 @@ import { useCurrentUser } from "@pcm/_hooks/useCurrentUser";
 import { StatusPill } from "@pcm/_components/fa/StatusPill";
 import { InvitationDetailModal } from "@pcm/_components/fa/InvitationDetailModal";
 import { RescheduleModal } from "@pcm/_components/fa/RescheduleModal";
-import { BRANCHES, Invitation, Student } from "@pcm/_types";
+import { BRANCHES, Invitation, Student, resolveStudentById } from "@pcm/_types";
 
 export function AttendanceRoster({
   session, orderedInvitations, pendingConfirmationsCount, canEdit, canDrag, academyView = false,
@@ -140,7 +140,7 @@ export function AttendanceRoster({
                   // Fall back to the denormalised name/grade/parent fields on
                   // the invitation row so a missing Heidi record doesn't make
                   // a confirmed student vanish from the roster.
-                  const looked = students.find(s => s.id === inv.studentId);
+                  const looked = resolveStudentById(students, inv.studentId);
                   const student: Student = looked ?? {
                     id: inv.studentId,
                     name: inv.studentName ?? `#${inv.studentId} (not in roster)`,
