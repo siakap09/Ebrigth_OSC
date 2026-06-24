@@ -13,6 +13,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   EventBranchOverride,
+  ArrivalWindow,
   FAEvent,
   Invitation,
   InvitationStatus,
@@ -142,6 +143,8 @@ interface FAStore {
   setInvitationVideoSent: (invitationId: string, videoSentToParent: boolean) => Promise<void>;
   /** Save (or clear with null) the absence make-up video link for an invitation. */
   setInvitationVideoLink: (invitationId: string, videoLink: string | null) => Promise<void>;
+  /** Set the parent's expected arrival window/time (null clears either). */
+  setInvitationArrival: (invitationId: string, arrivalWindow: ArrivalWindow | null, arrivalTime: string | null) => Promise<void>;
   /** Move an invitation to a (possibly different) event + session. The
    *  server writes both event_id and session_id in one PATCH. Use this
    *  for the "Reschedule with target picker" flow; `moveInvitationToSession`
@@ -568,6 +571,18 @@ export const useFAStore = create<FAStore>()(
           { method: "PATCH", body: JSON.stringify({ videoLink }) },
         );
         if (!r.ok) throw new Error(`Set video-link failed (HTTP ${r.status})`);
+        const updated = r.data;
+        set((s) => ({
+          invitations: s.invitations.map((i) => (i.id === id ? updated : i)),
+        }));
+      },
+
+      setInvitationArrival: async (id, arrivalWindow, arrivalTime) => {
+        const r = await apiJson<Invitation>(
+          `/api/pcm/invitations/${encodeURIComponent(id)}`,
+          { method: "PATCH", body: JSON.stringify({ arrivalWindow, arrivalTime }) },
+        );
+        if (!r.ok) throw new Error(`Set arrival failed (HTTP ${r.status})`);
         const updated = r.data;
         set((s) => ({
           invitations: s.invitations.map((i) => (i.id === id ? updated : i)),

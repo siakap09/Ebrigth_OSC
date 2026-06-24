@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteInvitationRow, updateInvitationRow } from "@pcm/_lib/events.server";
-import { InvitationStatus, InviteType } from "@pcm/_types";
+import { InvitationStatus, InviteType, ArrivalWindow } from "@pcm/_types";
+
+const ARRIVAL_WINDOWS: ArrivalWindow[] = ["before_class", "after_class", "during_class"];
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,18 @@ export async function PATCH(
           : (body.videoLink === null || body.videoLink === ""
               ? null
               : String(body.videoLink).slice(0, 2000)),
+      arrivalWindow:
+        body.arrivalWindow === undefined
+          ? undefined
+          : (ARRIVAL_WINDOWS.includes(body.arrivalWindow as ArrivalWindow)
+              ? (body.arrivalWindow as ArrivalWindow)
+              : null),
+      arrivalTime:
+        body.arrivalTime === undefined
+          ? undefined
+          : (body.arrivalTime === null || String(body.arrivalTime).trim() === ""
+              ? null
+              : String(body.arrivalTime).trim().slice(0, 40)),
     });
     if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(updated);

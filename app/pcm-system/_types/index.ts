@@ -394,6 +394,23 @@ export type InvitationStatus =
  *  or a "Renewal" repeat for a grade the student has already passed. */
 export type InviteType = "progress" | "renewal";
 
+/** When the parent is expected to arrive relative to the branch's class. */
+export type ArrivalWindow = "before_class" | "after_class" | "during_class";
+
+export const ARRIVAL_WINDOW_LABEL: Record<ArrivalWindow, string> = {
+  before_class: "Before class",
+  after_class: "After class",
+  during_class: "During class",
+};
+
+/** Human label for an invitation's expected arrival, e.g. "Before class · 3:30 PM". */
+export function arrivalLabel(window?: ArrivalWindow, time?: string): string {
+  const w = window ? ARRIVAL_WINDOW_LABEL[window] : "";
+  const t = (time ?? "").trim();
+  if (w && t) return `${w} · ${t}`;
+  return w || t || "";
+}
+
 export interface Invitation {
   id: string;
   eventId: string;
@@ -421,6 +438,12 @@ export interface Invitation {
   /** The absence make-up video link to send to the parent. Once set, the
    *  "Video to Parent" control becomes a Send action. */
   videoLink?: string | null;
+  /** When the parent/student is expected to arrive at the branch for PCM, so
+   *  responders can schedule without phoning the branch. The branch (BM) sets
+   *  it; optional. `arrivalWindow` is the quick before/after-class signal and
+   *  `arrivalTime` is an optional exact time (free text, e.g. "3:30 PM"). */
+  arrivalWindow?: ArrivalWindow;
+  arrivalTime?: string;
   invitedBy: string;            // User id (BM)
   invitedAt: string;
   confirmedAt?: string;

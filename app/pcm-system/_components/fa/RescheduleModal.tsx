@@ -3,8 +3,8 @@
 import { useState, useMemo } from "react";
 import { Modal } from "@pcm/_components/shared/Modal";
 import { useFAStore } from "@pcm/_lib/store";
-import { Invitation } from "@pcm/_types";
-import { CalendarClock, ArrowRight, AlertTriangle } from "lucide-react";
+import { Invitation, ArrivalWindow } from "@pcm/_types";
+import { CalendarClock, ArrowRight, AlertTriangle, Clock } from "lucide-react";
 import { addDays, format, parseISO } from "date-fns";
 
 interface Props {
@@ -38,6 +38,7 @@ export function RescheduleModal({ open, onClose, invitation, onRescheduled }: Pr
   const quotas      = useFAStore(s => s.quotas);
   const invitations = useFAStore(s => s.invitations);
   const reschedule  = useFAStore(s => s.rescheduleInvitation);
+  const setArrival  = useFAStore(s => s.setInvitationArrival);
   const students    = useFAStore(s => s.students);
 
   // Initial picks fall back to the invitation's own values. Reset when a
@@ -46,11 +47,17 @@ export function RescheduleModal({ open, onClose, invitation, onRescheduled }: Pr
   const [targetSessionId, setTargetSessionId] = useState<string>("");
   const [busy, setBusy]   = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Expected arrival — seeded from the invitation; the BM can update it here
+  // since the coming time often changes when a student reschedules.
+  const [arrivalWindow, setArrivalWindow] = useState<ArrivalWindow | "">("");
+  const [arrivalTime, setArrivalTime]     = useState<string>("");
 
   useMemo(() => {
     if (invitation) {
       setTargetEventId(invitation.eventId);
       setTargetSessionId(invitation.sessionId);
+      setArrivalWindow(invitation.arrivalWindow ?? "");
+      setArrivalTime(invitation.arrivalTime ?? "");
     }
     setError(null);
   }, [invitation?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -92,6 +99,12 @@ export function RescheduleModal({ open, onClose, invitation, onRescheduled }: Pr
     targetEventId === invitation.eventId &&
     targetSessionId === invitation.sessionId;
 
+  // The arrival (coming time) differs from what's saved on the invitation.
+  const arrivalChanged: boolean =
+    !!invitation &&
+    ((arrivalWindow || null) !== (invitation.arrivalWindow ?? null) ||
+     (arrivalTime.trim() || null) !== (invitation.arrivalTime ?? null));
+
   const studentName = students.find(s => s.id === invitation?.studentId)?.name ?? invitation?.studentId ?? "";
 
   /**
@@ -114,7 +127,17 @@ export function RescheduleModal({ open, onClose, invitation, onRescheduled }: Pr
     setBusy(true);
     setError(null);
     try {
-      await reschedule(invitation.id, targetEventId, targetSessionId);
+      // Only move the slot when it actually changed — re-saving the same
+      // session would needlessly reset the attendance verdict.
+      if (!sameAsCurrent) {
+        await reschedule(invitation.id, targetEventId, targetSessionId);
+      }
+      // Persist the (possibly updated) coming time too — only if it changed.
+      const win = arrivalWindow || null;
+      const time = arrivalTime.trim() || null;
+      if (win !== (invitation.arrivalWindow ?? null) || time !== (invitation.arrivalTime ?? null)) {
+        await setArrival(invitation.id, win, time);
+      }
       onRescheduled?.();
       onClose();
     } catch (err) {
@@ -249,6 +272,35 @@ export function RescheduleModal({ open, onClose, invitation, onRescheduled }: Pr
           </div>
         </div>
 
+        {/* Expected arrival — when the parent is coming, so responders can
+            schedule without phoning the branch. */}
+        <div>
+          <label className="fa-label flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-violet-500" />
+            When is the parent coming?
+          </label>
+          <div className="flex items-center gap-2">
+            <select
+              className="fa-input"
+              style={{ maxWidth: "180px" }}
+              value={arrivalWindow}
+              onChange={e => setArrivalWindow(e.target.value as ArrivalWindow | "")}
+            >
+              <option value="">— Not set —</option>
+              <option value="before_class">Before class</option>
+              <option value="after_class">After class</option>
+              <option value="during_class">During class</option>
+            </select>
+            <input
+              type="text"
+              value={arrivalTime}
+              onChange={e => setArrivalTime(e.target.value)}
+              placeholder="exact time e.g. 3:30 PM (optional)"
+              className="fa-input flex-1"
+            />
+          </div>
+        </div>
+
         {/* Move summary */}
         {targetSession && (
           <div className="rounded-xl bg-violet-50 border border-violet-200 px-4 py-3 flex items-center gap-3 flex-wrap">
@@ -282,16 +334,16 @@ export function RescheduleModal({ open, onClose, invitation, onRescheduled }: Pr
           <button type="button" onClick={onClose} className="fa-btn-secondary">Cancel</button>
           <button
             type="button"
-            disabled={busy || !targetEventId || !targetSessionId || sameAsCurrent}
+            disabled={busy || !targetEventId || !targetSessionId || (sameAsCurrent && !arrivalChanged)}
             onClick={handleConfirm}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white font-semibold shadow
                        bg-gradient-to-r from-violet-600 to-fuchsia-600
                        hover:from-violet-700 hover:to-fuchsia-700
                        disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            title={sameAsCurrent ? "Pick a different session to enable" : ""}
+            title={sameAsCurrent && !arrivalChanged ? "Pick a different session or set a coming time to enable" : ""}
           >
             <CalendarClock className="w-4 h-4" />
-            {busy ? "Moving…" : "Reschedule"}
+            {busy ? "Saving…" : sameAsCurrent ? "Save coming time" : "Reschedule"}
           </button>
         </div>
       </div>
