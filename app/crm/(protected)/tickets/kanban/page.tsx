@@ -53,9 +53,14 @@ export default async function TicketKanbanPage({
   const tenantId = access?.tenantId ?? tkt?.tenantId
   if (!tenantId) redirect('/login')
 
-  // Department admins are scoped to their assigned platforms; supers see all.
-  const platformScope =
-    isSuper ? {} : { platform_id: { in: tkt?.platformIds.length ? tkt.platformIds : ['__none__'] } }
+  // Scope: super sees all; a scoped DEPARTMENT account sees only tickets
+  // directed to its department (by sub_type); any other platform_admin sees
+  // its assigned platform(s).
+  const ticketScope = isSuper
+    ? {}
+    : tkt?.departmentSubType
+      ? { sub_type: tkt.departmentSubType }
+      : { platform_id: { in: tkt?.platformIds.length ? tkt.platformIds : ['__none__'] } }
 
   // Pull every active ticket. The "Finish" column can have thousands; we cap
   // it at 200 most-recent here and rely on the kanban's virtualization for
@@ -66,7 +71,7 @@ export default async function TicketKanbanPage({
 
   const [open, finished, platformsRaw] = await Promise.all([
     prisma.tkt_ticket.findMany({
-      where: { tenant_id: tenantId, status: { not: 'complete' }, ...branchFilter, ...platformScope },
+      where: { tenant_id: tenantId, status: { not: 'complete' }, ...branchFilter, ...ticketScope },
       orderBy: { created_at: 'desc' },
       take: 1000,
       select: {
@@ -80,7 +85,7 @@ export default async function TicketKanbanPage({
       },
     }),
     prisma.tkt_ticket.findMany({
-      where: { tenant_id: tenantId, status: 'complete', ...branchFilter, ...platformScope },
+      where: { tenant_id: tenantId, status: 'complete', ...branchFilter, ...ticketScope },
       orderBy: { completed_at: 'desc' },
       take: 200,
       select: {

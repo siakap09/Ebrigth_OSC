@@ -30,7 +30,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
 import { isOperationAccount } from '@/lib/crm/operation-accounts'
-import { departmentForEmail } from '@/lib/crm/departments'
+import { scopedDepartmentForEmail } from '@/lib/crm/departments'
 import { NavItem } from './nav-item'
 import { authClient } from '@/lib/crm/auth-client'
 import { signOut as nextAuthSignOut } from 'next-auth/react'
@@ -158,7 +158,7 @@ function filterNav(
   // Operation accounts get a fixed lead-oversight allowlist — EXCEPT department
   // accounts (operation@ is both a department and an operation account), which
   // need their ticket module too and so fall through to normal role filtering.
-  if (!departmentForEmail(userEmail) && isOperationAccount(userEmail)) {
+  if (!scopedDepartmentForEmail(userEmail) && isOperationAccount(userEmail)) {
     return items.filter((item) => OPERATION_ALLOWED_LABELS.has(item.label))
   }
   // Treat unknown / null role as 'user'
@@ -283,7 +283,7 @@ export function CrmSidebar({ collapsed, session }: SidebarProps) {
 
   // Tickets-only departments (HR / Finance / Academy / CEO) never see the Lead
   // module — force the ticket nav. Marketing / Operation keep the lead module.
-  const dept = departmentForEmail(user.email)
+  const dept = scopedDepartmentForEmail(user.email)
   const isTicketsOnlyDept = !!dept && !dept.hasLeadSystem
   const baseNav = isTicketsOnlyDept ? TICKET_NAV_ITEMS : pickNavForPath(pathname, stickyModule)
   const navItems = filterNav(baseNav, user.tktRole, inBranchView, user.email)
