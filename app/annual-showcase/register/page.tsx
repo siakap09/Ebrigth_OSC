@@ -42,7 +42,7 @@ interface Participant {
   feeWave:  { id: string; name: string; amount: number } | null;
 }
 
-type ActiveTab = "list" | "add" | "reports";
+type ActiveTab = "list" | "add" | "reports" | "counter";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -64,6 +64,7 @@ const TABS: { id: ActiveTab; label: string }[] = [
   { id: "list",    label: "📋 Registrations List" },
   { id: "add",     label: "➕ Add Registration" },
   { id: "reports", label: "📊 Reports" },
+  { id: "counter", label: "🎫 Counter" },
 ];
 
 const PIE_COLORS = ["#6366f1", "#e5e7eb"];
@@ -868,6 +869,251 @@ function ReportsTab({ participants, currency, participantTarget }: ReportsTabPro
   );
 }
 
+// ─── Counter Tab ──────────────────────────────────────────────────────────────
+
+const PAYMENT_STATUS_ICON: Record<PaymentStatus, string> = {
+  UNPAID:    "⚪",
+  PENDING:   "🟡",
+  CONFIRMED: "🔵",
+  PAID:      "🟢",
+  OVERDUE:   "🔴",
+  WAIVED:    "🟣",
+  REFUNDED:  "🟠",
+};
+
+const CHECKIN_ALLOWED: PaymentStatus[] = ["PAID", "CONFIRMED", "WAIVED"];
+
+interface CounterCardProps {
+  participant: Participant;
+  currency: string;
+  editionId: string;
+  onUpdated: (p: Participant) => void;
+}
+
+function CounterCard({ participant, currency, editionId, onUpdated }: CounterCardProps) {
+  const [saving, setSaving] = useState(false);
+  const canCheckIn = CHECKIN_ALLOWED.includes(participant.paymentStatus);
+
+  async function markPaid() {
+    setSaving(true);
+    try {
+      const res = await fetch(
+        `/api/annual-showcase/editions/${editionId}/participants/${participant.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentStatus: "PAID", note: "Marked paid at counter" }),
+        },
+      );
+      if (!res.ok) throw new Error();
+      const updated = await res.json() as Participant;
+      onUpdated(updated);
+      toast.success("Marked as Paid");
+    } catch {
+      toast.error("Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const age = calcAge(participant.dateOfBirth);
+
+  return (
+    <div className={`relative bg-white rounded-2xl border-2 shadow-md overflow-hidden flex flex-col transition-all ${
+      canCheckIn ? "border-green-400" : "border-gray-200"
+    }`}>
+      {/* Status stripe */}
+      <div className={`h-1.5 w-full ${
+        participant.paymentStatus === "PAID"      ? "bg-green-500" :
+        participant.paymentStatus === "CONFIRMED" ? "bg-blue-500"  :
+        participant.paymentStatus === "WAIVED"    ? "bg-purple-500":
+        participant.paymentStatus === "PENDING"   ? "bg-yellow-400":
+        participant.paymentStatus === "OVERDUE"   ? "bg-red-500"   :
+        "bg-gray-300"
+      }`} />
+
+      <div className="p-5 flex flex-col gap-3 flex-1">
+        {/* Order + name */}
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-xs font-mono text-gray-400 mb-0.5">
+              #{participant.orderNo ?? "—"}
+            </p>
+            <h3 className="font-bold text-gray-900 text-lg leading-tight">
+              {participant.fullName}
+            </h3>
+            {participant.teamName && (
+              <p className="text-xs text-gray-500 mt-0.5">{participant.teamName}</p>
+            )}
+          </div>
+          {participant.isEbrighter && (
+            <span className="shrink-0 text-xs font-semibold bg-indigo-100 text-indigo-700 rounded-full px-2.5 py-0.5 mt-1">
+              ⭐ Ebrighter
+            </span>
+          )}
+        </div>
+
+        {/* Details grid */}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
+          {participant.category && (
+            <div>
+              <p className="text-xs text-gray-400">Category</p>
+              <p className="font-medium text-gray-800">{participant.category.name}</p>
+            </div>
+          )}
+          {age !== null && (
+            <div>
+              <p className="text-xs text-gray-400">Age</p>
+              <p className="font-medium text-gray-800">{age} yrs</p>
+            </div>
+          )}
+          {participant.phone && (
+            <div>
+              <p className="text-xs text-gray-400">Phone</p>
+              <p className="font-medium text-gray-800">{participant.phone}</p>
+            </div>
+          )}
+          {participant.feeWave && (
+            <div>
+              <p className="text-xs text-gray-400">Fee</p>
+              <p className="font-medium text-gray-800">
+                {currency} {participant.feeWave.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          )}
+          {participant.parentName && (
+            <div className="col-span-2">
+              <p className="text-xs text-gray-400">Parent / Guardian</p>
+              <p className="font-medium text-gray-800">
+                {participant.parentName}
+                {participant.parentPhone && (
+                  <span className="text-gray-500 font-normal"> · {participant.parentPhone}</span>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Payment status + action */}
+        <div className="flex items-center justify-between mt-auto pt-2 border-t border-gray-100">
+          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${PAYMENT_STATUS_BADGE[participant.paymentStatus]}`}>
+            {PAYMENT_STATUS_ICON[participant.paymentStatus]} {participant.paymentStatus}
+          </span>
+
+          {canCheckIn ? (
+            <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-3 py-1">
+              ✓ Clear to Enter
+            </span>
+          ) : (
+            <button
+              onClick={markPaid}
+              disabled={saving}
+              className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-3 py-1 transition-colors disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Mark Paid"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface CounterTabProps {
+  participants: Participant[];
+  currency: string;
+  editionId: string;
+  onUpdated: (p: Participant) => void;
+}
+
+function CounterTab({ participants, currency, editionId, onUpdated }: CounterTabProps) {
+  const [query, setQuery] = useState("");
+
+  const results = query.trim().length < 1 ? [] : (() => {
+    const q = query.toLowerCase().trim();
+    return participants.filter(p =>
+      p.fullName.toLowerCase().includes(q) ||
+      (p.phone ?? "").includes(q) ||
+      (p.email ?? "").toLowerCase().includes(q) ||
+      String(p.orderNo ?? "").includes(q) ||
+      (p.teamName ?? "").toLowerCase().includes(q),
+    );
+  })();
+
+  const checkedInCount  = participants.filter(p => CHECKIN_ALLOWED.includes(p.paymentStatus)).length;
+  const pendingCount    = participants.length - checkedInCount;
+
+  return (
+    <div className="space-y-5">
+      {/* Counter stats */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-green-700">{checkedInCount}</p>
+          <p className="text-xs text-green-600 mt-0.5">Cleared (Paid / Confirmed / Waived)</p>
+        </div>
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-yellow-700">{pendingCount}</p>
+          <p className="text-xs text-yellow-600 mt-0.5">Pending Payment</p>
+        </div>
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-indigo-700">{participants.length}</p>
+          <p className="text-xs text-indigo-600 mt-0.5">Total Registered</p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-base pointer-events-none">🔍</span>
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search by name, phone, email, or order #…"
+          className="w-full pl-9 pr-4 py-3 rounded-xl border border-gray-200 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+          autoFocus
+        />
+        {query && (
+          <button
+            onClick={() => setQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {/* Results */}
+      {query.trim().length < 1 ? (
+        <div className="text-center py-14 text-gray-400">
+          <p className="text-4xl mb-3">🎫</p>
+          <p className="text-sm font-medium text-gray-500">Registration Counter</p>
+          <p className="text-xs mt-1">Type a name, phone number, or order # to look up a participant</p>
+        </div>
+      ) : results.length === 0 ? (
+        <div className="text-center py-14 text-gray-400">
+          <p className="text-4xl mb-3">🔍</p>
+          <p className="text-sm">No results for &ldquo;{query}&rdquo;</p>
+        </div>
+      ) : (
+        <div>
+          <p className="text-xs text-gray-400 mb-3">{results.length} result{results.length !== 1 ? "s" : ""} found</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {results.map(p => (
+              <CounterCard
+                key={p.id}
+                participant={p}
+                currency={currency}
+                editionId={editionId}
+                onUpdated={onUpdated}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function RegisterManagementPage() {
@@ -1121,6 +1367,16 @@ export default function RegisterManagementPage() {
                   participants={participants}
                   currency={currency}
                   participantTarget={edition.participantTarget}
+                />
+              )}
+              {activeTab === "counter" && (
+                <CounterTab
+                  participants={participants}
+                  currency={currency}
+                  editionId={edition.id}
+                  onUpdated={updated =>
+                    setParticipants(prev => prev.map(p => p.id === updated.id ? updated : p))
+                  }
                 />
               )}
             </>
