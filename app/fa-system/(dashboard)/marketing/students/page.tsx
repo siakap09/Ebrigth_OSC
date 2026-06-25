@@ -8,6 +8,7 @@ import { AppShell } from "@fa/_components/shared/AppShell";
 import { BRANCHES, BranchCode, hasBacklog, invitableGradesFor, FA_CURRENT_GRADE_MIN_CHAPTER, gradeLabel } from "@fa/_types";
 import { downloadCSV } from "@fa/_lib/csv";
 import { RegistrationCrossCheck } from "@fa/_components/fa/RegistrationCrossCheck";
+import { ModuleBadge } from "@fa/_components/fa/ModuleBadge";
 
 /** Marketing-side student list: every student across every branch, with
  *  per-grade FA-progress boxes that mirror the dashboard's checkbox column.
@@ -313,7 +314,12 @@ export default function StudentListPage() {
                         <span className="text-xs text-ink-500 truncate">{branchName}</span>
                       </div>
                     </td>
-                    <td className="text-center font-mono text-sm text-ink-900">{gradeLabel(s.grade)}</td>
+                    <td className="text-center font-mono text-sm text-ink-900">
+                      <div className="flex flex-col items-center gap-1">
+                        <span>{gradeLabel(s.grade)}</span>
+                        <ModuleBadge category={s.ageCategory} />
+                      </div>
+                    </td>
                     <td className="text-center font-mono text-sm text-ink-700">C{s.credit}</td>
                     <td>
                       <div className="flex items-center gap-1 flex-wrap">

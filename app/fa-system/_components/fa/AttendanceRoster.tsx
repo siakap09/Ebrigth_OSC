@@ -7,6 +7,7 @@ import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
 import { StatusPill } from "@fa/_components/fa/StatusPill";
 import { BRANCHES, Invitation, Student, resolveStudentById, countsAsAttended } from "@fa/_types";
+import { ModuleBadge } from "@fa/_components/fa/ModuleBadge";
 
 export function AttendanceRoster({
   session, orderedInvitations, pendingConfirmationsCount, canEdit, canDrag,
@@ -192,7 +193,12 @@ function SortableInvitationRow({
           {inv.branch}
         </span>
       </td>
-      <td className="font-mono text-sm">G{inv.targetGrade ?? student.grade}</td>
+      <td className="font-mono text-sm">
+        <div className="flex items-center gap-1.5">
+          <span>G{inv.targetGrade ?? student.grade}</span>
+          <ModuleBadge category={student.ageCategory} />
+        </div>
+      </td>
       <td>
         <div className="text-sm text-ink-900">{student.parentName}</div>
         <div className="text-xs text-ink-400 font-mono">{student.parentPhone}</div>
