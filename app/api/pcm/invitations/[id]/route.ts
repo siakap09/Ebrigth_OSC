@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteInvitationRow, updateInvitationRow } from "@pcm/_lib/events.server";
 import { InvitationStatus, InviteType, ArrivalWindow } from "@pcm/_types";
+import { requireSession } from "@/lib/auth";
 
 const ARRIVAL_WINDOWS: ArrivalWindow[] = ["before_class", "after_class", "during_class"];
 
@@ -10,6 +11,9 @@ export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireSession();
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await ctx.params;
     const body = await req.json();
@@ -57,6 +61,9 @@ export async function DELETE(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireSession();
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await ctx.params;
     await deleteInvitationRow(id);

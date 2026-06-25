@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteInvitationRow, updateInvitationRow } from "@fa/_lib/events.server";
 import { InvitationStatus } from "@fa/_types";
+import { requireSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,9 @@ export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireSession();
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await ctx.params;
     const body = await req.json();
@@ -28,6 +32,9 @@ export async function DELETE(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireSession();
+  if (auth.error) return auth.error;
+
   try {
     const { id } = await ctx.params;
     await deleteInvitationRow(id);
