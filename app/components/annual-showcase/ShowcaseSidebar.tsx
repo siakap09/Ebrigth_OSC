@@ -25,6 +25,14 @@ const EDITION_ITEMS: NavItem[] = [
     activeText: "text-gray-700",
     dot:       "bg-gray-600",
   },
+  {
+    href:      "/annual-showcase/register",
+    label:     "Registration",
+    icon:      "📝",
+    activeBg:  "bg-indigo-50",
+    activeText: "text-indigo-700",
+    dot:       "bg-indigo-600",
+  },
 ];
 
 const DEPT_ITEMS: NavItem[] = [
