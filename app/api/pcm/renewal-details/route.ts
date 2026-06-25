@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { fetchRenewalDetails } from "@pcm/_lib/renewals.server";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const auth = await requireSession();
+  if (auth.error) return auth.error;
+
   try {
     const url = new URL(req.url);
     const data = await fetchRenewalDetails({
