@@ -55,7 +55,7 @@ export const BRANCH_WORKING_DAYS: Record<string, string[]> = {
   "Ampang": ["Thursday", "Friday", "Saturday", "Sunday"],
   "Bandar Seri Putra": ["Thursday", "Friday", "Saturday", "Sunday"],
   "Klang": ["Thursday", "Friday", "Saturday", "Sunday"],
-  "Rimbayu": ["Saturday", "Sunday"],
+  "Rimbayu": ["Friday", "Saturday", "Sunday"],
   "Kota Warisan": ["Friday", "Saturday", "Sunday"],
   "Tropicana Sungai Buloh": ["Saturday", "Sunday"],
   "Setia Alam": ["Thursday", "Friday", "Saturday", "Sunday"],

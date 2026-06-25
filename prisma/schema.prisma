@@ -1229,6 +1229,24 @@ model BranchOperationDays {
 }
 
 // ============================================================
+// BRANCH QUOTA — per-branch daily staff quota targets for the
+// branch opening planning heatmap. Defaults to 5 when absent.
+// ============================================================
+
+model BranchQuota {
+  id        Int      @id @default(autoincrement())
+  branch    String   @unique  // branch code e.g. "RBY"
+  wed       Int      @default(5)
+  thu       Int      @default(5)
+  fri       Int      @default(5)
+  sat       Int      @default(5)
+  sun       Int      @default(5)
+  updatedAt DateTime @updatedAt
+
+  @@map("branch_quota")
+}
+
+// ============================================================
 // BURNLIST — weekly snapshots of expired+active students from
 // ebrightleads_db.studentrecords, with editable cta/remarks/done.
 // Each Wednesday a new BurnlistWeek is created and a row is

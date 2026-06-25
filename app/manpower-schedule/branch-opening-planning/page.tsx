@@ -26,6 +26,8 @@ type Branch = {
   avatarColor: string;
 };
 
+type QuotaMap = Record<string, { wed: number; thu: number; fri: number; sat: number; sun: number }>;
+
 // Quota-only shape used in the modal (current stays read-only, closed is auto-derived)
 type QuotaDay = { target: number };
 type ModalState = {
@@ -58,18 +60,19 @@ const REGIONS: Record<"A" | "B" | "C", string[]> = {
   C: ["PJY", "KW", "BBB", "CJY", "BSP", "DPU", "PJU", "ONL"],
 };
 
-function apiBranchToBranch(api: ApiBranch, idx: number): Branch {
+function apiBranchToBranch(api: ApiBranch, idx: number, quotas: QuotaMap = {}): Branch {
+  const q = quotas[api.code];
   return {
     id: api.code,
     code: api.code,
     name: api.name,
     avatarColor: AVATAR_COLORS[idx % AVATAR_COLORS.length],
     days: {
-      wed: { current: api.wed, target: DEFAULT_TARGET, closed: api.wed === 0 },
-      thu: { current: api.thu, target: DEFAULT_TARGET, closed: api.thu === 0 },
-      fri: { current: api.fri, target: DEFAULT_TARGET, closed: api.fri === 0 },
-      sat: { current: api.sat, target: DEFAULT_TARGET, closed: api.sat === 0 },
-      sun: { current: api.sun, target: DEFAULT_TARGET, closed: api.sun === 0 },
+      wed: { current: api.wed, target: q?.wed ?? DEFAULT_TARGET, closed: api.wed === 0 },
+      thu: { current: api.thu, target: q?.thu ?? DEFAULT_TARGET, closed: api.thu === 0 },
+      fri: { current: api.fri, target: q?.fri ?? DEFAULT_TARGET, closed: api.fri === 0 },
+      sat: { current: api.sat, target: q?.sat ?? DEFAULT_TARGET, closed: api.sat === 0 },
+      sun: { current: api.sun, target: q?.sun ?? DEFAULT_TARGET, closed: api.sun === 0 },
     },
   };
 }
@@ -107,18 +110,24 @@ export default function BranchOpeningPlanning() {
   const [tooltip, setTooltip] = useState<Tooltip>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [staffStats, setStaffStats] = useState<StaffStats | null>(null);
-  const [canEdit, setCanEdit] = useState(false);
+  const [canEditAll, setCanEditAll] = useState(false);
+  const [isBM, setIsBM] = useState(false);
+  const [userBranchName, setUserBranchName] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/branch-opening-planning/branches").then(r => r.ok ? r.json() : []),
       fetch("/api/branch-opening-planning/stats").then(r => r.ok ? r.json() : null),
       fetch("/api/auth/session").then(r => r.ok ? r.json() : null),
-    ]).then(([apiBranches, stats, session]: [ApiBranch[], StaffStats | null, { user?: { role?: string } } | null]) => {
-      setBranches(apiBranches.map((b, i) => apiBranchToBranch(b, i)));
+      fetch("/api/branch-opening-planning/quotas").then(r => r.ok ? r.json() : {}),
+    ]).then(([apiBranches, stats, session, quotas]: [ApiBranch[], StaffStats | null, { user?: { role?: string; branchName?: string } } | null, QuotaMap]) => {
+      setBranches(apiBranches.map((b, i) => apiBranchToBranch(b, i, quotas)));
       if (stats && !stats.total.toString().includes("error")) setStaffStats(stats);
       const role = session?.user?.role?.toUpperCase() ?? "";
-      setCanEdit(role !== "BRANCH_MANAGER" && role !== "BM");
+      const bm = role === "BRANCH_MANAGER" || role === "BM";
+      setIsBM(bm);
+      setUserBranchName(session?.user?.branchName ?? null);
+      setCanEditAll(!bm);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
@@ -161,16 +170,29 @@ export default function BranchOpeningPlanning() {
     });
   }
 
-  function saveModal() {
+  async function saveModal() {
     if (!modal) return;
+    await fetch("/api/branch-opening-planning/quotas", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: modal.code,
+        name: modal.name,
+        wed: modal.days.wed.target,
+        thu: modal.days.thu.target,
+        fri: modal.days.fri.target,
+        sat: modal.days.sat.target,
+        sun: modal.days.sun.target,
+      }),
+    }).catch(() => {});
     setBranches(prev => prev.map(b => {
       if (b.id !== modal.branchId) return b;
       const newDays = { ...b.days };
       for (const d of DAYS) {
         newDays[d.key] = {
-          current: b.days[d.key].current,   // from DB, never touched
-          closed: b.days[d.key].closed,     // from workingHours, never touched
-          target: modal.days[d.key].target, // only quota is editable
+          current: b.days[d.key].current,
+          closed: b.days[d.key].closed,
+          target: modal.days[d.key].target,
         };
       }
       return { ...b, days: newDays };
@@ -339,7 +361,7 @@ export default function BranchOpeningPlanning() {
                         </td>
 
                         <td className="px-3 py-4 text-right">
-                          {canEdit && (
+                          {(canEditAll || (isBM && userBranchName !== null && branch.name.toLowerCase() === userBranchName.toLowerCase())) && (
                             <button
                               onClick={() => openEdit(branch)}
                               className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
@@ -371,7 +393,7 @@ export default function BranchOpeningPlanning() {
             <div className="flex items-center gap-2"><span className="w-5 h-5 rounded-lg bg-amber-100 border border-amber-300 inline-block" /><span>70–99% filled</span></div>
             <div className="flex items-center gap-2"><span className="w-5 h-5 rounded-lg bg-red-100 border border-red-300 inline-block" /><span>Below 70%</span></div>
             <div className="flex items-center gap-2"><span className="w-5 h-5 rounded-lg bg-slate-100 border border-slate-200 inline-block" /><span>Closed</span></div>
-            {!loading && canEdit && <span className="ml-auto text-xs text-slate-400">Quota default: {DEFAULT_TARGET} per day · editable via Edit</span>}
+            {!loading && (canEditAll || isBM) && <span className="ml-auto text-xs text-slate-400">Quota default: {DEFAULT_TARGET} per day · editable via Edit</span>}
           </div>
         </div>
       </main>
