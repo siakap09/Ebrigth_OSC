@@ -773,6 +773,22 @@ export async function getEventStatus(eventId: string): Promise<EventStatus | nul
   return rows[0] ? (rows[0].status as EventStatus) : null;
 }
 
+// Status of the event a given invitation belongs to. Used by the invitation
+// PATCH/DELETE routes to enforce per-role write windows — a Branch Manager may
+// only change an invitation while its event is still open or on event day.
+export async function getEventStatusByInvitation(
+  invitationId: string
+): Promise<EventStatus | null> {
+  const { rows } = await pool.query<{ status: string }>(
+    `SELECT e.status
+       FROM fa_invitations i
+       JOIN fa_events e ON e.id = i.event_id AND e.tenant_id = i.tenant_id
+      WHERE i.id = $1 AND i.tenant_id = $2`,
+    [invitationId, TENANT]
+  );
+  return rows[0] ? (rows[0].status as EventStatus) : null;
+}
+
 // ----------------------------------------------------------------------------
 // Event branch overrides (multi-grade exception per event per branch)
 // ----------------------------------------------------------------------------

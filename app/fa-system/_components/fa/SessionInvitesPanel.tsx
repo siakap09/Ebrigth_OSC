@@ -106,14 +106,15 @@ export function SessionInvitesPanel({
                         <InvitationStatusSelector
                           value={inv.status}
                           onChange={(s) => onStatusChange(inv.id, s)}
-                          disabled={!canInvite && inv.status !== "confirmed" && inv.status !== "invited"}
+                          disabled={!canInvite}
                         />
                       </td>
                       <td>
                         <button
                           onClick={() => onRemove(inv)}
-                          className="fa-btn-ghost p-1.5 text-ink-400 hover:text-danger"
-                          title="Remove stale invite"
+                          disabled={!canInvite}
+                          className={`fa-btn-ghost p-1.5 ${canInvite ? "text-ink-400 hover:text-danger" : "text-ink-200 cursor-not-allowed"}`}
+                          title={canInvite ? "Remove stale invite" : "Event closed — locked"}
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -158,8 +159,9 @@ export function SessionInvitesPanel({
                     <td>
                       <button
                         onClick={() => onRemove(inv)}
-                        className="fa-btn-ghost p-1.5 text-ink-400 hover:text-danger"
-                        title="Remove"
+                        disabled={!canInvite}
+                        className={`fa-btn-ghost p-1.5 ${canInvite ? "text-ink-400 hover:text-danger" : "text-ink-200 cursor-not-allowed"}`}
+                        title={canInvite ? "Remove" : "Event closed — locked"}
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>

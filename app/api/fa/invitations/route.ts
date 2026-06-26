@@ -35,10 +35,13 @@ export async function POST(req: NextRequest) {
         { status: 404 }
       );
     }
-    if (
-      !allowOverQuota &&
-      (eventStatus === "closed" || eventStatus === "completed")
-    ) {
+    // A closed or completed event is locked — no new invitations, full stop.
+    // Enforced regardless of allowOverQuota: a BM always sends that flag (to
+    // relax the per-session quota), so gating the closed check behind it
+    // previously let BMs invite after the window had shut. Walk-ins added while
+    // the event is "ongoing" are unaffected (ongoing is neither closed nor
+    // completed).
+    if (eventStatus === "closed" || eventStatus === "completed") {
       return NextResponse.json(
         { invitation: null, reason: "Event is closed" },
         { status: 409 }
