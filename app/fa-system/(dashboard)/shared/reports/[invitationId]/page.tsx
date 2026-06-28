@@ -87,6 +87,8 @@ export default function FaReportFormPage() {
     [reports, invitationId],
   );
 
+  const [nameInput, setNameInput] = useState("");
+
   // The FA store user has role "MKT" or "BM" — SessionSync collapses
   // back-office NextAuth roles (ADMIN/SUPER_ADMIN/MARKETING/ACADEMY) into
   // "MKT" for the FA store. So "MKT" here covers Marketing AND Admin.
@@ -101,12 +103,13 @@ export default function FaReportFormPage() {
 
   // Resolve student identity from the loaded roster first, then any
   // previously-saved report snapshot, then fall back to a placeholder
-  // built from the invitation's student_id. Marketing should never be
-  // blocked from saving just because /api/fa/students dropped this row
-  // during validation — they can correct the name afterwards.
+  // built from the invitation's student_id.
   const resolvedName = studentFromStore?.name ?? existing?.studentName ?? "";
-  const studentName  = resolvedName || (invitation ? `#${invitation.studentId}` : "");
   const studentNameMissing = !resolvedName;
+  // Sync the editable name field once store data arrives (store loads async).
+  useEffect(() => {
+    if (resolvedName && !nameInput) setNameInput(resolvedName);
+  }, [resolvedName, nameInput]);
   const grade        = invitation?.targetGrade || studentFromStore?.grade || existing?.grade || 1;
   const branch       = (invitation?.branch ?? existing?.branch ?? null) as BranchCode | null;
   const eventForInv  = events.find(e => e.id === invitation?.eventId);
@@ -160,6 +163,7 @@ export default function FaReportFormPage() {
     // silently returning, so Marketing knows what to fix.
     if (!invitation) { setError("Invitation not loaded. Refresh and try again."); return; }
     if (!branch)     { setError("Branch is missing from this invitation. Cannot save."); return; }
+    if (!nameInput.trim()) { setError("Student name is required. Enter the name before saving."); return; }
     if (!preparedBy.trim()) { setError("Fill in your name in \"Prepared by\" before saving."); return; }
     setSaving(true);
     setError(null);
@@ -167,7 +171,7 @@ export default function FaReportFormPage() {
       await saveReport({
         invitationId: invitation.id,
         studentId: invitation.studentId,
-        studentName,
+        studentName: nameInput.trim(),
         branch,
         grade,
         assessmentDate: assessDate,
@@ -267,7 +271,7 @@ export default function FaReportFormPage() {
         <div className="fa-mono text-[10px] uppercase text-white/80 mb-1" style={{ letterSpacing: "0.14em" }}>
           FA · Foundation Appraisal Assessment
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">{studentName || `#${invitation.studentId}`}</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{nameInput || `#${invitation.studentId}`}</h1>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-white/90 text-sm">
           <span>Grade <strong>G{grade || "?"}</strong></span>
           <span className="opacity-50">·</span>
@@ -283,19 +287,27 @@ export default function FaReportFormPage() {
         </div>
       </div>
 
-      {/* Heads-up: student record wasn't found in the loaded roster. Save
-          still works (placeholder name used) but the printed cert will
-          show "#<id>" until the Heidi row is fixed. */}
-      {studentNameMissing && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 mb-4 text-xs text-amber-800 flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <div>
-            <strong className="text-amber-900">Student record not loaded.</strong>{" "}
-            The report will save with the placeholder name <span className="font-mono">{studentName}</span>.
-            Fix the student&apos;s details in Heidi (branch + grade must be set) and the real name will appear on the certificate after a refresh.
-          </div>
-        </div>
-      )}
+      {/* Student name field — always editable so Marketing can correct a
+          wrong or missing name before it gets printed on the certificate. */}
+      <div className={`rounded-xl border p-4 mb-4 ${studentNameMissing ? "bg-amber-50 border-amber-200" : "bg-white border-ivory-300 shadow-sm"}`}>
+        <label className="fa-mono text-[10px] uppercase font-bold mb-1.5 block" style={{ letterSpacing: "0.12em", color: studentNameMissing ? "#92400e" : undefined }}>
+          Student Name {studentNameMissing && <span className="text-amber-600">(not found in records — enter manually)</span>}
+        </label>
+        <input
+          type="text"
+          value={nameInput}
+          onChange={e => setNameInput(e.target.value)}
+          disabled={!canFill}
+          placeholder="Enter student name…"
+          className={`fa-input w-full ${studentNameMissing ? "border-amber-300 bg-amber-50 focus:border-amber-500" : ""}`}
+        />
+        {studentNameMissing && (
+          <p className="text-[11px] text-amber-700 mt-1.5 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3 flex-shrink-0" />
+            This name will appear on the printed certificate. Fix branch + grade in Heidi and refresh to auto-fill.
+          </p>
+        )}
+      </div>
 
       {/* Date + filler. Slim row so the form gets straight to the scoring. */}
       <div className="rounded-xl bg-white border border-ivory-300 shadow-sm p-4 mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
