@@ -6,7 +6,7 @@ import { useFAStore } from "@fa/_lib/store";
 import { useCurrentUser } from "@fa/_hooks/useCurrentUser";
 import { Modal } from "@fa/_components/shared/Modal";
 import { StatusPill } from "@fa/_components/fa/StatusPill";
-import { DayPolicy, Invitation, Session, isStudentEligible, hasBacklog, invitableGradesFor, FA_CURRENT_GRADE_MIN_CHAPTER, gradeLabel } from "@fa/_types";
+import { DayPolicy, Invitation, Session, isStudentEligible, hasBacklog, invitableGradesFor, gradeLabel } from "@fa/_types";
 
 export interface InvitePick {
   studentId: string;
@@ -329,14 +329,6 @@ export function InviteStudentsModal({
                         </div>
                         {(() => {
                           const grades = invitableGradesFor(student);
-                          if (grades.length === 0) {
-                            return (
-                              <div className="text-[11px] text-ink-400 italic">
-                                Not yet at C{FA_CURRENT_GRADE_MIN_CHAPTER} of {gradeLabel(student.grade)} —
-                                FA tickbox unlocks once the student reaches it.
-                              </div>
-                            );
-                          }
                           return (
                             <div className="flex items-center gap-1 flex-wrap">
                               {grades.map(g => {
