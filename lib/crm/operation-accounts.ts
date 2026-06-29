@@ -23,12 +23,14 @@ export function isOperationAccount(email: string | null | undefined): boolean {
 /**
  * "Agency view" accounts — elevated, all-branches, but READ-ONLY (treated as
  * AGENCY_ADMIN regardless of their DB role) and shown ONLY the Agency View in
- * the top-left switcher (never Super Admin View). For the CEO etc. — view the
- * whole CNS lead system without super-admin write powers. Applies to the LEAD
- * system only; their ticket role/scope is unaffected.
+ * the top-left switcher (never Super Admin View). For a marketing advisor /
+ * observer who needs to monitor the whole CNS lead system without any
+ * super-admin write powers. Applies to the LEAD system only; their ticket
+ * role/scope is unaffected.
  */
 export const AGENCY_VIEW_EMAILS = new Set<string>([
-  'kevinkhoo@ebright.my',
+  // Marketing advisor — strictly view-only across the whole lead CRM.
+  'mokhirsunrise@gmail.com',
 ])
 
 export function isAgencyViewAccount(email: string | null | undefined): boolean {
@@ -36,9 +38,10 @@ export function isAgencyViewAccount(email: string | null | undefined): boolean {
 }
 
 /**
- * "Read-only viewer" accounts (the CEO monitor) — see the WHOLE lead CRM exactly
- * like a super admin, but cannot create / move / delete / edit anything. This is
- * the agency-view set (currently kevinkhoo@ebright.my). Enforced at three layers:
+ * "Read-only viewer" accounts (the marketing-advisor monitor) — see the WHOLE
+ * lead CRM exactly like a super admin, but cannot create / move / delete / edit
+ * anything. This is the agency-view set (currently mokhirsunrise@gmail.com).
+ * Enforced at three layers:
  *   1. Read access is widened so every admin page renders (resolveCrmAdminSession).
  *   2. Per-route write handlers reject `viewerOnly` contexts.
  *   3. middleware.ts hard-blocks every mutating request as a backstop.

@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { normalizeRole, ROLES, type Role } from "@/lib/roles";
 import { isReadOnlyViewer } from "@/lib/crm/operation-accounts";
 
-// ─── Read-only viewer (CEO monitor) write-block ──────────────────────────────
-// Hard backstop for the kevinkhoo@ebright.my "view-only" account: it may VIEW
+// ─── Read-only viewer (marketing-advisor monitor) write-block ────────────────
+// Hard backstop for the view-only account (see AGENCY_VIEW_EMAILS): it may VIEW
 // the whole lead CRM like a super admin but must never mutate anything. This
 // catches every mutating request (HTTP method or RSC server action) under
 // /crm + /api/crm, EXCEPT the ticket system and auth. Per-route guards are the

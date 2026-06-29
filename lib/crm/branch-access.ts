@@ -53,9 +53,10 @@ export async function resolveBranchAccess(userId: string): Promise<{
     prisma.crm_auth_user.findUnique({ where: { id: userId }, select: { email: true } }),
   ])
 
-  // Agency-view override (CEO etc.): elevated, all-branches, READ-ONLY
-  // (AGENCY_ADMIN, never super). Applies even if they hold a different/no CRM
-  // role. Falls back to the default tenant if they have no branch link yet.
+  // Agency-view override (marketing-advisor monitor etc.): elevated,
+  // all-branches, READ-ONLY (AGENCY_ADMIN, never super). Applies even if they
+  // hold a different/no CRM role. Falls back to the default tenant if they have
+  // no branch link yet.
   if (isAgencyViewAccount(authUser?.email)) {
     let tenantId = links[0]?.tenantId
     if (!tenantId) {

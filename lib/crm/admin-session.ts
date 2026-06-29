@@ -26,8 +26,8 @@ export interface CrmAdminCtx {
  * Behaviour:
  *   • Normal users → their crm_user_branch role (viewerOnly: false). Identical
  *     to the old inline logic.
- *   • The read-only viewer (kevinkhoo) — who has NO branch link — gets a
- *     synthetic elevated READER context (role 'AGENCY_ADMIN', viewerOnly: true)
+ *   • The read-only viewer (marketing advisor) — who has NO branch link — gets
+ *     a synthetic elevated READER context (role 'AGENCY_ADMIN', viewerOnly: true)
  *     so the admin pages render. Writes are blocked by the per-handler
  *     viewerOnly check + middleware backstop.
  *   • Everyone else with no link → null (unauthorized), unchanged.
