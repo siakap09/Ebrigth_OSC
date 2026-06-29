@@ -87,6 +87,9 @@ export async function POST(req: NextRequest) {
   try {
     const ctx = await resolveScope(req)
     if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (ctx.access.viewerOnly) {
+      return NextResponse.json({ error: 'Read-only access' }, { status: 403 })
+    }
     if (!ctx.access.elevated) {
       return NextResponse.json({ error: 'Only super admins can add WhatsApp leads.' }, { status: 403 })
     }
@@ -141,6 +144,9 @@ export async function DELETE(req: NextRequest) {
   try {
     const ctx = await resolveScope(req)
     if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (ctx.access.viewerOnly) {
+      return NextResponse.json({ error: 'Read-only access' }, { status: 403 })
+    }
     if (!ctx.access.elevated) {
       return NextResponse.json({ error: 'Only super admins can delete WhatsApp leads.' }, { status: 403 })
     }

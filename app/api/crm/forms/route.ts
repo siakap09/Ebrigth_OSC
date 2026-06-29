@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client'
 import { logAudit } from '@/lib/crm/audit'
 import { emptySchema, type FormSchemaV2 } from '@/lib/crm/forms-types'
 import { isPreviewMode } from '@/lib/crm/preview-mode'
+import { isReadOnlyViewer } from '@/lib/crm/operation-accounts'
 
 async function resolveSession() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -17,7 +18,19 @@ async function resolveSession() {
     select: { tenantId: true, role: true },
   })
   if (ub) {
-    return { tenantId: ub.tenantId, userId: session.user.id, role: ub.role, email: session.user.email }
+    return { tenantId: ub.tenantId, userId: session.user.id, role: ub.role, email: session.user.email, viewerOnly: false }
+  }
+
+  // Read-only viewer (CEO) without a branch link: view Forms like an admin, but
+  // POST rejects viewerOnly (and middleware is the backstop).
+  if (isReadOnlyViewer(session.user.email)) {
+    const tenant = await prisma.crm_tenant.findFirst({
+      where: { slug: { in: ['ebright', 'ebright-demo'] } },
+      select: { id: true },
+    }) ?? await prisma.crm_tenant.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } })
+    if (tenant) {
+      return { tenantId: tenant.id, userId: session.user.id, role: 'AGENCY_ADMIN', email: session.user.email, viewerOnly: true }
+    }
   }
 
   // Fallback for preview mode / impersonated users without crm_user_branch:
@@ -29,7 +42,7 @@ async function resolveSession() {
       select: { id: true },
     })
     if (tenant) {
-      return { tenantId: tenant.id, userId: session.user.id, role: 'SUPER_ADMIN', email: session.user.email }
+      return { tenantId: tenant.id, userId: session.user.id, role: 'SUPER_ADMIN', email: session.user.email, viewerOnly: false }
     }
   }
 
@@ -77,6 +90,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const ctx = await resolveSession()
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (ctx.viewerOnly) return NextResponse.json({ error: 'Read-only access' }, { status: 403 })
   if (!['SUPER_ADMIN', 'AGENCY_ADMIN'].includes(ctx.role)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

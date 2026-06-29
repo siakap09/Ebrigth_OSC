@@ -2,17 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
+import { resolveCrmAdminSession } from '@/lib/crm/admin-session'
 
-async function resolveSession() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user?.id) return null
-  const ub = await prisma.crm_user_branch.findFirst({
-    where: { userId: session.user.id },
-    select: { tenantId: true, role: true },
-  })
-  if (!ub) return null
-  return { tenantId: ub.tenantId, userId: session.user.id, role: ub.role }
-}
+// Read-only viewer (CEO) gets a synthetic elevated reader so the audit log
+// renders; this route is GET-only so there's nothing to write-guard.
+const resolveSession = resolveCrmAdminSession
 
 export async function GET(req: NextRequest) {
   try {

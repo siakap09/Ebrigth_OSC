@@ -2,6 +2,28 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { normalizeRole, ROLES, type Role } from "@/lib/roles";
+import { isReadOnlyViewer } from "@/lib/crm/operation-accounts";
+
+// ─── Read-only viewer (CEO monitor) write-block ──────────────────────────────
+// Hard backstop for the kevinkhoo@ebright.my "view-only" account: it may VIEW
+// the whole lead CRM like a super admin but must never mutate anything. This
+// catches every mutating request (HTTP method or RSC server action) under
+// /crm + /api/crm, EXCEPT the ticket system and auth. Per-route guards are the
+// first line; this guarantees a missed guard can't leak a write.
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function isLeadCrmMutation(req: NextRequest): boolean {
+  const p = req.nextUrl.pathname;
+  const inCrm = p.startsWith("/crm") || p.startsWith("/api/crm");
+  if (!inCrm) return false;
+  // Tickets are explicitly out of scope; auth must keep working (login/session).
+  if (/^\/(api\/)?crm\/(tickets|tkt-)/.test(p)) return false;
+  if (p.startsWith("/api/crm/auth")) return false;
+  if (p === "/crm/login") return false;
+  // A mutation is either a write HTTP method or a server-action invocation
+  // (Next sends those as POST with a `next-action` header to the page route).
+  return MUTATING_METHODS.has(req.method) || req.headers.has("next-action");
+}
 
 // Runs on the Node.js runtime, not Edge. The Edge runtime cannot load
 // @prisma/client without a driver adapter, and we need Prisma here to mirror
@@ -101,6 +123,16 @@ function redirectToLogin(
 // ─── Middleware ─────────────────────────────────────────────────────────────
 
 export async function middleware(req: NextRequest) {
+  const isApi = req.nextUrl.pathname.startsWith("/api");
+
+  // 0a. API fast-path: reads (and anything that isn't a lead-CRM mutation) need
+  //     no middleware work — the route enforces its own auth. This keeps the
+  //     /api/crm matcher (added only for the viewer write-block) cheap: no token
+  //     decrypt, no DB, on the hot read path.
+  if (isApi && !isLeadCrmMutation(req)) {
+    return NextResponse.next();
+  }
+
   // 1. Decrypt the JWT cookie. A malformed cookie or missing secret throws —
   //    we treat that the same as "no session".
   let token: Awaited<ReturnType<typeof getToken>>;
@@ -109,6 +141,21 @@ export async function middleware(req: NextRequest) {
   } catch {
     token = null;
   }
+
+  // 0b. Read-only viewer (CEO monitor) hard write-block — covers /crm server
+  //     actions AND /api/crm mutations. Runs before everything else so a missed
+  //     per-route guard still can't leak a write.
+  if (token?.email && isReadOnlyViewer(String(token.email)) && isLeadCrmMutation(req)) {
+    return NextResponse.json(
+      { error: "Read-only access — this account cannot modify the CRM." },
+      { status: 403 },
+    );
+  }
+
+  // API routes do their own role/scope enforcement and must not receive the
+  // page-navigation redirects below (a redirect would corrupt a JSON/RSC
+  // response). The viewer write-block above is the only middleware concern here.
+  if (isApi) return NextResponse.next();
 
   if (!token) {
     return redirectToLogin(req, { withCallback: true, clearCookies: false });
@@ -191,5 +238,9 @@ export const config = {
   //   - /login, /signup and /forgot-password (public auth pages)
   matcher: [
     "/((?!api|_next/static|_next/image|favicon.ico|login|signup|forgot-password).*)",
+    // Also run on /api/crm so the read-only viewer write-block can backstop API
+    // mutations. The fast-path in middleware() returns immediately for API reads,
+    // so this adds no cost to the hot path.
+    "/api/crm/:path*",
   ],
 };

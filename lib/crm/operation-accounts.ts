@@ -36,6 +36,19 @@ export function isAgencyViewAccount(email: string | null | undefined): boolean {
 }
 
 /**
+ * "Read-only viewer" accounts (the CEO monitor) — see the WHOLE lead CRM exactly
+ * like a super admin, but cannot create / move / delete / edit anything. This is
+ * the agency-view set (currently kevinkhoo@ebright.my). Enforced at three layers:
+ *   1. Read access is widened so every admin page renders (resolveCrmAdminSession).
+ *   2. Per-route write handlers reject `viewerOnly` contexts.
+ *   3. middleware.ts hard-blocks every mutating request as a backstop.
+ * Scope is the LEAD CRM only — the ticket system is unaffected.
+ */
+export function isReadOnlyViewer(email: string | null | undefined): boolean {
+  return isAgencyViewAccount(email)
+}
+
+/**
  * Branch names hidden from operation accounts everywhere a branch list is shown
  * (topbar switcher, Day Distribution, etc.) — the internal OD + Marketing
  * branches, which aren't part of lead operations.

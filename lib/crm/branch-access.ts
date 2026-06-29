@@ -36,6 +36,13 @@ export async function resolveBranchAccess(userId: string): Promise<{
    * get a read-only view).
    */
   isSuperAdmin: boolean
+  /**
+   * True for the read-only viewer (CEO monitor): elevated + all-branches, but
+   * MUST NOT write. Routes that gate writes on `elevated` (instead of
+   * hasPermission) must additionally reject this flag. middleware.ts is the
+   * hard backstop.
+   */
+  viewerOnly: boolean
 } | null> {
   const [links, authUser] = await Promise.all([
     prisma.crm_user_branch.findMany({
@@ -65,6 +72,7 @@ export async function resolveBranchAccess(userId: string): Promise<{
       elevated: true,
       isSuperAdmin: false,
       role: 'AGENCY_ADMIN',
+      viewerOnly: true,
     }
   }
 
@@ -81,5 +89,5 @@ export async function resolveBranchAccess(userId: string): Promise<{
     .sort((a, b) => (ROLE_RANK[b] ?? 0) - (ROLE_RANK[a] ?? 0))[0] as
     'SUPER_ADMIN' | 'AGENCY_ADMIN' | 'REGIONAL_MANAGER' | 'BRANCH_MANAGER' | 'BRANCH_STAFF'
 
-  return { tenantId, primaryBranchId, branchIds, elevated, isSuperAdmin, role }
+  return { tenantId, primaryBranchId, branchIds, elevated, isSuperAdmin, role, viewerOnly: false }
 }
