@@ -6,7 +6,7 @@ import { scopedPrisma } from '@/lib/crm/tenancy'
 import { CreateAutomationSchema } from '@/lib/crm/validations/automation'
 import { createAutomation } from '@/server/actions/automations'
 import { createHash } from 'crypto'
-import { resolveCrmAdminSession } from '@/lib/crm/admin-session'
+import { resolveCrmAdminSession, denyReadOnlyViewer } from '@/lib/crm/admin-session'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -100,6 +100,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await denyReadOnlyViewer(); if (denied) return denied
     const tenantId = await resolveTenantId(req)
     if (!tenantId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

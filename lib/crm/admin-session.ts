@@ -1,7 +1,30 @@
 import { headers } from 'next/headers'
+import { NextResponse } from 'next/server'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { isReadOnlyViewer } from '@/lib/crm/operation-accounts'
+
+/**
+ * Per-route write guard for the read-only viewer (CEO / marketing-advisor
+ * monitor). Reads the Better-Auth session email directly — reliable regardless
+ * of whether the account holds a crm_user_branch link or what role it is — and
+ * returns a 403 response if it's a read-only viewer, else null.
+ *
+ * Use at the top of ANY mutating handler the viewer can reach:
+ *   const denied = await denyReadOnlyViewer(); if (denied) return denied
+ *
+ * This is the route-layer guarantee; middleware.ts is the global backstop.
+ */
+export async function denyReadOnlyViewer(): Promise<NextResponse | null> {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (isReadOnlyViewer(session?.user?.email)) {
+    return NextResponse.json(
+      { error: 'Read-only access — this account cannot modify the CRM.' },
+      { status: 403 },
+    )
+  }
+  return null
+}
 
 export interface CrmAdminCtx {
   tenantId: string
@@ -42,7 +65,10 @@ export async function resolveCrmAdminSession(): Promise<CrmAdminCtx | null> {
     select: { tenantId: true, role: true },
   })
   if (ub) {
-    return { tenantId: ub.tenantId, userId: session.user.id, role: ub.role, email, viewerOnly: false }
+    // viewerOnly is EMAIL-based, not link-based: a read-only viewer who also
+    // holds an (e.g. AGENCY_ADMIN) branch link is STILL write-blocked. Without
+    // this, the link's role would sail past the per-route write guards.
+    return { tenantId: ub.tenantId, userId: session.user.id, role: ub.role, email, viewerOnly: isReadOnlyViewer(email) }
   }
 
   // No branch link → only the read-only viewer gets a synthetic read context.

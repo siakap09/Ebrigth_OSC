@@ -12,6 +12,7 @@ import { headers } from 'next/headers'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { logAudit } from '@/lib/crm/audit'
+import { denyReadOnlyViewer } from '@/lib/crm/admin-session'
 
 async function resolveAdmin() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -70,6 +71,7 @@ const GrantSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  const denied = await denyReadOnlyViewer(); if (denied) return denied
   const ctx = await resolveAdmin()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -108,6 +110,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const denied = await denyReadOnlyViewer(); if (denied) return denied
   const ctx = await resolveAdmin()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 

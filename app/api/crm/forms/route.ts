@@ -18,7 +18,9 @@ async function resolveSession() {
     select: { tenantId: true, role: true },
   })
   if (ub) {
-    return { tenantId: ub.tenantId, userId: session.user.id, role: ub.role, email: session.user.email, viewerOnly: false }
+    // viewerOnly is EMAIL-based: a read-only viewer who also holds a branch link
+    // is still write-blocked (POST checks viewerOnly).
+    return { tenantId: ub.tenantId, userId: session.user.id, role: ub.role, email: session.user.email, viewerOnly: isReadOnlyViewer(session.user.email) }
   }
 
   // Read-only viewer (CEO) without a branch link: view Forms like an admin, but

@@ -3,6 +3,7 @@ import { headers } from 'next/headers'
 import { auth } from '@/lib/crm/auth'
 import { prisma } from '@/lib/crm/db'
 import { createStageAllPipelines, deleteStageAllPipelines } from '@/server/actions/pipelines'
+import { denyReadOnlyViewer } from '@/lib/crm/admin-session'
 
 const ALLOWED_ROLES = new Set(['SUPER_ADMIN', 'AGENCY_ADMIN'])
 
@@ -24,6 +25,7 @@ async function resolveSession() {
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await denyReadOnlyViewer(); if (denied) return denied
     const ctx = await resolveSession()
     if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!ctx.canManageGlobal) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -50,6 +52,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const denied = await denyReadOnlyViewer(); if (denied) return denied
     const ctx = await resolveSession()
     if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!ctx.canManageGlobal) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
