@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Loader2, GripVertical, Trash2, X, AlertTriangle, GitBranch, Layers, Users, Globe } from 'lucide-react'
 import { cn } from '@/lib/crm/utils'
+import { useReadOnlyViewer } from '@/lib/crm/use-read-only-viewer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,12 +65,14 @@ function StageRow({
   otherStages,
   onUpdate,
   onDelete,
+  readOnly = false,
 }: {
   stage: Stage
   index: number
   otherStages: Stage[]
   onUpdate: (stageId: string, data: Partial<Stage>) => Promise<void>
   onDelete: (stageId: string, reassignToStageId?: string) => void
+  readOnly?: boolean
 }) {
   const [name, setName] = useState(stage.name)
   const [shortCode, setShortCode] = useState(stage.shortCode)
@@ -89,7 +92,7 @@ function StageRow({
   }
 
   return (
-    <Draggable draggableId={stage.id} index={index}>
+    <Draggable draggableId={stage.id} index={index} isDragDisabled={readOnly}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}
@@ -100,22 +103,25 @@ function StageRow({
             snapshot.isDragging && 'shadow-xl',
           )}
         >
-          {/* Drag handle */}
-          <div
-            {...provided.dragHandleProps}
-            className="cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-600 hover:text-slate-500 transition-colors"
-          >
-            <GripVertical className="h-4 w-4" />
-          </div>
+          {/* Drag handle — hidden for read-only viewers */}
+          {!readOnly && (
+            <div
+              {...provided.dragHandleProps}
+              className="cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-600 hover:text-slate-500 transition-colors"
+            >
+              <GripVertical className="h-4 w-4" />
+            </div>
+          )}
 
           {/* Color swatch */}
           <div className="relative">
             <button
               type="button"
-              onClick={() => setShowColorPicker((p) => !p)}
+              disabled={readOnly}
+              onClick={() => { if (!readOnly) setShowColorPicker((p) => !p) }}
               className="h-6 w-6 rounded-full border-2 border-white dark:border-slate-800 shadow"
               style={{ backgroundColor: color }}
-              title="Change color"
+              title={readOnly ? undefined : 'Change color'}
             />
             {showColorPicker && (
               <div className="absolute top-8 left-0 z-20 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 shadow-lg">
@@ -143,16 +149,18 @@ function StageRow({
           {/* Name */}
           <input
             value={name}
+            readOnly={readOnly}
             onChange={(e) => setName(e.target.value)}
-            onBlur={save}
+            onBlur={() => { if (!readOnly) void save() }}
             className="flex-1 rounded border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-indigo-400 dark:focus:border-indigo-500 bg-transparent px-2 py-1 text-sm font-medium text-slate-900 dark:text-white focus:outline-none"
           />
 
           {/* Short code */}
           <input
             value={shortCode}
+            readOnly={readOnly}
             onChange={(e) => setShortCode(e.target.value.toUpperCase().slice(0, 6))}
-            onBlur={save}
+            onBlur={() => { if (!readOnly) void save() }}
             placeholder="CODE"
             className="w-16 rounded border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-indigo-400 bg-transparent px-2 py-1 text-xs font-mono uppercase text-slate-600 dark:text-slate-400 focus:outline-none text-center"
           />
@@ -167,8 +175,9 @@ function StageRow({
               <input
                 type="number"
                 value={stuckY}
+                disabled={readOnly}
                 onChange={(e) => setStuckY(parseInt(e.target.value) || 24)}
-                onBlur={save}
+                onBlur={() => { if (!readOnly) void save() }}
                 className="w-10 rounded border border-transparent hover:border-slate-300 focus:border-indigo-400 bg-transparent px-1 py-0.5 text-xs text-slate-600 dark:text-slate-400 focus:outline-none text-center"
               />
               <span className="text-[10px] text-slate-400">h</span>
@@ -178,8 +187,9 @@ function StageRow({
               <input
                 type="number"
                 value={stuckR}
+                disabled={readOnly}
                 onChange={(e) => setStuckR(parseInt(e.target.value) || 48)}
-                onBlur={save}
+                onBlur={() => { if (!readOnly) void save() }}
                 className="w-10 rounded border border-transparent hover:border-slate-300 focus:border-indigo-400 bg-transparent px-1 py-0.5 text-xs text-slate-600 dark:text-slate-400 focus:outline-none text-center"
               />
               <span className="text-[10px] text-slate-400">h</span>
@@ -197,13 +207,15 @@ function StageRow({
 
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400 shrink-0" />}
 
-          {/* Delete */}
-          <button
-            onClick={() => onDelete(stage.id)}
-            className="flex h-7 w-7 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950 dark:hover:text-red-400 transition-colors shrink-0"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          {/* Delete — hidden for read-only viewers */}
+          {!readOnly && (
+            <button
+              onClick={() => onDelete(stage.id)}
+              className="flex h-7 w-7 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950 dark:hover:text-red-400 transition-colors shrink-0"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       )}
     </Draggable>
@@ -498,6 +510,7 @@ function GlobalStagePanel({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function PipelinesPage() {
+  const readOnly = useReadOnlyViewer()
   const qc = useQueryClient()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['crm', 'pipelines'],
@@ -684,6 +697,7 @@ export default function PipelinesPage() {
                       key={stage.id}
                       stage={stage}
                       index={index}
+                      readOnly={readOnly}
                       otherStages={stages.filter((s) => s.id !== stage.id)}
                       onUpdate={handleUpdateStage}
                       onDelete={(stageId) => {
@@ -699,7 +713,7 @@ export default function PipelinesPage() {
           </DragDropContext>
         )}
 
-        {selectedPipeline && (
+        {selectedPipeline && !readOnly && (
           <AddStageForm
             pipelineId={selectedPipeline.id}
             onSuccess={() => {

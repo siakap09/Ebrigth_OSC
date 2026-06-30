@@ -61,6 +61,7 @@ import {
   Mail,
 } from 'lucide-react'
 import { cn, formatDate } from '@/lib/crm/utils'
+import { useReadOnlyViewer } from '@/lib/crm/use-read-only-viewer'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { bulkAssignContacts } from '@/server/actions/contacts'
@@ -181,7 +182,7 @@ function TableSkeleton({ cols }: { cols: number }) {
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function EmptyState({ onAdd }: { onAdd?: () => void }) {
   return (
     <tr>
       <td colSpan={100} className="py-20 text-center">
@@ -195,10 +196,12 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
               Start by adding your first contact to the CRM.
             </p>
           </div>
-          <Button size="sm" onClick={onAdd}>
-            <Plus className="h-4 w-4" />
-            Add your first contact
-          </Button>
+          {onAdd && (
+            <Button size="sm" onClick={onAdd}>
+              <Plus className="h-4 w-4" />
+              Add your first contact
+            </Button>
+          )}
         </div>
       </td>
     </tr>
@@ -218,6 +221,7 @@ export function ContactsList({
   currentUserId,
   canDelete = false,
 }: ContactsListProps) {
+  const readOnly = useReadOnlyViewer()
   const [filter, setFilter] = useState<ContactsFilter>({
     page: 1,
     pageSize: 25,
@@ -641,11 +645,13 @@ export function ContactsList({
             Export
           </Button>
 
-          {/* New contact */}
-          <Button size="sm" onClick={() => setModalOpen(true)}>
-            <Plus className="h-4 w-4" />
-            New Contact
-          </Button>
+          {/* New contact — hidden for read-only viewers */}
+          {!readOnly && (
+            <Button size="sm" onClick={() => setModalOpen(true)}>
+              <Plus className="h-4 w-4" />
+              New Contact
+            </Button>
+          )}
         </div>
       </div>
 
@@ -738,7 +744,7 @@ export function ContactsList({
                   </td>
                 </tr>
               ) : table.getRowModel().rows.length === 0 ? (
-                <EmptyState onAdd={() => setModalOpen(true)} />
+                <EmptyState onAdd={readOnly ? undefined : () => setModalOpen(true)} />
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <tr
