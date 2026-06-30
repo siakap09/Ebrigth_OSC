@@ -193,7 +193,7 @@ export default function BMEventDetailPage() {
         <div className="fa-card p-4 mb-6 border-l-4 border-l-warning bg-warning-soft/30 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
           <div className="text-sm text-ink-600">
-            The invitation window has closed. You can no longer invite new students, but you can still view and update statuses.
+            The invitation window has closed. This event is now locked — you can view your students but can no longer invite, confirm, reject, or remove them.
           </div>
         </div>
       )}

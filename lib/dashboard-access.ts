@@ -392,6 +392,38 @@ export function parseOverrides(raw: unknown): DashboardOverrides {
   return out;
 }
 
+// ─── CNS-only accounts (external CRM observers) ──────────────────────────────
+// Accounts that should see ONLY the CNS (CRM → Lead) module on the portal
+// homepage + sidebar — everything else locked, and the Ticket sub-module still
+// restricted. Reuses the read-only-viewer email gate so one set
+// (AGENCY_VIEW_EMAILS) controls both "view-only CRM" and "CNS-only homepage".
+
+import { isReadOnlyViewer } from "@/lib/crm/operation-accounts";
+
+export function isCnsOnlyAccount(email: string | null | undefined): boolean {
+  return isReadOnlyViewer(email);
+}
+
+/**
+ * Synthetic overrides that hide every module except CNS. Built from
+ * DASHBOARD_TREE so a newly-added module is locked by default. Merged OVER the
+ * account's real overrides (so it can't be widened by a permissive role).
+ *   - every top-level module except `home` + `crm` → DENIED
+ *   - `crm` + `crm.lead` → ALLOWED
+ *   - `crm.ticket` → DENIED (ticket stays restricted)
+ */
+export function cnsOnlyOverrides(): DashboardOverrides {
+  const o: DashboardOverrides = {};
+  for (const node of DASHBOARD_TREE) {
+    if (node.key === "home" || node.key === "crm") continue;
+    o[node.key] = "DENIED";
+  }
+  o["crm"] = "ALLOWED";
+  o["crm.lead"] = "ALLOWED";
+  o["crm.ticket"] = "DENIED";
+  return o;
+}
+
 /** Flatten the tree into one ordered list of (parent, child?) pairs. */
 export function flattenTree(): Array<{ parent: DashboardNode; child?: DashboardNode }> {
   const out: Array<{ parent: DashboardNode; child?: DashboardNode }> = [];

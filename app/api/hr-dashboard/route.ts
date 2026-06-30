@@ -117,6 +117,9 @@ interface AlertLeaveRow {
 interface AlertRecord {
   code: string; name: string; position: string | null; department_branch: string | null;
   cnt: number; last_date: string | null; reason: string | null; flag_label: string;
+  // Every working leave-day that triggered this alert, newest first — so the
+  // card/detail view can show exactly which dates the person was on leave.
+  dates: string[];
 }
 
 // Group approved leave-days of one type into per-person alert records, counting
@@ -142,15 +145,37 @@ function buildLeaveAlert(rows: AlertLeaveRow[], minCount: number, unit: string):
     const cnt = p.days.size;
     if (cnt < minCount) continue;
     const sorted = p.rows.slice().sort((a, b) => (a.leave_date < b.leave_date ? 1 : -1));
+    const dates = Array.from(p.days).sort((a, b) => (a < b ? 1 : -1)); // newest first
     out.push({
       code: p.r.code, name: p.r.name, position: p.r.position, department_branch: p.r.department_branch,
       cnt, last_date: sorted[0]?.leave_date ?? null,
       reason: (sorted.find(x => x.reason) || {}).reason ?? null,
       flag_label: `${cnt} ${unit} days`,
+      dates,
     });
   }
   out.sort((a, b) => b.cnt - a.cnt || ((a.last_date ?? "") < (b.last_date ?? "") ? 1 : -1));
   return out;
+}
+
+// Merge several alert lists into one record per employee. When the same person
+// is flagged by more than one rule (e.g. ≥3 SL AND ≥2 UL), their labels and
+// leave-dates are combined into a single row instead of appearing twice.
+function mergeAlerts(...lists: AlertRecord[][]): AlertRecord[] {
+  const byCode = new Map<string, AlertRecord>();
+  for (const list of lists) {
+    for (const rec of list) {
+      const existing = byCode.get(rec.code);
+      if (!existing) { byCode.set(rec.code, { ...rec, dates: [...rec.dates] }); continue; }
+      existing.cnt += rec.cnt;
+      existing.flag_label = `${existing.flag_label} · ${rec.flag_label}`;
+      existing.dates = Array.from(new Set([...existing.dates, ...rec.dates])).sort((a, b) => (a < b ? 1 : -1));
+      existing.last_date = (existing.last_date ?? "") >= (rec.last_date ?? "") ? existing.last_date : rec.last_date;
+      existing.reason = existing.reason ?? rec.reason;
+    }
+  }
+  return Array.from(byCode.values())
+    .sort((a, b) => b.cnt - a.cnt || ((a.last_date ?? "") < (b.last_date ?? "") ? 1 : -1));
 }
 
 export async function GET(req: NextRequest) {
@@ -278,6 +303,9 @@ export async function GET(req: NextRequest) {
 
     let slRows = await hrfsPrisma.$queryRawUnsafe<AlertLeaveRow[]>(alertRowsSql("SL", THIS_MONTH));
     let ulRows = await hrfsPrisma.$queryRawUnsafe<AlertLeaveRow[]>(alertRowsSql("UL", LAST_2_WEEKS));
+    // UL this month feeds the Flagged card (≥2 UL days), separate from the MIA
+    // card's last-2-weeks UL window above.
+    let ulMonthRows = await hrfsPrisma.$queryRawUnsafe<AlertLeaveRow[]>(alertRowsSql("UL", THIS_MONTH));
     // Exclude staff the autocount map ties to an Inactive BranchStaff — the
     // internal dashboard drops these via its autocount JOIN + status filter, but
     // our SQL can't JOIN that cross-DB table, so we apply the same exclusion in
@@ -290,7 +318,13 @@ export async function GET(req: NextRequest) {
     mc = mc.filter((r: any) => !isInactiveCode(r.code)).map(resolveRow);
     slRows = slRows.filter(r => !isInactiveCode(r.code)).map(resolveRow);
     ulRows = ulRows.filter(r => !isInactiveCode(r.code)).map(resolveRow);
-    const flagged = buildLeaveAlert(slRows, 3, "SL");
+    ulMonthRows = ulMonthRows.filter(r => !isInactiveCode(r.code)).map(resolveRow);
+    // Flagged = repeat offenders this month: ≥2 SL days OR ≥2 UL days. A person
+    // hit by both rules is merged into one row (combined label + dates).
+    const flagged = mergeAlerts(
+      buildLeaveAlert(slRows, 2, "SL"),
+      buildLeaveAlert(ulMonthRows, 2, "UL"),
+    );
     const mia = buildLeaveAlert(ulRows, 1, "UL");
 
     // ── Missing today: scheduled staff who haven't scanned (changes each day) ──

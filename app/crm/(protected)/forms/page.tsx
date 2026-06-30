@@ -3,6 +3,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { toast } from 'sonner'
 import { useBranchContext } from '@/components/crm/branch-context'
+import { useReadOnlyViewer } from '@/lib/crm/use-read-only-viewer'
 
 // Public trial form: 00 Ebright (OD) + 23 numbered branches.
 // HR is excluded (no pipeline).
@@ -39,6 +40,7 @@ interface Child {
 }
 
 export default function FormsPage() {
+  const readOnly = useReadOnlyViewer()
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1)
   const [parentName, setParentName] = useState('')
   const [parentPhone, setParentPhone] = useState('')
@@ -124,6 +126,10 @@ export default function FormsPage() {
   }
 
   async function submit() {
+    if (readOnly) {
+      toast.error('Read-only access — this account cannot submit leads.')
+      return
+    }
     if (!branch) {
       toast.error('Please select a branch')
       return
@@ -338,17 +344,22 @@ export default function FormsPage() {
               <Group label="Remarks [If any]">
                 <TextareaField value={remarks} onChange={setRemarks} placeholder="Special needs (e.g. ADHD, autism)" />
               </Group>
+              {readOnly && (
+                <p style={{ marginTop: 16, fontSize: 13, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px' }}>
+                  View-only access — this account cannot submit the form.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={submit}
-                disabled={submitting}
+                disabled={submitting || readOnly}
                 style={{
                   ...btnBase,
                   marginTop: 16,
                   background: 'linear-gradient(135deg,#ed1c24 0%,#ff3d3d 100%)',
                   color: '#fff',
                   boxShadow: '0 14px 26px rgba(237,28,36,.18)',
-                  opacity: submitting ? 0.7 : 1,
+                  opacity: submitting || readOnly ? 0.7 : 1,
                 }}
               >
                 {submitting ? 'SUBMITTING…' : 'SUBMIT'}

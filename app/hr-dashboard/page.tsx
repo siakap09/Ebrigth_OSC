@@ -22,6 +22,15 @@ function fmtDate(d: any) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
+// Compact "24 Jun" — used to list the individual leave-days behind an alert.
+function fmtDayMon(d: any) {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+function fmtDateList(dates: any): string {
+  if (!Array.isArray(dates) || dates.length === 0) return "";
+  return dates.map(fmtDayMon).filter(Boolean).join(", ");
+}
 function isInRange(dateStr: any, startDaysAgo: number, endDaysAhead: number) {
   if (!dateStr) return false;
   const d = new Date(dateStr);
@@ -44,7 +53,7 @@ function DaysLabel({ days }: { days: number | null }) {
 }
 
 /* ─── Unified Dashboard Card ─── */
-function DashCard({ title, subtitle, color, lightColor, records, dateField, mainCount, mainLabel, smallCount, smallLabel, extraField, typeField, onViewAll, maxItems, extraCounts, monthSelector, alertNames }: any) {
+function DashCard({ title, subtitle, color, lightColor, records, dateField, datesField, mainCount, mainLabel, smallCount, smallLabel, extraField, typeField, onViewAll, maxItems, extraCounts, monthSelector, alertNames }: any) {
   const displayRecords = records.slice(0, maxItems || 8);
   const dense = !!(extraCounts && extraCounts.length);
   return (
@@ -106,6 +115,11 @@ function DashCard({ title, subtitle, color, lightColor, records, dateField, main
                     {typeField && r[typeField] && <span style={{ fontWeight: 700, color }}>· {r[typeField]}</span>}
                     {extraField && r[extraField] && <span>· {r[extraField]}</span>}
                   </div>
+                  {datesField && Array.isArray(r[datesField]) && r[datesField].length > 0 && (
+                    <div style={{ fontSize: 10, color, marginTop: 2, whiteSpace: "normal", lineHeight: 1.3 }}>
+                      On leave: {fmtDateList(r[datesField])}
+                    </div>
+                  )}
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0 }}>
                   <div style={{ fontSize: 11, fontWeight: 500 }}>{fmtDate(r[dateField])}</div>
@@ -176,7 +190,7 @@ function SignedDetailView({ title, color, records, onBack }: any) {
   );
 }
 
-function DetailView({ title, color, lightColor, records, dateField, dateLabel, typeField, typeLabel, alertNames, onBack }: any) {
+function DetailView({ title, color, lightColor, records, dateField, datesField, dateLabel, typeField, typeLabel, alertNames, onBack }: any) {
   return (
     <div>
       <DetailHeader title={title} color={color} subtitle={`${records.length} staff · Highlighted = within 2 weeks`} onBack={onBack} />
@@ -200,7 +214,11 @@ function DetailView({ title, color, lightColor, records, dateField, dateLabel, t
                   <td style={{ ...td, fontSize: 12 }}>{r.position}</td>
                   <td style={{ ...td, fontSize: 12 }}>{r.department_branch}</td>
                   {typeField && <td style={{ ...td, fontSize: 12, fontWeight: 700, color }}>{r[typeField] || "—"}</td>}
-                  <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, fontWeight: within2w ? 600 : 400 }}>{fmtDate(r[dateField])}</td>
+                  <td style={{ ...td, fontSize: 12, fontWeight: within2w ? 600 : 400 }}>
+                    {datesField && Array.isArray(r[datesField]) && r[datesField].length > 0
+                      ? <span style={{ color }}>{fmtDateList(r[datesField])}</span>
+                      : <span style={{ whiteSpace: "nowrap" }}>{fmtDate(r[dateField])}</span>}
+                  </td>
                   <td style={td}><DaysLabel days={days} /></td>
                 </tr>
               );
@@ -305,7 +323,7 @@ export default function HRDashboardPage() {
         ) : detailView === "annual_leave" ? (
           <DetailView title="Annual Leave" color={C.purple} lightColor={C.purpleLight} records={annualLeave} dateField="al_date" dateLabel="AL Date" onBack={() => setDetailView(null)} />
         ) : detailView === "flagged" ? (
-          <DetailView title="Flagged — more than 2 SL days this month" color={C.orange} lightColor={C.orangeLight} records={flagged} dateField="last_date" dateLabel="Last SL" typeField="flag_label" typeLabel="SL (this month)" alertNames onBack={() => setDetailView(null)} />
+          <DetailView title="Flagged — ≥2 SL or ≥2 UL days this month" color={C.orange} lightColor={C.orangeLight} records={flagged} dateField="last_date" datesField="dates" dateLabel="Leave dates" typeField="flag_label" typeLabel="Flag" alertNames onBack={() => setDetailView(null)} />
         ) : detailView === "mia" ? (
           <DetailView title="MIA — Unpaid Leave (-2 weeks → today) + Missing Today" color={C.red} lightColor={C.redLight} records={miaCombined} dateField="last_date" dateLabel="Last UL / Today" typeField="flag_label" typeLabel="Type" alertNames onBack={() => setDetailView(null)} />
         ) : (
@@ -328,8 +346,8 @@ export default function HRDashboardPage() {
             <DashCard title="MC" subtitle="-1 month → today" color={C.warning} lightColor={C.warningLight}
               records={mc} dateField="mc_date" mainCount={mc.length} mainLabel="Total" typeField="leave_type" extraField="reason"
               onViewAll={() => setDetailView("mc")} />
-            <DashCard title="FLAGGED" subtitle="SL > 2 · this month" color={C.orange} lightColor={C.orangeLight}
-              records={flagged} dateField="last_date" mainCount={flagged.length} mainLabel="Flagged" typeField="flag_label" extraField="reason" alertNames
+            <DashCard title="FLAGGED" subtitle="SL or UL ≥ 2 · this month" color={C.orange} lightColor={C.orangeLight}
+              records={flagged} dateField="last_date" datesField="dates" mainCount={flagged.length} mainLabel="Flagged" typeField="flag_label" extraField="reason" alertNames
               onViewAll={() => setDetailView("flagged")} />
             <DashCard title="MIA" subtitle="Unpaid leave · -2 wks → today · + missing today" color={C.red} lightColor={C.redLight}
               records={miaCombined} dateField="last_date" mainCount={mia.length} mainLabel="UL" smallCount={miaMissingToday.length} smallLabel="Missing" typeField="flag_label" extraField="reason" alertNames
